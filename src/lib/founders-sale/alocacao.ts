@@ -35,7 +35,13 @@ export interface Reserva {
 }
 
 export type ErroReserva =
-  | "parametro_invalido" | "venda_fechada" | "esgotado" | "teto_da_carteira" | "nao_elegivel";
+  | "parametro_invalido" | "venda_fechada" | "esgotado" | "teto_da_carteira" | "nao_elegivel"
+  | "armazenamento_indisponivel";
+
+export interface OpcoesLivro {
+  /** Caos/teste: quando devolve true, a mutação falha FECHADA sem tocar o estado (armazenamento fora). */
+  falhaArmazenamento?: () => boolean;
+}
 
 export type ResultadoReserva = { ok: true; reserva: Reserva; replay: boolean } | { ok: false; erro: ErroReserva };
 
@@ -45,7 +51,7 @@ export class LivroDeReservas {
   private fila: Promise<unknown> = Promise.resolve();
   private seq = 0;
 
-  constructor(private readonly cfg: ConfigAlocacao, private readonly agora: () => number = Date.now) {
+  constructor(private readonly cfg: ConfigAlocacao, private readonly agora: () => number = Date.now, private readonly opcoes: OpcoesLivro = {}) {
     for (const [k, v] of Object.entries(cfg)) {
       if (!Number.isInteger(v) || v <= 0) throw new Error(`config_invalida:${k}`);
     }
@@ -73,16 +79,22 @@ export class LivroDeReservas {
     return n;
   }
 
-  reservar(p: { chave: string; carteira: string; unidades: number; vendaAberta: boolean; elegivel: boolean }): Promise<ResultadoReserva> {
+  /**
+   * `teto` (opcional) aperta o teto da carteira PARA ESTA CHAMADA (ex.: fase allowlist = 1, pública = 2);
+   * nunca afrouxa acima de `maxPorCarteira`. O teto é cumulativo: conta o que a carteira já tem ativo/confirmado.
+   */
+  reservar(p: { chave: string; carteira: string; unidades: number; vendaAberta: boolean; elegivel: boolean; teto?: number }): Promise<ResultadoReserva> {
     return this.emFila(() => {
       const anterior = this.porChave.get(p.chave);
       if (anterior) return anterior.ok ? { ...anterior, replay: true } : anterior;
+      if (this.opcoes.falhaArmazenamento?.()) return { ok: false as const, erro: "armazenamento_indisponivel" as const };
       this.expirar();
+      const teto = Math.min(this.cfg.maxPorCarteira, p.teto ?? this.cfg.maxPorCarteira);
       let r: ResultadoReserva;
       if (!p.chave || !p.carteira || !Number.isInteger(p.unidades) || p.unidades <= 0) r = { ok: false, erro: "parametro_invalido" };
       else if (!p.vendaAberta) r = { ok: false, erro: "venda_fechada" };
       else if (!p.elegivel) r = { ok: false, erro: "nao_elegivel" };
-      else if (this.ocupadas(p.carteira) + p.unidades > this.cfg.maxPorCarteira) r = { ok: false, erro: "teto_da_carteira" };
+      else if (!Number.isInteger(teto) || teto <= 0 || this.ocupadas(p.carteira) + p.unidades > teto) r = { ok: false, erro: "teto_da_carteira" };
       else if (this.ocupadas() + p.unidades > this.cfg.supply) r = { ok: false, erro: "esgotado" };
       else {
         const reserva: Reserva = { id: `res-${++this.seq}`, chave: p.chave, carteira: p.carteira, unidades: p.unidades, criadaEm: this.agora(), status: "ativa" };
@@ -95,8 +107,9 @@ export class LivroDeReservas {
     });
   }
 
-  confirmar(id: string): Promise<{ ok: true } | { ok: false; erro: "inexistente" | "expirada" | "ja_confirmada" | "liberada" }> {
+  confirmar(id: string): Promise<{ ok: true } | { ok: false; erro: "inexistente" | "expirada" | "ja_confirmada" | "liberada" | "armazenamento_indisponivel" }> {
     return this.emFila(() => {
+      if (this.opcoes.falhaArmazenamento?.()) return { ok: false as const, erro: "armazenamento_indisponivel" as const };
       this.expirar();
       const r = this.reservas.get(id);
       if (!r) return { ok: false as const, erro: "inexistente" as const };
@@ -115,6 +128,19 @@ export class LivroDeReservas {
       r.status = "liberada";
       return true;
     });
+  }
+
+  /** Unidades ativas+confirmadas de uma carteira (para alocação "usado" na UI). */
+  usadasPor(carteira: string): number {
+    this.expirar();
+    return this.ocupadas(carteira);
+  }
+
+  /** Estado de uma reserva (para reconciliação e caos). */
+  reserva(id: string): Reserva | null {
+    this.expirar();
+    const r = this.reservas.get(id);
+    return r ? { ...r } : null;
   }
 
   /** Progresso para a UI: só números agregados. */

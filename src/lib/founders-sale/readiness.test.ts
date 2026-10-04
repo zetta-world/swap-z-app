@@ -2,9 +2,11 @@ import { describe, it, expect } from "vitest";
 import { RelogioDaVenda, contagem } from "./relogio";
 import { estadoDaUI, podeMintar, visaoProgresso, visaoAlocacao, ESTADOS_UI, type EntradaVisao } from "./visao";
 import { AdminDaVenda } from "./admin";
+import { VendaAutoritativa, ArmazemEmMemoria, estadoInicial } from "./autoridade";
+import { CONFIG_APROVADA, type ConfigVenda } from "./config";
+import { criarSnapshotAlocacao } from "./allowlist-hibrida";
 import { CadeiaDeEvidencia, verificarCadeia, canonico, impressaoConfig, type RegistroEvidencia } from "./evidencia";
 import { validarEvento, EVENTOS } from "./telemetria";
-import { criarSnapshot } from "./allowlist";
 
 const H64 = "a".repeat(64), H16 = "b".repeat(16);
 
@@ -48,20 +50,28 @@ describe("relógio: servidor + monotônico, nunca o relógio de parede do client
   });
 });
 
-describe("modelo de visão: os 14 estados, sem sucesso fabricado", () => {
+describe("modelo de visão: todos os estados, sem sucesso fabricado", () => {
   const base: EntradaVisao = { venda: { estado: "publica_aberta" }, contagem: { tipo: "durante", restanteMs: null }, elegibilidade: "desconhecida", tx: "ocioso", txId: null };
   const casos: [Partial<EntradaVisao>, string][] = [
     [{ venda: null }, "COMING_SOON"],
     [{ venda: { estado: "rascunho" } }, "COMING_SOON"],
+    [{ venda: { estado: "inscricao_aberta" } }, "APPLICATION_OPEN"],
     [{ venda: { estado: "allowlist_aberta" }, elegibilidade: "verificando" }, "ALLOWLIST_CHECK"],
     [{ venda: { estado: "allowlist_aberta" }, elegibilidade: "elegivel" }, "ELIGIBLE"],
     [{ venda: { estado: "allowlist_aberta" }, elegibilidade: "nao_elegivel" }, "NOT_ELIGIBLE"],
-    [{ venda: { estado: "agendada" }, contagem: { tipo: "antes", restanteMs: 5, d: 0, h: 0, m: 0, s: 1 } }, "SALE_NOT_STARTED"],
+    [{ venda: { estado: "allowlist_aberta" }, elegibilidade: "pendente_juridico" }, "ELIGIBILITY_PENDING"],
+    [{ venda: { estado: "allowlist_congelada" }, contagem: { tipo: "antes", restanteMs: 5, d: 0, h: 0, m: 0, s: 1 } }, "SALE_NOT_STARTED"],
     [{}, "SALE_ACTIVE"],
     [{ venda: { estado: "pausada", antesDaPausa: "publica_aberta" } }, "PAUSED"],
     [{ venda: { estado: "esgotada" } }, "SOLD_OUT"],
     [{ venda: { estado: "encerrada" } }, "ENDED"],
+    [{ venda: { estado: "cancelada" } }, "ENDED"],
     [{ contagem: { tipo: "depois" } }, "ENDED"],
+    [{ restante: 0 }, "WALLET_LIMIT_REACHED"],
+    [{ redeErrada: true }, "WRONG_NETWORK"],
+    [{ precoDisponivel: false }, "PRICE_UNAVAILABLE"],
+    [{ configValida: false }, "CONFIG_INVALID"],
+    [{ venda: { estado: "desconhecido" as never } }, "UNKNOWN_STATE"],
     [{ tx: "preparando" }, "TRANSACTION_PREPARING"],
     [{ tx: "assinando" }, "WALLET_CONFIRMATION"],
     [{ tx: "enviada" }, "TRANSACTION_PENDING"],
@@ -72,7 +82,7 @@ describe("modelo de visão: os 14 estados, sem sucesso fabricado", () => {
   it.each(casos)("%o → %s", (parcial, esperado) => {
     expect(estadoDaUI({ ...base, ...parcial })).toBe(esperado);
   });
-  it("todos os 14 estados são alcançáveis", () => {
+  it("todos os estados de UI são alcançáveis", () => {
     const vistos = new Set(casos.map(([p]) => estadoDaUI({ ...base, ...p })));
     expect([...vistos].sort()).toEqual([...ESTADOS_UI].sort());
   });
@@ -109,60 +119,91 @@ describe("alocação: campos abstratos, nada inventado", () => {
   });
 });
 
-describe("admin: dois passos, frase exata, auditoria encadeada", () => {
+describe("admin: dois passos, frase exata, motivo, operador autorizado, auditoria encadeada", () => {
+  const MOT = "motivo operacional registrado";
+  const W = "1".repeat(43);
+  const cfgTeste = (): ConfigVenda => ({ ...CONFIG_APROVADA, horarios: { inscricaoAbre: 0, inscricaoFecha: 10, allowlistAbre: 20, publicaAbre: 20 + CONFIG_APROVADA.duracaoAllowlistMs, vendaFecha: 30 + CONFIG_APROVADA.duracaoAllowlistMs } });
   const mk = (segundo = false) => {
     let t = 0;
     const ev = new CadeiaDeEvidencia();
-    const adm = new AdminDaVenda({ estado: "agendada" }, { validadeMs: 60_000, exigeSegundoOperador: segundo }, ev, () => t);
-    return { adm, ev, avanca: (ms: number) => { t += ms; } };
+    const aut = new VendaAutoritativa(cfgTeste(), () => t, new ArmazemEmMemoria(estadoInicial(0)));
+    const adm = new AdminDaVenda(aut, { validadeMs: 60_000, exigeSegundoOperador: segundo, operadoresAutorizados: ["op1", "op2"], motivoMinimo: 10 }, ev, () => t);
+    return { adm, ev, aut, avanca: (ms: number) => { t += ms; } };
   };
-  const norm = (a: string) => (/^[a-z0-9]{3,}$/.test(a) ? a : null);
+  const ok = <T extends { ok: boolean }>(r: T) => { if (!r.ok) throw new Error(JSON.stringify(r)); return r as Extract<T, { ok: true }>; };
+  const snap = (versao: number, w = W) => criarSnapshotAlocacao(versao, [{ carteira: w, tier: "PRO", quantidade: 1, origem: "curada" }]);
 
-  it("abrir allowlist sem snapshot congelado é recusado", () => {
-    const { adm } = mk();
-    const p = adm.solicitar({ tipo: "transicao", evento: "abrir_allowlist" }, "op1");
-    expect(adm.confirmar(p.id, "op1", p.frase)).toEqual({ ok: false, erro: "snapshot_nao_congelado" });
-  });
-  it("congelar snapshot → abrir allowlist → pausar → retomar; cada passo exige frase", () => {
+  it("operador fora da lista e pedido sem motivo são recusados e auditados", () => {
     const { adm, ev } = mk();
-    const snap = criarSnapshot(1, ["aaa111", "bbb222"], norm);
-    const c = adm.solicitar({ tipo: "congelar_snapshot", snapshot: snap }, "op1");
-    expect(c.frase).toBe("CONGELAR SNAPSHOT V1");
-    expect(adm.confirmar(c.id, "op1", "congelar snapshot v1")).toEqual({ ok: false, erro: "frase_incorreta" });
-    const c2 = adm.solicitar({ tipo: "congelar_snapshot", snapshot: snap }, "op1");
-    expect(adm.confirmar(c2.id, "op1", c2.frase).ok).toBe(true);
-    expect(adm.snapshot()?.id).toBe(snap.id);
-    const a = adm.solicitar({ tipo: "transicao", evento: "abrir_allowlist" }, "op1");
-    expect(adm.confirmar(a.id, "op1", a.frase)).toEqual({ ok: true, venda: { estado: "allowlist_aberta" } });
-    const p = adm.solicitar({ tipo: "pausar" }, "op1");
-    expect(adm.confirmar(p.id, "op1", "PAUSAR VENDA").ok).toBe(true);
-    const r = adm.solicitar({ tipo: "retomar" }, "op1");
-    expect(adm.confirmar(r.id, "op1", "RETOMAR VENDA")).toEqual({ ok: true, venda: { estado: "allowlist_aberta" } });
-    expect(verificarCadeia(ev.todos())).toEqual({ ok: true });
-    expect(ev.todos().every((x) => x.tipo === "admin_audit")).toBe(true);
+    expect(adm.solicitar({ tipo: "pausar" }, "intruso", MOT)).toEqual({ ok: false, erro: "nao_autorizado" });
+    expect(adm.solicitar({ tipo: "pausar" }, "op1", "curto")).toEqual({ ok: false, erro: "motivo_ausente" });
+    expect(ev.todos().filter((x) => x.dados.evento === "recusado")).toHaveLength(2);
   });
-  it("pedido não pode ser reusado nem usado depois de expirar", () => {
+  it("abrir allowlist sem snapshot congelado é recusado", async () => {
     const { adm, avanca } = mk();
-    const p = adm.solicitar({ tipo: "transicao", evento: "cancelar" }, "op1");
+    const i = ok(adm.solicitar({ tipo: "transicao", evento: "abrir_inscricao" }, "op1", MOT));
+    expect((await adm.confirmar(i.id, "op1", i.frase)).ok).toBe(true);
+    avanca(25);
+    const p = ok(adm.solicitar({ tipo: "transicao", evento: "abrir_allowlist" }, "op1", MOT));
+    expect(await adm.confirmar(p.id, "op1", p.frase)).toEqual({ ok: false, erro: "snapshot_necessario" });
+  });
+  it("inscrição → congelar snapshot → abrir allowlist → pausar → retomar; frase, antes/depois e cadeia íntegra", async () => {
+    const { adm, ev, avanca } = mk();
+    const i = ok(adm.solicitar({ tipo: "transicao", evento: "abrir_inscricao" }, "op1", MOT));
+    await adm.confirmar(i.id, "op1", i.frase);
+    avanca(10);
+    const s1 = snap(1);
+    const c = ok(adm.solicitar({ tipo: "congelar_snapshot", snapshot: s1 }, "op1", MOT));
+    expect(c.frase).toBe("CONGELAR SNAPSHOT V1");
+    expect(await adm.confirmar(c.id, "op1", "congelar snapshot v1")).toEqual({ ok: false, erro: "frase_incorreta" });
+    const c2 = ok(adm.solicitar({ tipo: "congelar_snapshot", snapshot: s1 }, "op1", MOT));
+    const r = ok(await adm.confirmar(c2.id, "op1", c2.frase));
+    expect([r.antes.publico, r.depois.publico]).toEqual(["APPLICATION_OPEN", "ALLOWLIST_FROZEN"]);
+    expect(adm.snapshot()?.id).toBe(s1.id);
+    expect(Object.isFrozen(adm.snapshot())).toBe(true);
+    avanca(10);
+    const a = ok(adm.solicitar({ tipo: "transicao", evento: "abrir_allowlist" }, "op1", MOT));
+    expect(ok(await adm.confirmar(a.id, "op1", a.frase)).depois.publico).toBe("ALLOWLIST_SALE");
+    const p = ok(adm.solicitar({ tipo: "pausar" }, "op1", MOT));
+    expect(ok(await adm.confirmar(p.id, "op1", "PAUSAR VENDA")).depois.publico).toBe("PAUSED");
+    const re = ok(adm.solicitar({ tipo: "retomar" }, "op1", MOT));
+    expect(ok(await adm.confirmar(re.id, "op1", "RETOMAR VENDA")).depois.publico).toBe("ALLOWLIST_SALE");
+    expect(verificarCadeia(ev.todos())).toEqual({ ok: true });
+    const executados = ev.todos().filter((x) => x.dados.evento === "executado");
+    expect(executados.every((x) => typeof x.dados.motivo === "string" && "de" in x.dados && "para" in x.dados && "versao_depois" in x.dados)).toBe(true);
+  });
+  it("pedido não pode ser reusado, nem usado depois de expirar, nem contra estado que mudou (stale)", async () => {
+    const { adm, avanca } = mk();
+    const p = ok(adm.solicitar({ tipo: "transicao", evento: "cancelar" }, "op1", MOT));
     avanca(60_001);
-    expect(adm.confirmar(p.id, "op1", p.frase)).toEqual({ ok: false, erro: "pedido_expirado" });
-    const q = adm.solicitar({ tipo: "transicao", evento: "cancelar" }, "op1");
-    expect(adm.confirmar(q.id, "op1", q.frase).ok).toBe(true);
-    expect(adm.confirmar(q.id, "op1", q.frase)).toEqual({ ok: false, erro: "pedido_usado" });
+    expect(await adm.confirmar(p.id, "op1", p.frase)).toEqual({ ok: false, erro: "pedido_expirado" });
+    const velho = ok(adm.solicitar({ tipo: "transicao", evento: "cancelar" }, "op1", MOT));
+    const novo = ok(adm.solicitar({ tipo: "transicao", evento: "abrir_inscricao" }, "op1", MOT));
+    expect((await adm.confirmar(novo.id, "op1", novo.frase)).ok).toBe(true);
+    expect(await adm.confirmar(velho.id, "op1", velho.frase)).toEqual({ ok: false, erro: "versao_desatualizada" });
+    expect(await adm.confirmar(novo.id, "op1", novo.frase)).toEqual({ ok: false, erro: "pedido_usado" });
   });
-  it("com segundo operador exigido, o solicitante não confirma sozinho", () => {
+  it("com segundo operador exigido, o solicitante não confirma sozinho; outro autorizado confirma", async () => {
     const { adm } = mk(true);
-    const p = adm.solicitar({ tipo: "transicao", evento: "cancelar" }, "op1");
-    expect(adm.confirmar(p.id, "op1", p.frase)).toEqual({ ok: false, erro: "mesmo_operador" });
+    const p = ok(adm.solicitar({ tipo: "transicao", evento: "abrir_inscricao" }, "op1", MOT));
+    expect(await adm.confirmar(p.id, "op1", p.frase)).toEqual({ ok: false, erro: "mesmo_operador" });
+    const q = ok(adm.solicitar({ tipo: "transicao", evento: "abrir_inscricao" }, "op1", MOT));
+    expect(await adm.confirmar(q.id, "intruso", q.frase)).toEqual({ ok: false, erro: "nao_autorizado" });
+    expect((await adm.confirmar(q.id, "op2", q.frase)).ok).toBe(true);
   });
-  it("snapshot congelado não é substituído pela mesma versão", () => {
-    const { adm } = mk();
-    const s1 = criarSnapshot(1, ["aaa111"], norm);
-    const a = adm.solicitar({ tipo: "congelar_snapshot", snapshot: s1 }, "op");
-    adm.confirmar(a.id, "op", a.frase);
-    const outro = criarSnapshot(1, ["zzz999"], norm);
-    const b = adm.solicitar({ tipo: "congelar_snapshot", snapshot: outro }, "op");
-    expect(adm.confirmar(b.id, "op", b.frase)).toEqual({ ok: false, erro: "snapshot_ja_congelado" });
+  it("snapshot congelado não é substituído; snapshot adulterado é recusado", async () => {
+    const { adm, avanca } = mk();
+    const i = ok(adm.solicitar({ tipo: "transicao", evento: "abrir_inscricao" }, "op1", MOT));
+    await adm.confirmar(i.id, "op1", i.frase);
+    avanca(10);
+    const adulterado = { ...snap(1), entradas: [{ carteira: "2".repeat(43), tier: "PRO" as const, quantidade: 1, origem: "curada" as const }] };
+    const x = ok(adm.solicitar({ tipo: "congelar_snapshot", snapshot: adulterado }, "op1", MOT));
+    expect(await adm.confirmar(x.id, "op1", x.frase)).toEqual({ ok: false, erro: "snapshot_adulterado" });
+    const s1 = snap(1);
+    const a = ok(adm.solicitar({ tipo: "congelar_snapshot", snapshot: s1 }, "op1", MOT));
+    expect((await adm.confirmar(a.id, "op1", a.frase)).ok).toBe(true);
+    const b = ok(adm.solicitar({ tipo: "congelar_snapshot", snapshot: snap(2, "3".repeat(43)) }, "op1", MOT));
+    expect(await adm.confirmar(b.id, "op1", b.frase)).toEqual({ ok: false, erro: "snapshot_ja_congelado" });
     expect(adm.snapshot()?.id).toBe(s1.id);
   });
 });
@@ -199,19 +240,23 @@ describe("evidência: imutável e à prova de adulteração", () => {
 });
 
 describe("telemetria: lista fechada de campos, sem PII", () => {
-  it("os 11 eventos exigidos existem", () => {
-    expect([...EVENTOS].sort()).toEqual(["admin_pause_requested", "allowlist_verified", "eligibility_checked", "mint_intent_created", "sale_state_viewed", "sold_out_seen", "tx_confirmed", "tx_failed", "tx_submitted", "wallet_connected", "wallet_prompted"]);
+  it("os 17 eventos exigidos (+2 operacionais) existem", () => {
+    for (const e of ["founders_page_view", "tier_view", "whitelist_start", "whitelist_complete", "email_verified", "wallet_connected", "wallet_signed", "eligibility_checked", "tier_preference_selected", "sale_status_view", "purchase_intent", "wallet_prompt", "tx_submitted", "tx_confirmed", "tx_failed", "sold_out_view", "post_purchase_onboarding"]) expect(EVENTOS).toContain(e);
+    expect(EVENTOS).toHaveLength(19);
   });
   it("evento válido passa", () => {
     expect(validarEvento({ nome: "tx_confirmed", sessao: H16, intencao_hash: H64, tx_hash_ref: H64, duracao_ms: 1200 }).ok).toBe(true);
-    expect(validarEvento({ nome: "sale_state_viewed", estado_ui: "SOLD_OUT" }).ok).toBe(true);
+    expect(validarEvento({ nome: "sale_status_view", estado_ui: "SOLD_OUT" }).ok).toBe(true);
+    expect(validarEvento({ nome: "tier_preference_selected", inscricao_hash: H64, tier: "PILOT" }).ok).toBe(true);
   });
   it.each([
     [{ nome: "wallet_connected", carteira: "0x" + "1".repeat(40) }, "campo_nao_permitido:carteira"],
     [{ nome: "wallet_connected", carteira_hash: "1".repeat(40) }, "tipo:carteira_hash"],
     [{ nome: "tx_failed", intencao_hash: H64, codigo: "user@example.com" }, "tipo:codigo"],
     [{ nome: "tx_failed", intencao_hash: H64, codigo: "0x" + "a".repeat(40) }, "tipo:codigo"],
-    [{ nome: "sale_state_viewed", estado_ui: "MINTED_OK" }, "tipo:estado_ui"],
+    [{ nome: "sale_status_view", estado_ui: "MINTED_OK" }, "tipo:estado_ui"],
+    [{ nome: "tier_view", tier: "GOLD" }, "tipo:tier"],
+    [{ nome: "whitelist_complete", inscricao_hash: H64, email: "a@b.co" }, "campo_nao_permitido:email"],
     [{ nome: "evento_novo" }, "evento_desconhecido"],
   ])("recusa %o", (ev, erro) => {
     expect(validarEvento(ev)).toEqual({ ok: false, erro });

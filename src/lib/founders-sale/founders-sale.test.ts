@@ -17,12 +17,12 @@ describe("máquina de estados da venda", () => {
     const r = transicionar(v, e); if (!r.ok) throw new Error(`${e}@${v.estado}:${r.erro}`); return r.venda;
   }, { estado: "rascunho" });
 
-  it("caminho feliz: rascunho → agendada → allowlist → pública → esgotada", () => {
-    expect(seq(["agendar", "abrir_allowlist", "abrir_publica", "esgotar"]).estado).toBe("esgotada");
+  it("caminho feliz: rascunho → inscrição → allowlist congelada → venda allowlist → pública → esgotada", () => {
+    expect(seq(["abrir_inscricao", "congelar_allowlist", "abrir_allowlist", "abrir_publica", "esgotar"]).estado).toBe("esgotada");
   });
 
   it("pausar lembra para onde voltar; pausada não aceita reserva", () => {
-    const p = seq(["agendar", "abrir_publica", "pausar"]);
+    const p = seq(["abrir_inscricao", "congelar_allowlist", "abrir_allowlist", "abrir_publica", "pausar"]);
     expect(p).toEqual({ estado: "pausada", antesDaPausa: "publica_aberta" });
     expect(aceitaReserva(p)).toBe(false);
     const r = transicionar(p, "retomar");
@@ -31,9 +31,10 @@ describe("máquina de estados da venda", () => {
 
   it("transições proibidas e estados terminais", () => {
     expect(transicionar({ estado: "rascunho" }, "abrir_publica")).toEqual({ ok: false, erro: "transicao_proibida" });
-    expect(transicionar({ estado: "agendada" }, "retomar")).toEqual({ ok: false, erro: "transicao_proibida" });
+    expect(transicionar({ estado: "inscricao_aberta" }, "retomar")).toEqual({ ok: false, erro: "transicao_proibida" });
+    expect(transicionar({ estado: "inscricao_aberta" }, "abrir_allowlist")).toEqual({ ok: false, erro: "transicao_proibida" }); // sem congelar = sem venda
     for (const t of ["esgotada", "encerrada", "cancelada"] as const) {
-      expect(transicionar({ estado: t }, "agendar")).toEqual({ ok: false, erro: "estado_terminal" });
+      expect(transicionar({ estado: t }, "abrir_inscricao")).toEqual({ ok: false, erro: "estado_terminal" });
     }
     expect(transicionar({ estado: "publica_aberta" }, "cancelar").ok).toBe(false); // cancelar com venda aberta exige pausar antes
   });

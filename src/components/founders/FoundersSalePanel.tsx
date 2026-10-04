@@ -3,7 +3,8 @@
 import { useId } from "react";
 import {
   Crown, Clock, Hourglass, ShieldCheck, ShieldX, ShieldQuestion, PauseCircle,
-  PackageX, Flag, Loader2, Wallet, Send, CheckCircle2, XCircle, Sparkles,
+  PackageX, Flag, Loader2, Wallet, Send, CheckCircle2, XCircle, Sparkles, ClipboardList, Scale, Ban, Network,
+  CircleDollarSign, ShieldAlert, HelpCircle,
 } from "lucide-react";
 import { useT, type MessageKey } from "@/lib/i18n";
 import type { EstadoUI, VisaoProgresso, VisaoAlocacao } from "@/lib/founders-sale/visao";
@@ -34,7 +35,9 @@ export interface FoundersSalePanelProps {
 }
 
 const ICONE: Record<EstadoUI, React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>> = {
-  COMING_SOON: Sparkles, ALLOWLIST_CHECK: ShieldQuestion, ELIGIBLE: ShieldCheck, NOT_ELIGIBLE: ShieldX,
+  COMING_SOON: Sparkles, APPLICATION_OPEN: ClipboardList, ELIGIBILITY_PENDING: Scale, WALLET_LIMIT_REACHED: Ban,
+  WRONG_NETWORK: Network, PRICE_UNAVAILABLE: CircleDollarSign, CONFIG_INVALID: ShieldAlert, UNKNOWN_STATE: HelpCircle,
+  ALLOWLIST_CHECK: ShieldQuestion, ELIGIBLE: ShieldCheck, NOT_ELIGIBLE: ShieldX,
   SALE_NOT_STARTED: Hourglass, SALE_ACTIVE: Crown, PAUSED: PauseCircle, SOLD_OUT: PackageX, ENDED: Flag,
   TRANSACTION_PREPARING: Loader2, WALLET_CONFIRMATION: Wallet, TRANSACTION_PENDING: Send,
   TRANSACTION_CONFIRMED: CheckCircle2, TRANSACTION_FAILED: XCircle,
@@ -42,7 +45,9 @@ const ICONE: Record<EstadoUI, React.ComponentType<{ className?: string; "aria-hi
 
 type Tom = "gold" | "violet" | "cyan" | "green" | "red" | "ink";
 const TOM: Record<EstadoUI, Tom> = {
-  COMING_SOON: "violet", ALLOWLIST_CHECK: "cyan", ELIGIBLE: "green", NOT_ELIGIBLE: "red",
+  COMING_SOON: "violet", APPLICATION_OPEN: "violet", ELIGIBILITY_PENDING: "ink", WALLET_LIMIT_REACHED: "ink",
+  WRONG_NETWORK: "red", PRICE_UNAVAILABLE: "red", CONFIG_INVALID: "red", UNKNOWN_STATE: "ink",
+  ALLOWLIST_CHECK: "cyan", ELIGIBLE: "green", NOT_ELIGIBLE: "red",
   SALE_NOT_STARTED: "violet", SALE_ACTIVE: "gold", PAUSED: "ink", SOLD_OUT: "ink", ENDED: "ink",
   TRANSACTION_PREPARING: "cyan", WALLET_CONFIRMATION: "cyan", TRANSACTION_PENDING: "cyan",
   TRANSACTION_CONFIRMED: "green", TRANSACTION_FAILED: "red",

@@ -1,19 +1,22 @@
 /**
  * MÁQUINA DE ESTADOS DA VENDA FOUNDERS — pura, sem relógio, sem rede.
  *
- * Independente de decisão: os HORÁRIOS e as FASES concretas são do dono
- * (`docs/PLANO-FOUNDERS-NFT-SALE-READINESS.md` §2). Aqui só existe a matriz
- * de transições permitidas e a regra de que pausar lembra para onde voltar.
+ * Fluxo aprovado (OD-NFT-07, 04/10/2026), um passo por vez, sem atalho:
+ *   rascunho (COMING_SOON) → inscricao_aberta (APPLICATION_OPEN) → allowlist_congelada (ALLOWLIST_FROZEN)
+ *   → allowlist_aberta (ALLOWLIST_SALE) → publica_aberta (PUBLIC_SALE) → esgotada (SOLD_OUT) / encerrada (ENDED)
+ * `pausada` (PAUSED) só a partir de um estado de VENDA ativa e lembra para onde voltar.
+ * `cancelada` só antes da venda abrir ou em pausa; na UI pública vira ENDED.
  *
- * `NFT_REAL_SALE=OFF`: nada aqui abre venda real; não há rota que use isto.
+ * Os HORÁRIOS não moram aqui (`autoridade.ts` aplica relógio do servidor e versão). Esta matriz é a única
+ * fonte das transições permitidas. `NFT_REAL_SALE=OFF`: nada aqui fala com chain.
  */
 export type EstadoVenda =
-  | "rascunho" | "agendada" | "allowlist_aberta" | "publica_aberta"
+  | "rascunho" | "inscricao_aberta" | "allowlist_congelada" | "allowlist_aberta" | "publica_aberta"
   | "pausada" | "esgotada" | "encerrada" | "cancelada";
 
 export type EventoVenda =
-  | "agendar" | "abrir_allowlist" | "abrir_publica" | "pausar" | "retomar"
-  | "esgotar" | "encerrar" | "cancelar";
+  | "abrir_inscricao" | "congelar_allowlist" | "abrir_allowlist" | "abrir_publica"
+  | "pausar" | "retomar" | "esgotar" | "encerrar" | "cancelar";
 
 export interface Venda {
   estado: EstadoVenda;
@@ -21,18 +24,32 @@ export interface Venda {
   antesDaPausa?: "allowlist_aberta" | "publica_aberta";
 }
 
+export const ESTADOS_PUBLICOS = [
+  "COMING_SOON", "APPLICATION_OPEN", "ALLOWLIST_FROZEN", "ALLOWLIST_SALE", "PUBLIC_SALE",
+  "PAUSED", "SOLD_OUT", "ENDED",
+] as const;
+export type EstadoPublico = (typeof ESTADOS_PUBLICOS)[number];
+
+const PUBLICO: Record<EstadoVenda, EstadoPublico> = {
+  rascunho: "COMING_SOON", inscricao_aberta: "APPLICATION_OPEN", allowlist_congelada: "ALLOWLIST_FROZEN",
+  allowlist_aberta: "ALLOWLIST_SALE", publica_aberta: "PUBLIC_SALE", pausada: "PAUSED",
+  esgotada: "SOLD_OUT", encerrada: "ENDED", cancelada: "ENDED",
+};
+export const estadoPublico = (v: Venda): EstadoPublico => PUBLICO[v.estado];
+
 const ABERTOS = new Set<EstadoVenda>(["allowlist_aberta", "publica_aberta"]);
 const TERMINAIS = new Set<EstadoVenda>(["esgotada", "encerrada", "cancelada"]);
 
 const MATRIZ: Record<EventoVenda, Partial<Record<EstadoVenda, EstadoVenda>>> = {
-  agendar:         { rascunho: "agendada" },
-  abrir_allowlist: { agendada: "allowlist_aberta" },
-  abrir_publica:   { agendada: "publica_aberta", allowlist_aberta: "publica_aberta" },
-  pausar:          { allowlist_aberta: "pausada", publica_aberta: "pausada" },
-  retomar:         {},
-  esgotar:         { allowlist_aberta: "esgotada", publica_aberta: "esgotada", pausada: "esgotada" },
-  encerrar:        { allowlist_aberta: "encerrada", publica_aberta: "encerrada", pausada: "encerrada" },
-  cancelar:        { rascunho: "cancelada", agendada: "cancelada", pausada: "cancelada" },
+  abrir_inscricao:    { rascunho: "inscricao_aberta" },
+  congelar_allowlist: { inscricao_aberta: "allowlist_congelada" },
+  abrir_allowlist:    { allowlist_congelada: "allowlist_aberta" },
+  abrir_publica:      { allowlist_aberta: "publica_aberta" },
+  pausar:             { allowlist_aberta: "pausada", publica_aberta: "pausada" },
+  retomar:            {},
+  esgotar:            { allowlist_aberta: "esgotada", publica_aberta: "esgotada", pausada: "esgotada" },
+  encerrar:           { allowlist_aberta: "encerrada", publica_aberta: "encerrada", pausada: "encerrada" },
+  cancelar:           { rascunho: "cancelada", inscricao_aberta: "cancelada", allowlist_congelada: "cancelada", pausada: "cancelada" },
 };
 
 export type ResultadoTransicao =
@@ -57,7 +74,9 @@ export function aceitaReserva(v: Venda): boolean {
   return ABERTOS.has(v.estado);
 }
 
-/** Em `allowlist_aberta`, só quem está na allowlist; em `publica_aberta`, qualquer um. */
+/** Em `allowlist_aberta`, só quem está no snapshot congelado; em `publica_aberta`, qualquer carteira elegível. */
 export function exigeAllowlist(v: Venda): boolean {
   return v.estado === "allowlist_aberta";
 }
+
+export const ehTerminal = (v: Venda): boolean => TERMINAIS.has(v.estado);

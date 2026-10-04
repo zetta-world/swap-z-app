@@ -25,10 +25,19 @@ const A_DESC = visaoAlocacao({ alocacao: null, usado: null, elegibilidade: "desc
 const A_VERIF = visaoAlocacao({ alocacao: null, usado: null, elegibilidade: "verificando", prova: "verificando" });
 const A_OK   = visaoAlocacao({ alocacao: 2, usado: 0, elegibilidade: "elegivel", prova: "valida" });
 const A_USO  = visaoAlocacao({ alocacao: 2, usado: 1, elegibilidade: "elegivel", prova: "valida" });
+const A_PJ   = visaoAlocacao({ alocacao: null, usado: null, elegibilidade: "pendente_juridico", prova: "ausente" });
+const A_LIM  = visaoAlocacao({ alocacao: 1, usado: 1, elegibilidade: "elegivel", prova: "valida" });
 const A_NAO  = visaoAlocacao({ alocacao: 0, usado: 0, elegibilidade: "nao_elegivel", prova: "invalida" });
 
 export const GALERIA: Readonly<Record<EstadoUI, Omit<FoundersSalePanelProps, "estado">>> = {
   COMING_SOON:           { contagem: semHora, progresso: P_INDISP, alocacao: A_DESC },
+  APPLICATION_OPEN:      { contagem: antes,   progresso: P_INDISP, alocacao: A_DESC },
+  ELIGIBILITY_PENDING:   { contagem: durante, progresso: P_OK, alocacao: A_PJ },
+  WALLET_LIMIT_REACHED:  { contagem: durante, progresso: P_OK, alocacao: A_LIM },
+  WRONG_NETWORK:         { contagem: durante, progresso: P_OK, alocacao: A_OK },
+  PRICE_UNAVAILABLE:     { contagem: durante, progresso: P_OK, alocacao: A_OK },
+  CONFIG_INVALID:        { contagem: semHora, progresso: P_INDISP, alocacao: A_DESC },
+  UNKNOWN_STATE:         { contagem: semHora, progresso: P_INDISP, alocacao: A_DESC },
   ALLOWLIST_CHECK:       { contagem: durante, progresso: P_OK, alocacao: A_VERIF },
   ELIGIBLE:              { contagem: durante, progresso: P_OK, alocacao: A_OK },
   NOT_ELIGIBLE:          { contagem: durante, progresso: P_OK, alocacao: A_NAO },

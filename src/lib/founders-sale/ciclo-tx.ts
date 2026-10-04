@@ -32,3 +32,15 @@ export function proximoEstado(atual: EstadoTx, e: EventoTx): EstadoTx {
 export function terminal(e: EstadoTx): boolean {
   return e === "confirmada";
 }
+
+/** Estados PÚBLICOS da transação (contrato com a UI/telemetria). `rejeitada` = o usuário cancelou na carteira. */
+export const ESTADOS_TX_PUBLICOS = [
+  "IDLE", "PREPARING", "WALLET_CONFIRMATION", "SUBMITTED", "PENDING", "CONFIRMED", "FAILED", "EXPIRED", "CANCELLED",
+] as const;
+export type EstadoTxPublico = (typeof ESTADOS_TX_PUBLICOS)[number];
+
+const TX_PUBLICO: Record<EstadoTx, EstadoTxPublico> = {
+  ocioso: "IDLE", preparando: "PREPARING", assinando: "WALLET_CONFIRMATION", enviada: "SUBMITTED",
+  confirmando: "PENDING", confirmada: "CONFIRMED", falhou: "FAILED", expirada: "EXPIRED", rejeitada: "CANCELLED",
+};
+export const estadoTxPublico = (e: EstadoTx): EstadoTxPublico => TX_PUBLICO[e];
