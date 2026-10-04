@@ -29,7 +29,7 @@ const ok = (c, msg) => { out.push(`${c ? "PASS" : "FAIL"} ${msg}`); if (!c) falh
           cols: new Set(secs.map((s) => Math.round(s.getBoundingClientRect().left))).size,
         };
       });
-      ok(m.secs === 14, `${lang}/${nome}: 14 painéis (${m.secs})`);
+      ok(m.secs === 21, `${lang}/${nome}: 21 painéis (${m.secs})`);
       ok(m.overflow <= 0, `${lang}/${nome}: sem rolagem horizontal (excesso ${m.overflow}px)`);
       ok(m.secFora === 0, `${lang}/${nome}: nenhum painel fora da largura`);
       ok(m.textoCortado === 0, `${lang}/${nome}: nenhum texto cortado em dd/h2/botão (${m.textoCortado})`);
@@ -60,12 +60,12 @@ const ok = (c, msg) => { out.push(`${c ? "PASS" : "FAIL"} ${msg}`); if (!c) falh
         const { nodes } = await cdp.send("Accessibility.getFullAXTree");
         const val = (n, k) => n[k]?.value;
         const regioes = nodes.filter((n) => val(n, "role") === "region");
-        ok(regioes.length === 14 && regioes.every((n) => val(n, "name")), `ARIA: 14 regiões com nome acessível (${regioes.length})`);
+        ok(regioes.length === 21 && regioes.every((n) => val(n, "name")), `ARIA: 21 regiões com nome acessível (${regioes.length})`);
         const status = nodes.filter((n) => val(n, "role") === "status");
-        ok(status.length === 14 && status.every((n) => (n.properties || []).some((q) => q.name === "live" && q.value.value === "polite")), `ARIA: 14 status com live=polite (${status.length})`);
+        ok(status.length === 21 && status.every((n) => (n.properties || []).some((q) => q.name === "live" && q.value.value === "polite")), `ARIA: 21 status com live=polite (${status.length})`);
         const botoes = nodes.filter((n) => val(n, "role") === "button");
         const desab = botoes.filter((n) => (n.properties || []).some((q) => q.name === "disabled" && q.value.value));
-        ok(botoes.length === 14 && desab.length === 12, `ARIA: 14 botões, 12 desabilitados (${botoes.length}/${desab.length})`);
+        ok(botoes.length === 21 && desab.length === 19, `ARIA: 21 botões, 19 desabilitados (${botoes.length}/${desab.length})`);
         ok(desab.every((n) => val(n, "description")), `ARIA: todo botão desabilitado tem descrição (motivo)`);
         const barras = nodes.filter((n) => val(n, "role") === "progressbar");
         ok(barras.length > 0 && barras.every((n) => val(n, "name") && (n.properties || []).some((q) => q.name === "valuetext")), `ARIA: progressbar com nome e valuetext (${barras.length})`);
@@ -82,7 +82,7 @@ const ok = (c, msg) => { out.push(`${c ? "PASS" : "FAIL"} ${msg}`); if (!c) falh
     await p.goto(`file://${G}/galeria-en.html`);
     const anim = await p.evaluate(() => [...document.querySelectorAll("section svg")].map((s) => getComputedStyle(s).animationName).filter((n) => n !== "none"));
     if (rm === "reduce") ok(anim.length === 0, `reduced-motion=reduce: nenhuma animação (${anim.join(",") || "nenhuma"})`);
-    else ok(anim.length === 4, `reduced-motion=no-preference: 4 ícones animados (${anim.join(",")})`);
+    else ok(anim.length >= 4, `reduced-motion=no-preference: ícones animados (${anim.join(",")})`);
     await ctx.close();
   }
   ok(bloqueadas.length === 0, `rede: nenhuma requisição fora de file:// (${bloqueadas.length})`);

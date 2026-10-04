@@ -27,7 +27,7 @@ function render(estado: (typeof ESTADOS_DA_GALERIA)[number]) {
   return renderToStaticMarkup(createElement(FoundersSalePanel, { estado, ...GALERIA[estado] }));
 }
 
-describe("FoundersSalePanel — 14 estados", () => {
+describe("FoundersSalePanel — todos os estados de UI", () => {
   it("renderiza todos os estados em todas as línguas sem chave crua", () => {
     for (const lang of LINGUAS) {
       useUI.setState({ lang });

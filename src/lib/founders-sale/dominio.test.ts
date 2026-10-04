@@ -368,3 +368,18 @@ describe("funil: só a partir de eventos válidos", () => {
     expect(f.eventosDescartados).toBe(1);
   });
 });
+
+describe("tesouraria: só verificação, signatários pendentes", () => {
+  it("config aprovada → PENDING_OWNER; declarado × observado detecta divergência; OK só com tudo igual", async () => {
+    const { verificarTesouraria } = await import("./tesouraria");
+    expect(verificarTesouraria(CONFIG_APROVADA, null)).toMatchObject({ estado: "PENDING_OWNER" });
+    const donos = [carteiraSintetica("s1"), carteiraSintetica("s2"), carteiraSintetica("s3")];
+    const end = carteiraSintetica("multisig-teste");
+    const cfg: ConfigVenda = { ...CONFIG_APROVADA, tesouraria: { ...CONFIG_APROVADA.tesouraria,
+      signatarios: configurado(donos, "TESTE"), endereco: configurado(end, "TESTE"), politicaConversao: configurado({ fracao: 0.5, gatilho: "TESTE" }, "TESTE") } };
+    expect(verificarTesouraria(cfg, null)).toMatchObject({ estado: "PENDING_EXTERNAL" });
+    expect(verificarTesouraria(cfg, { endereco: end, donos, limiar: 2, simulacaoAprovada: true }).estado).toBe("OK");
+    expect(verificarTesouraria(cfg, { endereco: carteiraSintetica("outro"), donos, limiar: 1, simulacaoAprovada: false })).toEqual({ estado: "DIVERGENTE", diferencas: ["endereco", "limiar", "simulacao"] });
+    expect(verificarTesouraria(cfg, { endereco: end, donos: donos.slice(0, 2), limiar: 2, simulacaoAprovada: true })).toEqual({ estado: "DIVERGENTE", diferencas: ["donos"] });
+  });
+});

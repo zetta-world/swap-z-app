@@ -32,9 +32,30 @@ describe("founders-sale: isolado de rede, chain e rotas", () => {
     }
   });
 
-  it("nenhuma rota ou página importa founders-sale nem o painel", () => {
-    const usos = arquivos(join(RAIZ, "src/app")).filter((p) => /founders-sale|components\/founders/.test(readFileSync(p, "utf8")));
-    expect(usos).toEqual([]);
+  /**
+   * Única exceção permitida: a rota de PRÉVIA LOCAL atrás de `FOUNDERS_SALE_PREVIEW=1` (decisão de 04/10: a
+   * experiência completa precisa existir localmente; produção não tem a flag → 404). Qualquer outra rota/página
+   * que importe a venda reprova.
+   */
+  const PREVIA = join("src", "app", "(plataforma)", "founders-pass");
+  it("só a rota de prévia (com porta) importa founders-sale ou o painel", () => {
+    const usos = arquivos(join(RAIZ, "src/app"))
+      .filter((p) => /founders-sale|components\/founders/.test(readFileSync(p, "utf8")))
+      .map((p) => p.replace(RAIZ + "/", ""));
+    expect(usos).toEqual([join(PREVIA, "page.tsx")]);
+    const page = readFileSync(join(RAIZ, PREVIA, "page.tsx"), "utf8");
+    expect(page).toMatch(/if \(!previaHabilitada\(\)\) notFound\(\);/);
+    expect(readFileSync(join(RAIZ, PREVIA, "gate.ts"), "utf8")).toMatch(/process\.env\.FOUNDERS_SALE_PREVIEW === "1"/);
+  });
+
+  it("a porta fica FECHADA sem a flag e só abre com o valor exato \"1\"", async () => {
+    const { previaHabilitada } = await import("../../app/(plataforma)/founders-pass/gate");
+    const antes = process.env.FOUNDERS_SALE_PREVIEW;
+    try {
+      delete process.env.FOUNDERS_SALE_PREVIEW; expect(previaHabilitada()).toBe(false);
+      for (const v of ["", "0", "true", "yes", " 1"]) { process.env.FOUNDERS_SALE_PREVIEW = v; expect(previaHabilitada()).toBe(false); }
+      process.env.FOUNDERS_SALE_PREVIEW = "1"; expect(previaHabilitada()).toBe(true);
+    } finally { if (antes === undefined) delete process.env.FOUNDERS_SALE_PREVIEW; else process.env.FOUNDERS_SALE_PREVIEW = antes; }
   });
 
   it("nenhum componente fora de components/founders usa o painel; o painel não fala com rede", () => {

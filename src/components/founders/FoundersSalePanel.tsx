@@ -60,6 +60,11 @@ const TOM_CLASSES: Record<Tom, string> = {
   red:    "border-red/40 bg-red/10 text-red",
   ink:    "border-border bg-bg-3 text-ink-2",
 };
+/** Estados negativos sempre mostram uma próxima ação segura (nunca beco sem saída). */
+export const COM_PROXIMA_ACAO: ReadonlySet<EstadoUI> = new Set([
+  "NOT_ELIGIBLE", "ELIGIBILITY_PENDING", "WALLET_LIMIT_REACHED", "WRONG_NETWORK", "PRICE_UNAVAILABLE",
+  "CONFIG_INVALID", "UNKNOWN_STATE", "TRANSACTION_FAILED", "PAUSED", "SOLD_OUT", "ENDED",
+]);
 const GIRA: ReadonlySet<EstadoUI> = new Set(["TRANSACTION_PREPARING", "ALLOWLIST_CHECK"]);
 const PULSA: ReadonlySet<EstadoUI> = new Set(["TRANSACTION_PENDING", "WALLET_CONFIRMATION"]);
 
@@ -104,6 +109,13 @@ export default function FoundersSalePanel({ estado, contagem, progresso, alocaca
             </span>
           ) : null}
         </div>
+
+        {COM_PROXIMA_ACAO.has(estado) ? (
+          <p className="rounded-xl border border-border-soft bg-bg-2/70 px-3 py-2 font-sans text-sm text-ink-1">
+            <span className="font-mono text-[10px] tracking-widest uppercase text-ink-3 block">{t("founders.pg_nextAction")}</span>
+            {t(`founders.na_${estado}` as MessageKey)}
+          </p>
+        ) : null}
 
         <Contador contagem={contagem} />
         <Progresso progresso={progresso} />
