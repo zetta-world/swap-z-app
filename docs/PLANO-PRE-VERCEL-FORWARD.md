@@ -64,7 +64,7 @@ Categorias: **A** CAN_DO_NOW_LOCAL · **B** NEEDS_OWNER_DECISION · **C** NEEDS_
 | **PV-A07** | preparo dos gates externos sem aplicar (Vercel, R-02, Resend, DNS, webhook, cron, jurídico, segredos) | Stage 6 | NOT_STARTED | A | — | baixo | não | revisão |
 | **PV-A08** | Founders NFT: fundações independentes de decisão (máquina de estados da venda, allowlist versionada, Merkle com hash injetado, alocação sem oversell, idempotência, provedor de mint falso, testes de corrida/replay) | NFT-BRIEFING, Stage 5 | NOT_STARTED | A | sem chain/preço | baixo | sim | testes |
 | PV-A09 | F-09: `portao.test.ts` aceita import como chamada | AUDIT §5.5 | OPEN_NONBLOCKING | A | — | baixo | sim (teste) | teste |
-| PV-A10 | DOC-STALE-EA: `WHITELIST-FUNDRAISING-DISCOVERY.md` ainda diz "Fase 1 não iniciada" | CURRENT-STATE lacunas | OPEN | A | — | nenhum | não | leitura |
+| PV-A10 | 🟢 feito: banner de status atual em `WHITELIST-FUNDRAISING-DISCOVERY.md` (original intacto) |
 | PV-A11 | F-14: ACL de `admin_kv`, `rate_limits`, `admin_audit_log` (migration nova) | AUDIT §5.5 | OPEN_NONBLOCKING | A | — | médio (caminhos do app) | sim (migration) | SQL + suíte |
 | PV-A12 | EA-BUILD-NEXT-WARN: convenção `middleware`→`proxy` do Next 16 | AUDIT §5.5 | INFO | A | — | médio | sim | build + E2E |
 | PV-A13 | SUPPLY-REST: 36 moderate / 1 low do `npm audit` | AUDIT §5.4 | OPEN_NONBLOCKING | A | — | médio (lock) | sim | suíte + build |
@@ -84,10 +84,10 @@ rodada própria com validação completa). Status de cada item: §3 (atualizado 
 |---|---|
 | PV-A01 | 🟢 feito: `src/lib/release/server-env{.ts,.catalog.json}`, check de auditoria `required_server_env`, `scripts/release/check-env-names.mjs` (contra os nomes vivos: só `CEX_RECOVERY_HMAC_KEY` ausente), testes + mutação |
 | PV-A02 | 🟢 feito: `src/lib/release/runbook-controls.test.ts` (mutação provou que pega RB-02) |
-| PV-A03 | 🟡 parcial: `scripts/release/sql/{fp_v1,structural-summary,history-rows}.sql` + `expected.json`; faltam comparador, driver de forward, verificação de estado e a execução em PG descartável |
-| PV-A04 | 🔴 não iniciado |
-| PV-A05 | 🔴 não iniciado |
-| PV-A06 | 🔴 não iniciado |
-| PV-A07 | 🔴 não iniciado |
-| PV-A08 | 🔴 não iniciado |
+| PV-A03 | 🟢 feito: `scripts/release/{forward-migrations.sh,verify-state.sh,compare-history.mjs,lib/history.mjs,sql/*,expected.json}` + testes; provado em PG descartável a partir do B0 (baseline CONFERE, 55/55 linhas = captura congelada, 11/11 PASS, alvo CONFERE, reexecução só SKIP, exit 1 em divergência) |
+| PV-A04 | 🟢 feito: T16.17h por delta; aviso de modo commit no teste 02. Provado: T16 31/31 em banco vazio **e** povoado; os bytes do C1 falham no povoado (20/31, T16.17h); T15 22/22; O2 7/7 |
+| PV-A05 | 🟢 feito: `-eo pid,args` (erro original reproduzido: "Couldn't find PID field in ps output") |
+| PV-A06 | 🟢 feito: `scripts/preprod/capped-build.sh` (recusa com MemAvailable < 1024 MiB; container com --memory/--memory-swap/heap fixos); usado no build desta rodada |
+| PV-A07 | 🟢 feito: `docs/EXTERNAL-GATES-PREP.md` (R-01, R-02 com geração/instalação/validação/rotação/rollback, re-medição, segredos EA, Resend/DNS, webhook, cron, jurídico) + `CEX_RECOVERY_HMAC_KEY` no catálogo de env do `docs/RUNBOOK.md` |
+| PV-A08 | 🟢 feito (fundações): `src/lib/founders-sale/*` + `docs/PLANO-FOUNDERS-NFT-SALE-READINESS.md`; 24 testes (corrida/oversell, teto, replay, pausa, esgotado, Merkle com 2 hashes, isolamento de rede/rotas). UI, telemetria e persistência: próximos |
 | PV-A10 | 🔴 não iniciado |

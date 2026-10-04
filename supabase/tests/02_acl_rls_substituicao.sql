@@ -1,4 +1,11 @@
 \set ON_ERROR_STOP on
+-- ═══════════════════════════════════════════════════════════════════════════
+-- ⚠️ MODO COMMIT (RR-O-02, L-028/L-031): este arquivo NÃO roda dentro de
+-- BEGIN … ROLLBACK e GRAVA fixtures (ex.: carteira 0xCONC, UUIDs fixos em
+-- cex_execution_intents/cex_fills). SÓ EM BANCO DESCARTÁVEL (cadeia 0001→N).
+-- NUNCA contra produção, staging ou clone que vá ser reutilizado: no ensaio de
+-- 03/10 ele sujou o PROD-CLONE e as fixtures tiveram de ser removidas à mão.
+-- ═══════════════════════════════════════════════════════════════════════════
 -- ── T7: TODA security definer tem search_path fixo ──────────────────────
 do $$
 declare r record; n int := 0;

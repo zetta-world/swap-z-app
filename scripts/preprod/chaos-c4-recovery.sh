@@ -97,7 +97,7 @@ prove_no_background_reconciler() {
     echo "projeto descartável contém runner/reconciliador paralelo" >&2
     exit 2
   fi
-  processes=$(docker top "$APP_CONTAINER" -eo args)
+  processes=$(docker top "$APP_CONTAINER" -eo pid,args)  # HARNESS-001: o Docker exige a coluna pid
   if grep -Eiq '(^|[ /_-])(cron|scheduler|runner|reconciler|reconcile|worker)([ /_-]|$)' <<<"$processes"; then
     echo "APP_CONTAINER contém processo runner/reconciliador paralelo" >&2
     exit 2

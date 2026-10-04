@@ -684,8 +684,10 @@ end $$;
 
 -- ── T16.17 ──────────────────────────────────────────────────────────────────
 do $$
-declare r text; v_id uuid; res jsonb;
+declare r text; v_id uuid; res jsonb; v_eventos_antes int;
 begin
+  -- RR-O-01 (L-028/L-031): conta só os eventos DESTE bloco, para o teste também valer em banco povoado
+  select count(*) into v_eventos_antes from public.early_access_webhook_eventos;
   select signup_id into v_id from public.early_access_verificacoes where token_hash = pg_temp.h('rt2');
   execute 'set local role service_role';
   r := public.early_access_registrar_webhook('msg_evt_1', 'email.bounced', 'resend-msg-123');
@@ -710,7 +712,7 @@ begin
   begin perform public.early_access_registrar_webhook('', 'email.bounced', null); raise exception 'X';
   exception when others then if sqlerrm <> 'early_access_webhook_invalido' then raise exception 'T16.17g: %', sqlerrm; end if; end;
   execute 'reset role';
-  if (select count(*) from public.early_access_webhook_eventos) <> 3 then raise exception 'T16.17h: idempotencia'; end if;
+  if (select count(*) from public.early_access_webhook_eventos) <> v_eventos_antes + 3 then raise exception 'T16.17h: idempotencia'; end if;
   raise notice 'T16.17 OK — webhook: bounce suprime e audita; reentrega duplicado; tipo desconhecido ignorado; sem alvo sem efeito';
 end $$;
 

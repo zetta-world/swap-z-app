@@ -22,6 +22,7 @@
 | `HELIUS_RPC_URL`, `NEXT_PUBLIC_SOLANA_RPC` | RPC Solana | RPC público (lento) |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | Alertas Odin | alertas mudos |
 | `AUTOPILOT_ENC_KEY` | Cripto das credenciais CEX server-side | autopilot background off |
+| `CEX_RECOVERY_HMAC_KEY` | **Obrigatória a partir do alvo `53cd85a`** (L-029, R-02). Chave do HMAC da impressão de credencial CEX (`src/lib/cex/fingerprint.ts`): identidade de conexão e conferência de credencial em `/api/cex/order`, `/api/cex/order/status` e `cex/conexoes`. Aleatória forte, **estável** (trocar muda todas as impressões; ver `docs/EXTERNAL-GATES-PREP.md` §R-02), só server-side, nunca impressa nem versionada | lança `server_configuration_error` — ordens e conexões CEX falham fechado |
 | `LIFI_API_KEY`, `ZEROX_API_KEY`, `TRANSAK_*` | Agregadores/on-ramp | fallbacks/feature off |
 | `QUOTE_GLOBAL_MAX` | Teto GLOBAL de chamadas ao upstream pago (0x/LiFi) por min — backstop de flood distribuído no `/api/quote`; abaixar se ligar WAF/alerta | `3000`/min |
 | `QUOTE_DAILY_MAX` | Teto GLOBAL **por dia** do `/api/quote`. O teto por minuto é backstop de disponibilidade, não de conta: 3000/min sustentados são 4,32 M de chamadas/dia e uma enchente logo abaixo do limite nunca dispara. Falha ABERTO se o banco cair | `250000`/dia |

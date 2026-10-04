@@ -1,5 +1,12 @@
 # WHITELIST + FUNDRAISING READINESS — FASE 0 · DISCOVERY
 
+> ⚠️ **STATUS ATUAL (banner de 04/10/2026, DOC-STALE-EA, L-031) — o cabeçalho abaixo é HISTÓRICO.**
+> A "lista pública" desta discovery virou o **Early Access**: Fase 1 `CERTIFIED_EXACT_SHA`
+> `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` (L-019) e Fase 2 (email double opt-in) `CERTIFIED_EXACT_SHA`
+> `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` (L-027); **não** deployadas; gate público **CLOSED**.
+> Fundraising (`fundraising_*`) segue **não iniciado** (decisão G abaixo). Estado vigente: `docs/START-HERE.md`
+> e `docs/CURRENT-STATE.md`. O texto original segue intacto.
+
 > **Status:** 🟢 Fase 0 (discovery, somente leitura) concluída · 🔴 Fase 1 não iniciada
 > **Data:** 2026-10-01 · **Branch/worktree:** `whitelist-fundraising-readiness-20261001`
 > **Natureza:** inventário + proposta. **Nada aqui é migration, rota ou código.**
