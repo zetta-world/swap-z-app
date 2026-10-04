@@ -1,4 +1,4 @@
-# STRATEGY INTELLIGENCE & FORENSIC LEARNING · 🟡 DOCUMENTADO — NENHUMA MUDANÇA DE ESTRATÉGIA EM EXECUÇÃO
+# STRATEGY INTELLIGENCE & FORENSIC LEARNING · 🟡 DOCUMENTADO + FERRAMENTA DA FASE A PRONTA — NENHUMA MUDANÇA DE ESTRATÉGIA EM EXECUÇÃO
 
 > **Aberto em:** 03/10/2026 · ledger **L-030**.
 > **Status:** `DOCUMENTED` · `NOT_YET_EXECUTING_STRATEGY_CHANGES`.
@@ -207,6 +207,43 @@ O objetivo **não** é "deixar o backtest histórico verde". O objetivo é:
 |---|---|
 | auditoria forense (só leitura) | **feita** (dono, 03/10/2026) |
 | este documento | `DOCUMENTED` |
-| Fases A–G | `NOT_STARTED` |
+| Fase A — **ferramenta** (só leitura) | `TOOLING_READY` (lane B, 04/10/2026) — ver §7. **Execução sobre dados reais: NOT_STARTED** (exige leitura do hospedado = autorização do dono) |
+| Fase B — **esquema** de atribuição | `SCHEMA_READY` (rascunho v0, rótulos só locais) — ver §7 |
+| Fases C–G | `NOT_STARTED` |
 | mudança de estratégia, genoma, parâmetro, threshold, universo | **nenhuma** |
 | `REAL_MONEY_AUTONOMY` · `STRATEGY_CERTIFICATE` · `PILOT_PERMISSION` | `NO` · `NO` · `NO` |
+
+## 7. Ferramenta da Fase A e esquema da Fase B (04/10/2026, lane B — nada executado sobre produção)
+
+| peça | caminho | o que faz |
+|---|---|---|
+| exportação só leitura | `scripts/strategy/exportar.mjs` + `scripts/strategy/sql/exportar.sql` | um único SELECT (JSON) rodado em `BEGIN TRANSACTION READ ONLY … ROLLBACK`; trava estática (`somente-leitura.mjs`) recusa verbo de escrita, multi-comando, `SELECT INTO`, `FOR UPDATE`, funções com efeito; `--alvo hospedado` exige `--dono-autorizou`; credencial nunca em argumento nem na saída |
+| motor de reconciliação | `src/lib/strategy-truth/reconciliacao.ts` | puro, sem import; relatório canônico (`dataset, row_count, identity_key, time_range, authoritative_fields, derived_fields, known_semantic_versions, accounting_total, position_total, delta, classification, confidence, notes`) |
+| relatório | `scripts/strategy/relatorio.mjs` | exportação + eventos datados conhecidos → `.json` + `.md`; não toca banco |
+| atribuição de perda (esquema) | `src/lib/strategy-truth/atribuicao.ts` | taxonomia de 10 rótulos, validador (`destino` só `local_somente`), regra v0 conservadora |
+
+**Conferências:** contador `realized_pnl_usd` × soma das posições (explicações testadas em ordem: vivas →
+só arquivadas → vida inteira → depois de reset datado → depois de troca de semântica datada → padrão de reset
+sem evento = `RESET_EFFECT/LOW`); caixa (mesma fórmula de `paper/reconcile.ts`); wins+losses × alvos/stops
+vivos; `paper_positions → zion_suggestions` (órfãs); rodada 1 arquivada (0017); Celeiro `preco` por
+`fechamento:<id>` × `usd × movimento assinado`, genoma referenciado/ativo; Bancada `n` × operações, concluída
+sem resultado, rodada própria sem `estrategia_id`; Lab run ok ↔ resultado, `net = gross − cost`; mercado
+descritivo (`market_brain` não tem histórico → não serve para regime retroativo).
+
+**Classificação:** `EXPLAINED / VERSIONED_SEMANTICS / ARCHIVAL_EFFECT / RESET_EFFECT / DATA_GAP / UNKNOWN`.
+Nada é consertado; o reparo de carteira continua manual (`admin/api/paper-repair`). `UNKNOWN` é "investigar",
+nunca "corrupção".
+
+**Atribuição v0 — o que NÃO faz:** `low_confidence` e `wrong_regime` só com limiar/regra pré-registrados
+passados de fora (H1/H2 não adotados); `bad_asset`, `late_entry`, `liquidity` nunca atribuídos (falta dado);
+stop sem trajetória posterior = `unknown`. Nenhum rótulo vai para produção.
+
+**Provas (04/10):** 19 testes determinísticos (`strategy-truth.test.ts`); prova viva no banco **descartável**
+com dados **sintéticos**: fingerprint e `pg_stat_user_tables` idênticos antes/depois, escrita no embrulho =
+`25006`, CLI recusa SQL de escrita (exit 65) e hospedado sem autorização (exit 77). Evidência:
+`zswap-local/evidence/pre-vercel-forward-20261003T234200Z/strategy-phase-a/`.
+
+**Próximo passo (do dono):** autorizar a leitura do Supabase hospedado
+(`STRATEGY_PSQL=… node scripts/strategy/exportar.mjs --alvo hospedado --dono-autorizou …`) e fornecer as datas
+reais de reset/troca de semântica que conhecer (`--eventos`). Só então os deltas do FSL-10 (Arbiter, Radar,
+Mistral, Kimi, Self, Hybrid) recebem classificação.
