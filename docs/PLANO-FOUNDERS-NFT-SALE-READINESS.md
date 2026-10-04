@@ -83,6 +83,10 @@ oversell, allowlist híbrida + Merkle, validação de demanda, carteira/chain fa
 404 sem a flag); migration 0071 (provada em banco descartável, NÃO aplicada em produção); suítes E2E/adversarial/caos;
 ensaio local com todas as flags PASS e OVERSELL = 0; runbook `docs/FOUNDERS-SALE-RUNBOOK.md`.
 
+🟢 **L-039 (04/10):** política de tesouraria/capital aprovada (`FOUNDERS-TREASURY-AND-CAPITAL-POLICY.md`), decisões
+OD-04/11/20/21 fechadas e OD-22 parcialmente (papéis), aplicadas no domínio, na página e na migration 0072. Nenhuma
+decisão do dono bloqueia trabalho local; resta jurídico, Vercel, provedores, chain e as identidades dos signatários.
+
 ## 5. O que destrava cada próximo passo
 
 | passo | precisa de |

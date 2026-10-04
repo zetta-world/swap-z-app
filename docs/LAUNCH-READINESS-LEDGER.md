@@ -586,3 +586,33 @@
   `01_ZETTA_WORLD/01_Z-SWAP/Auditorias_e_Rounds/Founders_NFT/` (rclone check 0 diferenças; download de volta idêntico).
 - **Estado:** `FOUNDERS_LOCAL_SALE_READINESS=CLOSED_PASS` · `CURRENT_RELEASE_CANDIDATE=NONE` · lane A intocada
   (`d896ce2`) · nenhum push, merge, deploy, escrita hospedada, e-mail real, tx, mainnet ou dinheiro real.
+
+### L-039 · 2026-10-04 · Founders: política de tesouraria/capital aprovada e decisões do dono fechadas (lane B, NÃO release)
+
+- **Política de capital (APPROVED):** `docs/FOUNDERS-TREASURY-AND-CAPITAL-POLICY.md` (autoritativa) — runway mínimo de
+  **24 meses**, recursos não especulativos, orçamento de referência R$ 4.149.100 em 11 linhas (18,0 / 12,1 / 8,7 / 8,7 /
+  7,2 / 17,4 / 6,0 / 5,8 / 1,9 / 10,8 / 3,4 % — aritmética conferida em código e teste), cascata "runway primeiro",
+  patamares ≈ 2,1 / 2,5 / 3,2 / 4,15 mi, portão do escritório (operacional + razão de negócio + ≥ 18 meses), conversão
+  com princípio aprovado e parâmetros pendentes de análise de risco + contador/jurídico.
+- **Decisões:** OD-04 APPROVED (reserva 30/10/0 = 40, fora dos 2.850, coleção máx. 2.890) · OD-11
+  APPROVED_SUBJECT_TO_LEGAL_AND_TECHNICAL_COMPATIBILITY (2,5 % → tesouraria, nunca benefício) · OD-20 APPROVED ("+30 %" =
+  NON_BINDING_PRICING_GUIDANCE, com evidência) · OD-21 APPROVED (regra v1: 35 %/20 % do supply pago, teto inteiro;
+  700/400 · 263/150 · 35/20) · OD-22 PARTIALLY_CLOSED (multisig 2-de-3, papéis A/B/C; identidades com o dono) · OD-02
+  PENDING_REAL_DEMAND_VALIDATION · OD-08 PENDING_EXTERNAL_READINESS · OD-16/17 PENDING_LEGAL. **UNRESOLVED 0.**
+- **Commits locais (sem push):** `62417b3` docs (política + decisões rev. 4 + varredura) · `40af92f` domínio (reserva
+  divulgada + `LivroDaReserva`, royalty interno, regra de demanda v1, papéis, simulador de conversão, travas de segredo,
+  divulgação na página em 4 línguas) · `de60d74` alocador de capital (`capital.ts`) · `0ae57a0` migration **0072**
+  (preço exibido + versão da regra no sinal de demanda; provada em banco descartável, **não aplicada em produção**).
+- **Achado corrigido antes do commit:** a 1ª versão da cascata reduzia a verba de segurança ao destravar o escritório
+  (não monotônica); agora a cota do escritório fica não alocada até o patamar e o teste exige monotonia em todas as linhas.
+- **Validação (código `0ae57a0`):** diff-check PASS · tsc PASS · lint 0 erros (145 avisos, base) · suíte completa 296
+  arquivos / 4.490 testes PASS · Founders 16 / 227 · build capado PASS · rota OFF 404 / ON 200 com reserva divulgada ·
+  a11y 261/0 · 0072: forward PASS, rerun SKIP, T17/T18/T19 OK · ensaio refeito: todas as flags PASS, **OVERSOLD = 0**.
+- **Pendentes:** dono — identidades dos signatários · preço final após coleta real · data após prontidão externa ·
+  jurídico — OD-16/17, Termos/Privacidade, consentimento, royalty, parâmetros de conversão, gross-up do CEO · Vercel ·
+  provedores · chain (multisig, coleção, compatibilidade de royalty, snapshot real).
+- **Evidência:** `zswap-local/evidence/founders-capital-policy-and-decision-closure-20261004T232957Z/` (13 docs + raw,
+  MANIFEST 35 PASS, SECRET-SCAN PASS) · `.tar.gz` sha256 `1107d27d4abc69c1efb927f106e177e7b2a304924a95af338bd39429db76c3ae`
+  · Drive `01_ZETTA_WORLD/01_Z-SWAP/Auditorias_e_Rounds/Founders_NFT/` (rclone check 0 diferenças; download idêntico).
+- **Estado:** `FOUNDERS_CAPITAL_AND_LOCAL_DECISIONS_CLOSED` · `CURRENT_RELEASE_CANDIDATE=NONE` · lane A intocada
+  (`d896ce2`) · nenhum push, merge, deploy, escrita hospedada, e-mail real, tx, mainnet ou dinheiro real.
