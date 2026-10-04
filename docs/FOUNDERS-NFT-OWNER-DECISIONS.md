@@ -50,7 +50,7 @@ PAID_SALE_SUPPLY_TOTAL=2850       # substitui 1.500/500/50 na proposta comercial
 | 16 | jurisdição/geoblock/KYC | **DEFERRED** (jurídico) | — |
 | 17 | reembolso/cancelamento (texto público) | **DEFERRED** (jurídico) | — |
 | 18 | utilidades no lançamento | **APPROVED** | grupo A (premium por tier, desconto de taxa, badge) + grupo B como roadmap sem data; nada do grupo C |
-| 19 | copy ao vivo em conflito | **APPROVED** | neutralizar — texto pronto em `FOUNDERS-NFT-COPY-CORRECTION.md`; **aplicação pendente** (está em código de produto; esta rodada é só docs) |
+| 19 | copy ao vivo em conflito | **APPROVED** | neutralizar — texto de `FOUNDERS-NFT-COPY-CORRECTION.md` **aplicado na lane B** (`a8378d9`, L-038) com guardas de regressão; levar ao release exige C1 + recert |
 | 20 | relação preço do NFT × planos mensais (+30%) | **UNRESOLVED** (novo) | ver cartão abaixo |
 | 21 | critérios de aceitação da validação de demanda | **UNRESOLVED** (novo) | ver cartão abaixo |
 | 22 | signatários da tesouraria e números da política de conversão | **UNRESOLVED** (novo) | ver cartão abaixo |

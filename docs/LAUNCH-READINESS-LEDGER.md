@@ -556,3 +556,33 @@
   supply/preços antigos (`plans.ts`).
 - **Estado:** só docs; nenhuma implementação; `CURRENT_RELEASE_CANDIDATE=NONE`; lane A intocada; nenhum push, merge,
   deploy, escrita hospedada, email real, mainnet ou dinheiro real.
+
+### L-038 · 2026-10-04 · Founders NFT: prontidão LOCAL da venda fechada (lane B, NÃO release)
+
+- **Implementado e testado (lane B, commits locais, sem push):** `a8378d9` copy corrigida (OD-NFT-19) + preço público
+  "Pricing being finalized" + guardas · `7921f8a` domínio `src/lib/founders-sale/` (config aprovada como dado e
+  pendências como estado, máquina de estados autoritativa, preço USD→SOL com congelamento por fase, estoque/reservas,
+  allowlist híbrida + Merkle, validação de demanda, carteira/chain falsas, admin de dois passos, benefícios 36 meses,
+  telemetria sem PII, funil) · `d601a99` página `/founders-pass` (17 seções, 4 línguas, a11y 261/0) atrás de
+  `FOUNDERS_SALE_PREVIEW=1` + verificador de tesouraria · `beeeb19` migration **0071** (snapshot congelado imutável,
+  sinais de demanda com cascata LGPD, trilha append-only; provada em banco descartável, **não aplicada em produção**) ·
+  `8c8f150` ensaio de flags + `docs/FOUNDERS-SALE-RUNBOOK.md` · `d9f10a4` **defeito achado e corrigido:** com a flag
+  desligada a rota respondia corpo 404 com **status 200** (o `loading.tsx` de `(plataforma)` começava a transmitir antes
+  do `notFound()`); movida para o grupo `(previa)` sem fronteira de loading, provado em `next start` (OFF 404 · ON 200)
+  · `fe49b6d` marcos de progresso 0/25/50/75/99/última/100 %.
+- **Validação (código `fe49b6d`):** diff-check PASS · tsc PASS · lint 0 erros (145 avisos, base) · suíte completa 294
+  arquivos / 4.449 testes PASS · Founders 14 arquivos / 186 · build capado PASS · adversarial 14 · E2E 4 · caos 10 ·
+  ensaio: todas as flags PASS, **OVERSELL = 0**.
+- **Status de negócio:** `PRICE_STATUS=PROVISIONAL_FOR_DEMAND_VALIDATION` · `DEMAND_VALIDATION_STATUS=PENDING_OWNER_THRESHOLD`
+  · supply pago 2.850 · cenário bruto máximo US$ 796.250 (não previsão).
+- **Pendente do dono (7):** OD-NFT-02 preço FINAL + fonte SOL/USD · 04 reserva · 08 datas · 11 royalty % · 20 plano
+  mensal · 21 limiares de demanda · 22 signatários/conversão. **Jurídico:** OD-NFT-16 jurisdição/KYC · 17 reembolso e
+  divulgação ao consumidor · Termos/Privacidade · consentimento dos sinais de demanda · revisão da copy final.
+  **Vercel:** deploy da página/rotas, admin hospedado, adapter da 0071. **Mainnet:** programa/coleção, multisig 2-de-3,
+  snapshot de preço real. **Provedores:** e-mail/DNS, RPC/DAS, wallet adapter, bot.
+- **Evidência:** `zswap-local/evidence/founders-nft-local-readiness-20261004T192353Z/` (24 docs + raw, MANIFEST 45
+  arquivos PASS, SECRET-SCAN PASS) · arquivo `.tar.gz` sha256
+  `1a30466ab2f6136c4e406f0facfbfdebe2a548b7e8f37c98efad0a67417ffa6b` · Drive
+  `01_ZETTA_WORLD/01_Z-SWAP/Auditorias_e_Rounds/Founders_NFT/` (rclone check 0 diferenças; download de volta idêntico).
+- **Estado:** `FOUNDERS_LOCAL_SALE_READINESS=CLOSED_PASS` · `CURRENT_RELEASE_CANDIDATE=NONE` · lane A intocada
+  (`d896ce2`) · nenhum push, merge, deploy, escrita hospedada, e-mail real, tx, mainnet ou dinheiro real.

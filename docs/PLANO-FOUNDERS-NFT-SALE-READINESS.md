@@ -1,4 +1,4 @@
-# FOUNDERS NFT SALE READINESS — WHITELIST, SALE ENGINE & LAUNCH EXPERIENCE · 🟡 FUNDAÇÕES LOCAIS (lane B)
+# FOUNDERS NFT SALE READINESS — WHITELIST, SALE ENGINE & LAUNCH EXPERIENCE · 🟢 PRONTIDÃO LOCAL FECHADA (lane B) · 🟡 externos pendentes
 
 > **Aberto em:** 04/10/2026, lane B `pre-vercel-forward-20261003T234200Z` (L-031, PV-A08).
 > **Não é feature nova:** é o item 5.4 de `docs/POLISH-PLAN.md` ("coleção NFT + mint UI"), com o modelo de
@@ -74,17 +74,22 @@ Resultado em 04/10 (lane B): **41 PASS / 0 FAIL**; evidência e screenshots em
 `components/founders`, se outro componente usar o painel, ou se o painel fizer chamada de rede. A prévia é
 gerada fora do app (HTML estático), de propósito: nada disso vira rota antes das decisões do §2.
 
-## 4. Estado do trabalho independente de decisão (04/10)
+## 4. Estado do trabalho independente de decisão (04/10, rodada L-038)
 
-🟢 feito localmente: esqueleto de UI (14 estados), contagem, progresso, alocação, segurança do admin, telemetria,
-formato de evidência, acessibilidade/responsivo (§3). Nada disso está em rota. O que sobra **depende do dono**
-(§2) ou de provedor externo (carteira/chain/analytics) — ver §5.
+🟢 **feito e testado localmente** (L-038): correção de copy + guardas; modelo de domínio completo
+(`src/lib/founders-sale/`: config, máquina de estados autoritativa, preço com congelamento, estoque/reservas sem
+oversell, allowlist híbrida + Merkle, validação de demanda, carteira/chain falsas, admin de dois passos, benefícios
+36 meses, telemetria, funil, tesouraria); página `/founders-pass` com 17 seções (atrás de `FOUNDERS_SALE_PREVIEW=1`,
+404 sem a flag); migration 0071 (provada em banco descartável, NÃO aplicada em produção); suítes E2E/adversarial/caos;
+ensaio local com todas as flags PASS e OVERSELL = 0; runbook `docs/FOUNDERS-SALE-RUNBOOK.md`.
 
 ## 5. O que destrava cada próximo passo
 
 | passo | precisa de |
 |---|---|
-| persistência (migration de reservas/allowlist) | decisão de elegibilidade + tetos; depois vira trabalho A |
-| integração com carteira/chain | §7.7 chain |
-| preço/pagamento | §7.2 preço e moeda + tesouraria |
-| mint real | tudo acima + revisão legal + autorização do dono (categoria E) |
+| preço FINAL | pacote de demanda PASS + limiares do dono (OD-NFT-21) + OD-NFT-02 |
+| reserva / royalty % / tesouraria | OD-NFT-04 · OD-NFT-11 · OD-NFT-20/22 (signatários, conversão) |
+| coleta de sinais de demanda (adapter 0071) | texto de consentimento aprovado (jurídico) + rotas hospedadas (Vercel) |
+| página pública | termos/privacidade aprovados, OD-NFT-16/17 (jurídico) + deploy autorizado |
+| integração com carteira/chain | provedores (RPC/DAS, wallet adapter) + programa em devnet |
+| mint real | tudo acima + revisão legal + multisig criada + autorização do dono (categoria E) |

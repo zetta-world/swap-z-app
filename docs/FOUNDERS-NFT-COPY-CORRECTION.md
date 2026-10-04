@@ -1,4 +1,4 @@
-# FOUNDERS NFT — CORREÇÃO DA COPY AO VIVO · 🟡 APROVADA (OD-NFT-19) · APLICAÇÃO PENDENTE
+# FOUNDERS NFT — CORREÇÃO DA COPY AO VIVO · 🟢 APROVADA (OD-NFT-19) · APLICADA NA LANE B (`a8378d9`, L-038)
 
 > 04/10/2026, lane B, só docs. A copy em conflito vive em `src/lib/i18n/messages.ts` (bloco `pricing`, 4 línguas) —
 > **código de produto**. Esta rodada proíbe tocar código (diff de produto vazio), então o texto abaixo fica **pronto
