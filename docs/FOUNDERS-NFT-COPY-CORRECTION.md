@@ -38,7 +38,7 @@
 
 **Não muda nesta correção:** `faq5A` ("not an investment") já está correto; `faq6A` ("SOL-only") coincide com OD-NFT-03;
 preços e supply exibidos vêm de `src/lib/pricing/plans.ts` (ainda 1.500/500/50 e 218/580/4.350) — atualizar é trabalho
-de produto separado. Qualquer menção a "+30%" depende de OD-NFT-20 (não aprovado).
+de produto separado. OD-NFT-20 (APPROVED 04/10): "+30 %" é orientação de preço NÃO vinculante — não entra na copy.
 
 Validação na rodada de produto: teste de paridade das 4 línguas (`quatro-idiomas.test.ts`), busca sem ocorrência de
 `v3`, `first-come`, `July 2026`, `distributed to holders`, `treasury governance` no bloco `pricing`.

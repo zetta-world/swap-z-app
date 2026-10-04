@@ -14,7 +14,7 @@
 | **total** | **2.850** | — | — |
 
 Pagamento em SOL; referência SOL/USD fotografada antes de cada fase e preço em SOL congelado durante a fase
-(mecanismo da referência: **não decidido**). Reserva (OD-NFT-04) **fora** destes números.
+(provedor da referência: **PENDING_EXTERNAL**). Reserva (OD-NFT-04: 30/10/0 = 40, não paga) **fora** destes números.
 
 ## 2. Gross bruto máximo
 
@@ -68,7 +68,8 @@ Leitura:
   pesava.
 - **Racional comercial pretendido (não é fato medido):** preço mais baixo e mais supply para ampliar a base de
   fundadores e a conversão. Isso só vira fato com a validação de demanda (`FOUNDERS-NFT-LAUNCH-FUNNEL.md` §D).
-- **Efeito colateral a decidir:** a regra "plano normal = +30% sobre o holder" deixou de fechar (OD-NFT-20).
+- **Resolvido (OD-NFT-20, 04/10):** "+30 %" é orientação de preço NÃO vinculante; NFT e mensais são produtos separados.
+- **Destino do capital:** `FOUNDERS-TREASURY-AND-CAPITAL-POLICY.md` (autoritativo: runway de 24 meses, cascata, patamares).
 
 ## 5. Riscos do modelo
 

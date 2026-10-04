@@ -9,9 +9,11 @@
 ## 0. Pré-voo (antes de QUALQUER fase)
 
 1. Configuração versionada sem erro (`validarConfig = []`) e **fingerprint publicado** (`fingerprintConfig`).
-2. Pendências zeradas para o que a fase usa (`pendencias(cfg)`): horários (OD-NFT-08), país (OD-NFT-16), reserva com
-   finalidade (OD-NFT-04), royalty % (OD-NFT-11), tesouraria (OD-NFT-22). **Pendência = não abre.**
-3. `PRICE_STATUS=FINAL` só depois do pacote de validação de demanda PASS (OD-NFT-21) e decisão registrada no ledger.
+2. Pendências zeradas para o que a fase usa (`pendencias(cfg)`): data (OD-NFT-08), país (OD-NFT-16), reembolso
+   (OD-NFT-17), signatários e parâmetros de conversão (OD-NFT-22), compatibilidade de royalty (OD-NFT-11, devnet).
+   **Pendência = não abre.**
+3. `PRICE_STATUS=FINAL` só depois de um resultado REAL `PASS` da regra de demanda v1 (OD-NFT-21) gravado em
+   `validacaoDemanda.resultado` e da decisão OD-NFT-02 registrada no ledger.
 4. Tesouraria verificada (§ 13) e programa de venda verificado no ensaio em devnet.
 
 ## 1. Lançamento (abrir inscrição → congelar → abrir allowlist)
@@ -90,4 +92,20 @@ OD-NFT-09), reconciliação.
 `verificarTesouraria(cfg, observado)` (`src/lib/founders-sale/tesouraria.ts`): o operador lê da chain (devnet no
 ensaio; depois a rede real **com autorização**) o endereço da multisig, a lista de donos, o limiar e o resultado de uma
 transação simulada, e compara com a configuração. Só `OK` libera; `PENDING_*` ou `DIVERGENTE` bloqueiam. Publicar o
-`fingerprintEndereco`. Hoje: **PENDING_OWNER** (signatários e política de conversão — OD-NFT-22).
+`fingerprintEndereco`. Hoje: **PENDING_OWNER** (identidades dos signatários — OD-NFT-22); depois, parâmetros de
+conversão (**PENDING_LEGAL**) e a multisig criada (**PENDING_CHAIN**). Procedimentos de aprovação, perda/recuperação,
+troca de signatário, emergência e guarda de chaves: `FOUNDERS-TREASURY-AND-CAPITAL-POLICY.md` §7.
+
+## 14. Emissão da reserva não paga (OD-NFT-04)
+
+Só PRO 30 / TRADER 10 (Pilot 0), fora dos 2.850. Pedido com finalidade (parceiro estratégico do ecossistema ou campanha
+de comunidade auditada, com id da campanha), categoria do destinatário, hash do destinatário, motivo, e aprovação de
+**dois** operadores autorizados distintos → `LivroDaReserva.emitir` → registro de mint + evento `admin_audit`
+(`reserva_emitida`) na trilha. Aprovação reutilizada, equipe/insider, Pilot ou acima do teto = recusa. Publicar o
+resumo (`resumo()`) no encerramento: emitidas e não mintadas por tier.
+
+## 15. Conversão da tesouraria (simulação até haver parâmetros)
+
+`planejarConversao` recusa enquanto os parâmetros estiverem pendentes (análise de risco + contador/jurídico). Com
+parâmetros aprovados: plano de tranches com teto, limite por contraparte e trilha encadeada; cada tranche real segue
+a aprovação 2-de-3 da §13. Nunca deixar em SOL mais do que sobra depois das obrigações de 24 meses.

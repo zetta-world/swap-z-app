@@ -87,8 +87,9 @@ ensaio local com todas as flags PASS e OVERSELL = 0; runbook `docs/FOUNDERS-SALE
 
 | passo | precisa de |
 |---|---|
-| preço FINAL | pacote de demanda PASS + limiares do dono (OD-NFT-21) + OD-NFT-02 |
-| reserva / royalty % / tesouraria | OD-NFT-04 · OD-NFT-11 · OD-NFT-20/22 (signatários, conversão) |
+| preço FINAL | resultado REAL PASS da regra de demanda v1 (OD-NFT-21, APPROVED) + decisão OD-NFT-02 |
+| tesouraria | identidades dos signatários (dono) · parâmetros de conversão (jurídico/contábil) · multisig criada (chain) |
+| reserva / royalty / planos mensais | ✅ decididos e aplicados (OD-NFT-04/11/20, L-039) |
 | coleta de sinais de demanda (adapter 0071) | texto de consentimento aprovado (jurídico) + rotas hospedadas (Vercel) |
 | página pública | termos/privacidade aprovados, OD-NFT-16/17 (jurídico) + deploy autorizado |
 | integração com carteira/chain | provedores (RPC/DAS, wallet adapter) + programa em devnet |

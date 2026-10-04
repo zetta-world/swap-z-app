@@ -58,9 +58,14 @@ apresentada assim.
 | feedback da comunidade | comentários estruturados / enquete | canal oficial | não |
 | carteiras com saldo suficiente | checagem só-leitura no momento da qualificação, sem guardar saldo | RPC | não |
 
-**Critério de aceitação:** fixado pelo dono **antes** de abrir a coleta (OD-NFT-21) — razão mínima `k_t` =
-interessados qualificados com preferência pelo tier ÷ supply pago do tier; janela de coleta; ação se ficar abaixo
-(repreço, menos supply na fase, ou adiar). Pilot pode exigir sinal individual pela lista curada.
+**Critério de aceitação — OD-NFT-21 APPROVED (04/10/2026), regra pré-registrada v1:** por tier, sobre o supply PAGO,
+qualificados ≥ ⌈35 %⌉ **e** intenção não vinculante (ao preço provisório exibido) ≥ ⌈20 %⌉ → Pro 700/400 · Trader
+263/150 · Pilot 35/20; PASS exige os três; INCONCLUSIVE = tier abaixo com agregado ≥ soma dos mínimos (998/570) ou
+política de jurisdição não final/alterada; FAIL = janela fechada com agregado abaixo. Regra mexida = `INVALID_RULE`;
+mudança = v2 com o resultado v1 preservado. Implementação: `src/lib/founders-sale/demanda.ts`; preço exibido gravado
+pela migration 0072. Janela: registrada antes do primeiro dado, quando o Early Access estiver hospedado (PENDING_VERCEL).
+O que fazer depois de um FAIL/INCONCLUSIVE (repreço, menos supply, adiar) é a decisão OD-NFT-02 tomada **com** o
+resultado na mão — não muda a regra.
 
 **Pacote para promover a FINAL:** contagens por tier e por estágio (inscrito → qualificado → com preferência), datas
 da janela, regra `k_t` registrada antes, resultado, decisão do dono registrada no ledger. Só então
@@ -85,7 +90,7 @@ Prioridade = quão perto deixa de poder vender.
 | 11 | rascunhos de FAQ, divulgação de risco e termos da venda **para o advogado** | CAN_BUILD_NOW_WITHOUT_OWNER_DECISIONS | — (o texto final é jurídico) |
 | 12 | painel admin da venda (estado, pausa em 2 passos, snapshot, reconciliação) só local | CAN_BUILD_NOW_WITHOUT_OWNER_DECISIONS | — |
 | 13 | métricas do §10 e do §D como consultas/painel sobre a telemetria já definida | CAN_BUILD_NOW_WITHOUT_OWNER_DECISIONS | — |
-| 13b | campos opcionais de preferência de tier e intenção (Early Access) para a validação de demanda | CAN_BUILD_NOW_AFTER_OWNER_DECISIONS | OD-NFT-21 + texto de consentimento (jurídico) |
+| 13b | campos opcionais de preferência de tier e intenção (Early Access) para a validação de demanda | ✅ domínio + 0071/0072 feitos (L-038/L-039); formulário/adapter **PENDING_LEGAL** (consentimento) + **PENDING_VERCEL** | OD-NFT-21 ✅ |
 | 14 | Hall of Fame opt-in (componente + preferência) | CAN_BUILD_NOW_WITHOUT_OWNER_DECISIONS | — |
 | 15 | deploy da página, do Early Access e das rotas de venda | REQUIRES_VERCEL | R-01 |
 | 16 | coleção e venda em mainnet, tesouraria recebendo | REQUIRES_CHAIN/MAINNET | OD-NFT-01, 10 + autorização |
@@ -93,4 +98,4 @@ Prioridade = quão perto deixa de poder vender.
 | 18 | comunidade token-gated, RPC/DAS de produção | REQUIRES_EXTERNAL_PROVIDER | provedores |
 | 19 | termos/privacidade aprovados, framing do royalty, geoblock/KYC, abertura pública | REQUIRES_LEGAL_APPROVAL | advogado cripto-BR |
 
-**CAN_BUILD_BEFORE_VERCEL = 15** (10 dependentes de decisão — 6 totalmente destravados pelas aprovações de 04/10, 3 parcialmente, 1 bloqueado por OD-NFT-21 — + 5 sem decisão).
+**CAN_BUILD_BEFORE_VERCEL = 15** (contagem de 04/10, rev. 2). Situação em L-039: o que era local foi feito (L-038/L-039); nenhum item segue bloqueado por decisão do dono — o restante é jurídico, Vercel, provedor ou chain.
