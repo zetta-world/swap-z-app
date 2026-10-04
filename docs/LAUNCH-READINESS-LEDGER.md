@@ -517,3 +517,20 @@
   arquivos, rclone check 0 diferenças / 202) e `spike-tailwind-v4-20261004T113734Z.tar.gz` (23.433.787 B) sha256
   `27fb19a21c43cd1b562bb14251e60602ba1b82b91839c919fa882820a593162c` (conferido por download). Sem volume de
   node_modules nem cache. Commit só de docs; nenhum push, merge, deploy ou escrita hospedada.
+
+### L-036 · 2026-10-04 · P0 = captação: estágio de decisões do dono da venda Founders (só docs)
+
+- **Direção do dono:** P0 passa a ser geração de capital via venda Founders NFT. Este estágio **não** implementa: fecha
+  decisões. Strategy Intelligence não é o P0.
+- **Recuperado do repositório** (com fonte por item): propósito, 2 camadas, supply 1.500/500/50, tiers e benefícios,
+  escada de taxa (implementada), leitura do passe via Helius (implementada), regra de framing, narrativa, planos
+  normais +30%, fundações locais da venda (lane B). **Conflitos registrados** (não resolvidos em silêncio): preço
+  (`plans.ts` USD-pegged × briefing SOL), royalty (copy "5% … distributed to holders" × briefing aberto + revisão
+  jurídica), allowlist ("first-come" × nada autoritativo), data vencida ("July 2026"), "treasury governance", chain
+  (código Solana × briefing "confirmada?"). Moldura: venda de **produto**, não captação de investimento (discovery §0 G,
+  briefing §4).
+- **Docs:** `FOUNDERS-NFT-OWNER-DECISIONS.md` revisão 2 (19 cartões + formulário) · novos `FOUNDERS-NFT-SALE-DESIGN.md`,
+  `FOUNDERS-NFT-CAPITAL-MODEL.md` (cenários A/B/C, sem valor aprovado), `FOUNDERS-NFT-LAUNCH-FUNNEL.md` (funil, métricas,
+  14 itens construíveis antes da Vercel).
+- **Estado:** aguardando o formulário do dono; nenhuma implementação. Diff de produto vazio. `CURRENT_RELEASE_CANDIDATE=NONE`
+  · lane A intocada · nenhum push, merge, deploy, escrita hospedada, email real, transação on-chain ou dinheiro real.
