@@ -97,6 +97,7 @@ MAJOR ou inexistentes; gerou o achado novo **R-03**). Nenhuma linha A ficou sem 
 | PV-A11 | 🟢 feito: migration `0070_acl_tabelas_operacionais.sql` (revoke de `anon`/`authenticated`/PUBLIC em `admin_kv`, `rate_limits`, `admin_audit_log`) + teste 17. Na linhagem de produção: T17 0/6 ANTES (anon tinha TRUNCATE), 6/6 DEPOIS; service_role lê/escreve; T14/T15/T16/T16b/O2 PASS; reexecutável; fp com 0070 `1118\|5346e57d…` (só lane B) |
 | PV-A12 | 🔵 reclassificado para B (ver inventário) |
 | PV-A13 | 🔵 reclassificado para B; gerou **R-03** (SUPPLY-BRACES) |
+| R-03 | 🟡 spike medido (L-034, branch `spike-tailwind-v4-20261004T113734Z`): Tailwind v4 = remediação **PARTIAL** (braces segue via `@solana/wallet-adapter-react` em produção e `eslint-config-next`), risco **MEDIUM**, recomendação **TEMPORARY_CI_EXCEPTION** — decisão do dono |
 | PV-A14 | 🟢 feito: `lerChaveGate` com orçamento de 3 s (estouro = `lido:false` = FECHADO); testes provam fechamento < 1 s com banco pendurado e leitura normal inalterada |
 | PV-A15 | 🟢 feito: timeouts explícitos de 30 s nos dois testes pesados de `playbook-backtest` (asserções inalteradas; a de 20 s volta a ser o guarda real) |
 | PV-A16 | 🟢 feito (diagnóstico): 429 no C4 para com `HARNESS-002` explícito (exit 4) e instrução de porta direta; a correção comportamental exigiria mudar confiança de XFF (F-15, resíduo aceito) |
