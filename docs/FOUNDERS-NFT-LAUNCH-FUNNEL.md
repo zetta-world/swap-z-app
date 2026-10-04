@@ -1,4 +1,7 @@
-# FOUNDERS NFT — FUNIL, MÉTRICAS E O QUE DÁ PARA CONSTRUIR ANTES DA VERCEL · 🟡 PROPOSTA
+# FOUNDERS NFT — FUNIL, MÉTRICAS, VALIDAÇÃO DE DEMANDA E O QUE DÁ PARA CONSTRUIR ANTES DA VERCEL · 🟡 PROPOSTA
+
+> **Revisão 2 (04/10/2026):** decisões do dono aplicadas (36 meses; 2.000/750/100; $149/$399/$1.990 provisórios).
+> Novo §D: gate de validação de demanda antes de `PRICE_STATUS=FINAL`. Dependências do §12 atualizadas.
 
 > 04/10/2026, lane B, só docs. Nenhuma mensagem foi enviada. Nenhuma meta numérica: não existe valor do dono.
 > Eventos de telemetria já definidos: `src/lib/founders-sale/telemetria.ts` (11 eventos, sem PII).
@@ -36,25 +39,53 @@ Proibido: escassez falsa ("restam 3" sem dado on-chain), número de compradores 
   recusas por teto de carteira · pausas acionadas · divergência vendido (app) × supply on-chain (deve ser 0) ·
   ações de admin registradas · tempo entre `tx_submitted` e `tx_confirmed`.
 
+## D. Validação de demanda — gate antes de `PRICE_STATUS=FINAL`
+
+Até este gate passar: **`PRICE_STATUS=PROVISIONAL_FOR_DEMAND_VALIDATION`**. Nenhuma página diz "preço final".
+
+**Princípios:** só sinal coletado com consentimento (Early Access, termos aprovados); nada de escassez falsa, demanda
+fabricada, contador inflado, promessa de esgotar ou "reserva" paga. Intenção declarada é **não vinculante** e é
+apresentada assim.
+
+**Evidência exigida (por tier):**
+
+| sinal | como se mede | de onde vem | já existe? |
+|---|---|---|---|
+| interesse na allowlist | inscrições `pending` | Early Access (`created`) | sim (não deployado; gate fechado) |
+| interesse qualificado | e-mail confirmado + carteira assinada + país permitido | `email_verified_at`, `wallet_verified_at`, país | e-mail sim; **assinatura de carteira não existe** |
+| preferência de tier | pergunta opcional "qual passe você pretende" (Pro/Trader/Pilot/indeciso) | campo novo no Early Access + texto de consentimento | **não** (exige produto + jurídico) |
+| intenção de conversão | pergunta opcional não vinculante sobre o preço provisório exibido | idem | **não** |
+| feedback da comunidade | comentários estruturados / enquete | canal oficial | não |
+| carteiras com saldo suficiente | checagem só-leitura no momento da qualificação, sem guardar saldo | RPC | não |
+
+**Critério de aceitação:** fixado pelo dono **antes** de abrir a coleta (OD-NFT-21) — razão mínima `k_t` =
+interessados qualificados com preferência pelo tier ÷ supply pago do tier; janela de coleta; ação se ficar abaixo
+(repreço, menos supply na fase, ou adiar). Pilot pode exigir sinal individual pela lista curada.
+
+**Pacote para promover a FINAL:** contagens por tier e por estágio (inscrito → qualificado → com preferência), datas
+da janela, regra `k_t` registrada antes, resultado, decisão do dono registrada no ledger. Só então
+`PRICE_STATUS=FINAL` e os preços entram na configuração versionada da venda (com fingerprint).
+
 ## 12. O que dá para construir LOCALMENTE antes da Vercel (sem começar agora)
 
 Prioridade = quão perto deixa de poder vender.
 
 | # | trabalho | classe | depende de |
 |---|---|---|---|
-| 1 | corrigir a copy ao vivo em conflito (data de julho, "first-come", "5% distributed to holders", "treasury governance") | CAN_BUILD_NOW_AFTER_OWNER_DECISIONS | OD-NFT-19 (+ 07, 11, 15) |
-| 2 | configuração da venda (supply, preços por fase, tetos, fases) como dado versionado + fingerprint | CAN_BUILD_NOW_AFTER_OWNER_DECISIONS | OD-NFT-02, 04, 05, 07 |
-| 3 | geração do snapshot da allowlist a partir do Early Access (e-mail verificado + carteira verificada + país) + lista curada | CAN_BUILD_NOW_AFTER_OWNER_DECISIONS | OD-NFT-06, 16 |
-| 4 | verificação de carteira por assinatura (preenche `wallet_verified_at`) | CAN_BUILD_NOW_AFTER_OWNER_DECISIONS | OD-NFT-01 (formato de assinatura da chain) |
-| 5 | adaptadores reais da chain no domínio local (normalizador de endereço, hash Merkle, leitor de confirmação) | CAN_BUILD_NOW_AFTER_OWNER_DECISIONS | OD-NFT-01 |
-| 6 | metadata final dos 3 tiers + atributos Founder | CAN_BUILD_NOW_AFTER_OWNER_DECISIONS | OD-NFT-12, 13, 14, 15 |
-| 7 | página de venda real (rota atrás de flag desligada) reaproveitando o painel | CAN_BUILD_NOW_AFTER_OWNER_DECISIONS | OD-NFT-19 + copy |
-| 8 | migration de persistência (allowlist, reservas, eventos da venda) — testada em banco descartável | CAN_BUILD_NOW_AFTER_OWNER_DECISIONS | OD-NFT-05, 06 |
-| 9 | ensaio completo em **devnet/localnet** (coleção, guardas, prova Merkle, teto, pausa, reconciliação) | CAN_BUILD_NOW_AFTER_OWNER_DECISIONS | OD-NFT-01, 02 (medir o custo e a viabilidade do preço USD-pegged) |
+| 1 | aplicar a copy corrigida (`FOUNDERS-NFT-COPY-CORRECTION.md`, 4 línguas) | CAN_BUILD_NOW_AFTER_OWNER_DECISIONS — **decisão aprovada**, só falta rodada de produto | OD-NFT-19 ✅ |
+| 2 | configuração da venda (supply 2.000/750/100, preços provisórios, snapshot-e-congela por fase, tetos, fases) como dado versionado + fingerprint; atualizar `plans.ts` | CAN_BUILD_NOW_AFTER_OWNER_DECISIONS — pode começar com preço marcado PROVISÓRIO | OD-NFT-02 (parcial), 05 ✅, 07 ✅; reserva OD-NFT-04 |
+| 3 | geração do snapshot da allowlist a partir do Early Access (e-mail verificado + carteira verificada + país) + lista curada | CAN_BUILD_NOW_AFTER_OWNER_DECISIONS | OD-NFT-06 (princípio ✅); filtro de país depende do jurídico (OD-NFT-16) |
+| 4 | verificação de carteira por assinatura (preenche `wallet_verified_at`) | CAN_BUILD_NOW_AFTER_OWNER_DECISIONS | OD-NFT-01 ✅ (Solana) |
+| 5 | adaptadores reais da chain no domínio local (normalizador de endereço, hash Merkle, leitor de confirmação) | CAN_BUILD_NOW_AFTER_OWNER_DECISIONS | OD-NFT-01 ✅ |
+| 6 | metadata final dos 3 tiers + atributos Founder ("Premium Window" = 36 meses do fim da venda; sem "v3") | CAN_BUILD_NOW_AFTER_OWNER_DECISIONS | OD-NFT-12, 13, 14, 15 ✅ |
+| 7 | página de venda real (rota atrás de flag desligada) reaproveitando o painel | CAN_BUILD_NOW_AFTER_OWNER_DECISIONS | OD-NFT-19 ✅ + copy |
+| 8 | migration de persistência (allowlist, reservas, eventos da venda) — testada em banco descartável | CAN_BUILD_NOW_AFTER_OWNER_DECISIONS | OD-NFT-05 ✅, 06 (princípio ✅) |
+| 9 | ensaio completo em **devnet/localnet** (coleção, guardas, prova Merkle, teto, pausa, preço snapshot-e-congela, reconciliação) | CAN_BUILD_NOW_AFTER_OWNER_DECISIONS | OD-NFT-01 ✅, 02 (parcial), 10 (signatários: OD-NFT-22) |
 | 10 | tela de onboarding do holder + badge/tema Founder | CAN_BUILD_NOW_WITHOUT_OWNER_DECISIONS | — |
 | 11 | rascunhos de FAQ, divulgação de risco e termos da venda **para o advogado** | CAN_BUILD_NOW_WITHOUT_OWNER_DECISIONS | — (o texto final é jurídico) |
 | 12 | painel admin da venda (estado, pausa em 2 passos, snapshot, reconciliação) só local | CAN_BUILD_NOW_WITHOUT_OWNER_DECISIONS | — |
-| 13 | métricas do §10 como consultas/painel sobre a telemetria já definida | CAN_BUILD_NOW_WITHOUT_OWNER_DECISIONS | — |
+| 13 | métricas do §10 e do §D como consultas/painel sobre a telemetria já definida | CAN_BUILD_NOW_WITHOUT_OWNER_DECISIONS | — |
+| 13b | campos opcionais de preferência de tier e intenção (Early Access) para a validação de demanda | CAN_BUILD_NOW_AFTER_OWNER_DECISIONS | OD-NFT-21 + texto de consentimento (jurídico) |
 | 14 | Hall of Fame opt-in (componente + preferência) | CAN_BUILD_NOW_WITHOUT_OWNER_DECISIONS | — |
 | 15 | deploy da página, do Early Access e das rotas de venda | REQUIRES_VERCEL | R-01 |
 | 16 | coleção e venda em mainnet, tesouraria recebendo | REQUIRES_CHAIN/MAINNET | OD-NFT-01, 10 + autorização |
@@ -62,4 +93,4 @@ Prioridade = quão perto deixa de poder vender.
 | 18 | comunidade token-gated, RPC/DAS de produção | REQUIRES_EXTERNAL_PROVIDER | provedores |
 | 19 | termos/privacidade aprovados, framing do royalty, geoblock/KYC, abertura pública | REQUIRES_LEGAL_APPROVAL | advogado cripto-BR |
 
-**CAN_BUILD_BEFORE_VERCEL = 14** (9 após as decisões do dono + 5 sem decisão).
+**CAN_BUILD_BEFORE_VERCEL = 15** (10 dependentes de decisão — 6 totalmente destravados pelas aprovações de 04/10, 3 parcialmente, 1 bloqueado por OD-NFT-21 — + 5 sem decisão).

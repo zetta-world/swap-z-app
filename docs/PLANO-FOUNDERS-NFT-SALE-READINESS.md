@@ -10,7 +10,7 @@
 
 | coisa | o que é | relação |
 |---|---|---|
-| `NFT-BRIEFING.md` | modelo 2 camadas (Premium 3a/v3 + Founder vitalício), tiers, metadata proposta (§6), decisões em aberto (§7) | fonte das decisões |
+| `NFT-BRIEFING.md` | modelo 2 camadas (Premium 36 meses do fim da venda — v3 removido, OD-NFT-14 de 04/10/2026 + Founder permanente), tiers, metadata proposta (§6), decisões em aberto (§7) | fonte das decisões |
 | `src/lib/tier/{types,gods}.ts`, `/pricing`, `FounderBenefits` | tiers e UI de preço (UI-only; CTA de mint abre waitlist local) | consumidores futuros |
 | `/nft` (`NftView`) | **agregador de mercado NFT** (OpenSea/Blur/…) | **sem relação** com a venda |
 | `WhitelistPanel` (admin) | lista `ADMIN_WALLETS` (env) | **sem relação** (é allowlist de admin) |
@@ -19,11 +19,14 @@
 
 ## 2. Decisões do dono (NÃO inventadas aqui)
 
+> ⚠️ **Estado vigente de todas as decisões: `docs/FOUNDERS-NFT-OWNER-DECISIONS.md` (rev. 3, 04/10/2026).** A tabela
+> abaixo é o inventário original; as linhas de supply e preço foram atualizadas.
+
 | decisão | estado | fonte |
 |---|---|---|
-| supply por tier | **decidido**: 1.500 Pro / 500 Trader / 50 Pilot | `NFT-BRIEFING.md` §7.1 — mesmo assim entra como **configuração**, não constante |
+| supply por tier | **decidido (04/10/2026)**: **2.000 Pro / 750 Trader / 100 Pilot** (supply pago da proposta comercial; antes 1.500/500/50) | `FOUNDERS-NFT-OWNER-DECISIONS.md` — entra como **configuração**, não constante |
 | chain de mint | aberta ("Solana confirmada?") | §7.7 |
-| preço final / moeda de pagamento | aberto (1.5/4/30 SOL a confirmar; pricing USD-pegged no `PLANO-MESTRE`, SUPERSEDED) | §7.2 |
+| preço final / moeda de pagamento | **parcial (04/10/2026)**: $149 / $399 / $1.990 **provisórios** até validação de demanda; âncora USD, pagamento SOL, snapshot-e-congela por fase | `FOUNDERS-NFT-OWNER-DECISIONS.md` (OD-NFT-02, 03) |
 | alocação máxima por carteira | aberta | — |
 | fases da venda (allowlist/pública), horários | abertos | — |
 | royalties (% e destino) | aberto | §7.3 |

@@ -534,3 +534,25 @@
   14 itens construíveis antes da Vercel).
 - **Estado:** aguardando o formulário do dono; nenhuma implementação. Diff de produto vazio. `CURRENT_RELEASE_CANDIDATE=NONE`
   · lane A intocada · nenhum push, merge, deploy, escrita hospedada, email real, transação on-chain ou dinheiro real.
+
+### L-037 · 2026-10-04 · Founders NFT: decisões do dono aplicadas — 36 meses, supply 2.850, preços provisórios (só docs)
+
+- **OD-NFT-14 = APPROVED:** `PREMIUM_TERM_MONTHS=36` do encerramento oficial da venda; `VERSION_BASED_EXPIRY=REMOVED`
+  (nenhuma versão/"v3"/renome encurta o prazo). Texto "3 anos OU v3" neutralizado em `NFT-BRIEFING.md`,
+  `PLANO-FOUNDERS-NFT-SALE-READINESS.md`, `POLISH-PLAN.md`, `IDEIAS-ESTACIONADAS.md`, `PLANO-MESTRE.md`,
+  `CONTEXTO-ZETTAWORD.md` e nos docs FOUNDERS-NFT-*.
+- **OD-NFT-02 = PARTIALLY_APPROVED:** Pro $149 · Trader $399 · Pilot $1.990, `PRICE_STATUS=PROVISIONAL_FOR_DEMAND_VALIDATION`,
+  âncora USD, pagamento SOL, `SNAPSHOT_AND_FREEZE` por fase (fonte da referência não decidida). Gate de validação de
+  demanda em `FOUNDERS-NFT-LAUNCH-FUNNEL.md` §D.
+- **Supply pago:** 2.000 / 750 / 100 = **2.850** (antes 1.500/500/50); reserva (OD-NFT-04) fora.
+- **Capital (cenário, não previsão):** máximo **796.250 USD** (298.000 + 299.250 + 199.000); 25% 198.863 · 50% 398.125 ·
+  75% 596.988 (unidades inteiras); antigo 834.500 → **−38.250 (−4,58%)**. Líquido não estimado (custos não documentados).
+- **Status:** APPROVED 13 (01, 03, 05, 07, 08, 09, 10, 12, 13, 14, 15, 18, 19) · PARTIALLY_APPROVED 4 (02, 04, 06, 11) ·
+  DEFERRED 2 (16, 17 — jurídico) · UNRESOLVED 3 novos (20 regra "+30%" dos planos mensais deixou de fechar com os preços
+  novos; 21 critérios da validação de demanda; 22 signatários/política da tesouraria). Formulário reduzido a 6 entradas.
+- **Conflito de instrução registrado:** a correção de copy (OD-NFT-19, aprovada) vive em `src/lib/i18n/messages.ts`
+  (código de produto); esta rodada exige diff de produto vazio → texto novo nas 4 línguas pronto em
+  `FOUNDERS-NFT-COPY-CORRECTION.md`, **aplicação pendente** de uma rodada de produto autorizada. O código ainda carrega
+  supply/preços antigos (`plans.ts`).
+- **Estado:** só docs; nenhuma implementação; `CURRENT_RELEASE_CANDIDATE=NONE`; lane A intocada; nenhum push, merge,
+  deploy, escrita hospedada, email real, mainnet ou dinheiro real.

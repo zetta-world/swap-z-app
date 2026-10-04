@@ -69,7 +69,7 @@ equivalente atual — vai flutuar com a cotação, e tudo bem.
 ## FASE B — Monetização NFT-first 🔄 (em execução = FASE 5)
 
 - Coleção **Deuses Nórdicos**: 1.500 Pro · 500 Trader · 50 Pilot = **2.050 NFTs**.
-- Estrutura **2 camadas:** Premium (3 anos/v3) + Founder (vitalícia). Ver `NFT-BRIEFING.md`.
+- Estrutura **2 camadas:** Premium (3 anos/v3) [atualizado: 36 meses do fim da venda — v3 removido, OD-NFT-14 de 04/10/2026] + Founder (vitalícia). Ver `NFT-BRIEFING.md`.
 - **Pricing USD-pegged** (acima) via oráculo Pyth no mint.
 - **Planos lançamento (deuses) vs normais (guerreiros, +30%)** — ver `NFT-BRIEFING §9`.
 - Mint na mainnet Solana (Metaplex Core); `/pricing` com as 3 artes.
@@ -140,5 +140,5 @@ equivalente atual — vai flutuar com a cotação, e tudo bem.
 - Produto: ✅ pronto e no ar. Flywheel ZION: rodando autônomo, dado limpo,
   expectancy ~break-even (medindo honestamente).
 - Monetização: 🔄 supply travado; pricing USD-pegged definido; falta codar 5.4.
-- Decisões §7 do NFT pendentes: royalty %, critério de "v3".
+- Decisões §7 do NFT pendentes: royalty %, critério de "v3" [removido em 04/10/2026, OD-NFT-14].
 - Próximo passo crítico: **teste 11/07** + recarregar créditos de IA.

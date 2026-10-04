@@ -1,79 +1,78 @@
-# FOUNDERS NFT — MODELO DE CAPITAL · 🟡 CENÁRIOS (nenhum valor aprovado)
+# FOUNDERS NFT — MODELO DE CAPITAL · 🟡 preços PROVISÓRIOS (validação de demanda pendente)
 
-> 04/10/2026, lane B, só docs. Cenários são **propostas** para o dono escolher; nada foi escrito em configuração.
-> Não é promessa a comprador: o comprador compra um produto (`FOUNDERS-NFT-SALE-DESIGN.md` §0). Projeções de
-> captação são de uso **interno**.
+> **Revisão 2 — 04/10/2026** (aplica as decisões do dono de 04/10; a revisão 1 com os cenários A/B/C está no Git em
+> `204bb8b`). Lane B, só docs. **Cenário, não previsão nem garantia.** Uso interno: o comprador compra um produto
+> (`FOUNDERS-NFT-SALE-DESIGN.md` §0); nenhum número daqui é meta pública.
 
-## 1. Fórmulas
+## 1. Parâmetros aprovados (provisórios)
+
+| tier | supply pago | preço (USD, âncora) | status do preço |
+|---|---|---|---|
+| Pro (Freyr) | 2.000 | 149 | PROVISIONAL_FOR_DEMAND_VALIDATION |
+| Trader (Thor) | 750 | 399 | PROVISIONAL_FOR_DEMAND_VALIDATION |
+| Pilot (Odin) | 100 | 1.990 | PROVISIONAL_FOR_DEMAND_VALIDATION |
+| **total** | **2.850** | — | — |
+
+Pagamento em SOL; referência SOL/USD fotografada antes de cada fase e preço em SOL congelado durante a fase
+(mecanismo da referência: **não decidido**). Reserva (OD-NFT-04) **fora** destes números.
+
+## 2. Gross bruto máximo
 
 ```
-paid_supply_t   = supply_t × (1 − r_t)            # r_t = fração reservada (não vendida) do tier t — OD-NFT-04
-gross_raise     = Σ_t  paid_supply_t × s_t × price_t   # s_t = sell-through do tier (0..1) — NÃO é meta
-net_usable      = gross_raise × (1 − m)            # m = fração destinada a marketing (não decidida)
-                  − legal − setup_onchain − infra_launch
-                  − tax (UNKNOWN) − fx_haircut (se a tesouraria ficar em SOL)
-months_runway   = net_usable × k_BRL / burn_mensal_BRL
+Pro     2.000 × 149   = 298.000
+Trader    750 × 399   = 299.250
+Pilot     100 × 1.990 = 199.000
+TOTAL                 = 796.250 USD   (gross bruto teórico, 100% vendido)
 ```
 
-Constantes **decididas** no repositório: `supply` = 1.500 / 500 / 50 (`NFT-BRIEFING.md` §7.1, `plans.ts`).
-Referência **não final** do repositório: `SOL_USD_REF = 145` e `usdTarget` ≈ $218 / $580 / $4.350 (`plans.ts`,
-"CONFIRM at mint"); custo de 3 anos ≈ R$25k/mês solo (`NFT-BRIEFING.md` §10, SUPPORTING_REFERENCE, estimativa).
-`k_BRL ≈ 5,5` está **implícito** no briefing (5.750 SOL ≈ R$4,6M a $145) — ilustrativo, não câmbio real.
+## 3. Sell-through proporcional — CENÁRIO, não previsão
 
-## 2. Custos conhecidos e desconhecidos
+Unidades por tier arredondadas **para baixo** (não se vende meia NFT); o valor proporcional exato vai entre parênteses.
 
-| item | valor | fonte / status |
-|---|---|---|
-| revisão jurídica (framing + disclaimers) | R$1.500–3.000 | `NFT-BRIEFING.md` §4 (estimativa) — valor real **UNKNOWN** até orçar |
-| tributos sobre a venda | **UNKNOWN** | nenhuma evidência no repo; exige contador |
-| criação da coleção / programa de venda (programa padrão, sem contrato próprio) | pequeno, em SOL | **UNVERIFIED** — medir em devnet |
-| custo on-chain por mint (rent + taxa de rede) | normalmente pago pelo comprador em fluxos padrão | **UNVERIFIED** — medir em devnet |
-| processador de pagamento | nenhum (pagamento on-chain direto) | — |
-| infraestrutura de lançamento (Vercel, RPC, e-mail) | **UNKNOWN** | Vercel bloqueada (R-01); planos não estão no repo |
-| auditoria de contrato | ~0 se usar programa padrão auditado; alta se houver contrato próprio | depende de OD-NFT-01 |
-| exposição a reembolso | ~0 com "venda final"; transação falha é atômica (sem cobrança do item) | depende de OD-NFT-17 |
-| exposição cambial | tesouraria em SOL oscila | depende de OD-NFT-10 |
-| marketing | `m` | **não decidido** |
+| sell-through | Pro (un. / USD) | Trader (un. / USD) | Pilot (un. / USD) | total USD |
+|---|---|---|---|---|
+| 25% | 500 / 74.500 | 187 / 74.613 | 25 / 49.750 | **198.863** (exato 199.062,50) |
+| 50% | 1.000 / 149.000 | 375 / 149.625 | 50 / 99.500 | **398.125** |
+| 75% | 1.500 / 223.500 | 562 / 224.238 | 75 / 149.250 | **596.988** (exato 597.187,50) |
+| 100% | 2.000 / 298.000 | 750 / 299.250 | 100 / 199.000 | **796.250** |
 
-## 3. Cenários (100% de sell-through e r = 0, para comparar; valores em USD)
+**Líquido não estimado.** Os únicos custos com alguma evidência no repo são a revisão jurídica (R$1.500–3.000,
+estimativa do `NFT-BRIEFING.md` §4) — tributos, infraestrutura, setup on-chain e marketing são **UNKNOWN** ou não
+decididos. Qualquer "líquido" aqui seria inventado.
 
-| | **A — ACESSÍVEL / COMUNIDADE** | **B — EQUILIBRADO (recomendado)** | **C — PREMIUM / ESCASSEZ** |
+## 4. Comparação com o modelo comercial anterior
+
+| | ANTIGO | NOVO | variação |
 |---|---|---|---|
-| supply pago | 1.500 / 500 / 50 (tudo) | 1.500 / 500 / 50 (tudo) | **onda 1:** 750 / 250 / 50 (resto só em onda posterior anunciada) |
-| preço unitário | $99 / $299 / $1.990 | **$218 / $580 / $4.350** (= referência do repo ≈ 1,5 / 4 / 30 SOL a $145) | $349 / $899 / $6.900 |
-| gross a 100% | **397.500** (148.500 + 149.500 + 99.500) | **834.500** (327.000 + 290.000 + 217.500) | **831.500** na onda 1 (261.750 + 224.750 + 345.000); 1.318.000 com as duas ondas |
-| perfil do comprador | usuário de varejo testando o premium | usuário DeFi ativo que já usaria Pro/Trader | trader de alto volume, colecionador |
-| risco de concentração | baixo (Pilot = 25% do gross) | médio (Pilot = 26%) | **alto** (Pilot = 41% da onda 1: 50 compradores) |
-| dificuldade de esgotar | baixa | média | alta |
-| conversão | alta, ticket baixo; muitos compradores de baixo engajamento | equilibrada | baixa, ticket alto; dependente de poucos |
-| escassez percebida | baixa | média (supply fixo) | alta (ondas + preço) |
-| complexidade operacional | média (volume de transações e suporte) | média | alta (duas ondas, comunicação de onda) |
-| equivalência com o plano normal | 3 anos de Pro sairiam ~$2,75/mês (abaixo do Hird $7,90 sem o +30%) — **canibaliza** o recorrente | Pro ≈ $6,06/mês em 3 anos vs Hird $7,90 → mantém a lógica "+30%" já decidida (`NFT-BRIEFING.md` §9) | coerente, mas o Pro fica acima do mensal |
+| supply Pro / Trader / Pilot | 1.500 / 500 / 50 | 2.000 / 750 / 100 | +500 (+33,3%) / +250 (+50%) / +50 (+100%) |
+| supply total | 2.050 | 2.850 | **+800 (+39,0%)** |
+| preço Pro | $218 | $149 | −$69 (**−31,7%**) |
+| preço Trader | $580 | $399 | −$181 (**−31,2%**) |
+| preço Pilot | $4.350 | $1.990 | −$2.360 (**−54,3%**) |
+| gross Pro / Trader / Pilot | 327.000 / 290.000 / 217.500 | 298.000 / 299.250 / 199.000 | −29.000 / +9.250 / −18.500 |
+| **gross máximo** | **834.500** | **796.250** | **−38.250 (−4,58%)** |
+| participação no gross Pro / Trader / Pilot | 39,2% / 34,8% / 26,1% | 37,4% / 37,6% / 25,0% | distribuição mais uniforme |
+| preço médio por NFT | $407,07 | $279,39 | −31,4% |
+| Pilot como % da coleção (escassez) | 2,44% (50 de 2.050) | 3,51% (100 de 2.850) | Pilot menos raro |
+| peso de 1 comprador de Pilot no gross máximo | 0,52% | 0,25% | concentração por comprador cai pela metade |
+| NFTs para chegar a 50% do gross máximo (proporcional) | 1.025 | 1.425 | +400 unidades |
 
-**Por que B:** é o único cenário coerente com o que já está decidido — preço normal = +30% sobre o do holder
-(`plans.ts`, `NORMAL_PREMIUM`) — e com o supply fixo; não inventa escassez por ondas.
+Leitura:
+- **Acessibilidade:** o ticket de entrada cai de $218 para $149; o Pilot passa de $4.350 para $1.990. Pro em 36 meses
+  ≈ $4,14/mês (antes $6,06).
+- **Captação:** o teto cai 4,58% mesmo com 39% mais supply — o modelo novo depende de **mais compradores** para
+  captar o mesmo.
+- **Dificuldade de esgotar:** maior em unidades (2.850 × 2.050); menor em ticket. Qual efeito domina **não é
+  conhecido**.
+- **Concentração do capital:** cai — nenhum tier passa de 38% do gross, e cada comprador de Pilot pesa metade do que
+  pesava.
+- **Racional comercial pretendido (não é fato medido):** preço mais baixo e mais supply para ampliar a base de
+  fundadores e a conversão. Isso só vira fato com a validação de demanda (`FOUNDERS-NFT-LAUNCH-FUNNEL.md` §D).
+- **Efeito colateral a decidir:** a regra "plano normal = +30% sobre o holder" deixou de fechar (OD-NFT-20).
 
-### Sensibilidade a sell-through (s uniforme entre tiers — premissa só para comparar)
+## 5. Riscos do modelo
 
-| s | A | B | C (onda 1) |
-|---|---|---|---|
-| 25% | 99.375 | 208.625 | 207.875 |
-| 50% | 198.750 | 417.250 | 415.750 |
-| 75% | 298.125 | 625.875 | 623.625 |
-| 100% | 397.500 | 834.500 | 831.500 |
-
-Reserva: `gross × (1 − r)` quando r é uniforme. Ex.: B com r = 5% → 792.775 a 100%.
-
-### Ilustração de líquido (B, s = 50%, m = 15%, r = 0) — **não é garantia**
-
-`417.250 × 0,85 = 354.662` USD antes de jurídico, setup, infra, tributos (UNKNOWN) e câmbio. Com `k_BRL = 5,5` e
-`burn = R$25.000/mês` → ~78 meses **brutos de tributos**. Serve só para dimensionar; o número real depende de
-tributos, câmbio e do preço final.
-
-## 4. Riscos do modelo
-
-- Preço em SOL fixo: a receita em USD varia com o SOL durante a janela; preço USD-pegged protege a receita mas
-  exige operação de atualização de preço (ver `SALE-DESIGN` §11).
-- Concentração: Pilot pesa 25–41% do gross com 50 unidades; poucos compradores movem o resultado.
-- Sell-through **não** é previsível pelo repo: não há dado de demanda (o Early Access não foi aberto ao público).
-  Não usar estes cenários como meta pública.
+- SOL/USD: o snapshot por fase protege contra variação **durante** a fase, não entre a decisão e o snapshot.
+- Sell-through não é previsível pelo repo: o Early Access nunca abriu ao público; não há sinal de demanda ainda.
+- O código ainda carrega os valores antigos (`src/lib/pricing/plans.ts`: 1.500/500/50, `usdTarget` 218/580/4.350) —
+  atualização é trabalho de produto, fora desta rodada.

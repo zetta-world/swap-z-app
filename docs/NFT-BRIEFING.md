@@ -6,17 +6,25 @@
 > **Bloqueia:** `POLISH-PLAN.md` FASE 5.4 (coleção Metaplex Core + mint UI).
 > **Quando 5.4 for ao ar:** virar `TIER_GATES_ENABLED=true` ativa toda a
 > camada de gating já entregue (5.2/5.3).
+>
+> ⚠️ **ATUALIZAÇÃO DO DONO — 04/10/2026 (prevalece sobre este documento onde houver conflito):**
+> janela premium = **36 meses a partir do encerramento oficial da venda**; a expiração por "v3"/versão foi **REMOVIDA**
+> (OD-NFT-14). Supply pago da proposta comercial = **2.000 Pro / 750 Trader / 100 Pilot (2.850)**; preços
+> **provisórios** $149 / $399 / $1.990 (âncora USD, pagamento SOL, snapshot-e-congela por fase) até a validação de
+> demanda (OD-NFT-02). Estado de cada decisão: `docs/FOUNDERS-NFT-OWNER-DECISIONS.md`. Os números de supply/preço
+> abaixo (1.500/500/50, 1.5/4/30 SOL) são **históricos**.
 
 ---
 
 ## 0. Decisão travada (a regra-mãe)
 
-> **Os benefícios Premium (Camada A) valem por 3 ANOS OU até a v3 da
-> plataforma — o que vier primeiro. Os benefícios Founder (Camada B) são
-> VITALÍCIOS (perpétuos, on-chain).**
+> **Os benefícios Premium (Camada A) valem por 36 MESES contados do
+> encerramento oficial da venda — nenhuma versão, renome ou lançamento encurta
+> esse prazo (OD-NFT-14, 04/10/2026). Os benefícios Founder (Camada B) são
+> PERMANENTES (on-chain), conforme a política de transferência (OD-NFT-12).**
 
 Narrativa de uma linha:
-> **"O premium é por 3 anos. O status é eterno."**
+> **"O premium é por 36 meses. O status é permanente."**
 
 Isso resolve de vez a ambiguidade do "lifetime cap": o pass nunca promete
 compute infinito (insustentável), mas promete **pertencimento eterno** (custo
@@ -26,6 +34,9 @@ zero). Após o período Premium, o holder cai para o tier **Free** (swap aberto 
 ---
 
 ## 1. Os tiers (1:1 com o código — `src/lib/tier/types.ts` + `gods.ts`)
+
+> ⚠️ Supply e preço desta tabela são **históricos** — substituídos em 04/10/2026 (2.000/750/100; $149/$399/$1.990
+> provisórios). Ver o banner do topo.
 
 | Tier (rank) | Deus / rune | **Supply** | Preço | Total se 100% | Desbloqueia (Camada A) |
 |-------------|-------------|-----------|-------|---------------|------------------------|
@@ -51,7 +62,7 @@ footer "ZS-{TIER}-0001 · BUILT FOR THE FUTURE".
 
 ---
 
-## 2. CAMADA A — Premium capado (3 anos OU v3)
+## 2. CAMADA A — Premium capado (36 meses do encerramento da venda)
 
 Tudo que tem **custo recorrente real** para a operação. Por isso é **capado** no
 tempo — não dá pra prometer tokens de IA infinitos sem queimar caixa.
@@ -64,7 +75,7 @@ tempo — não dá pra prometer tokens de IA infinitos sem queimar caixa.
 | Suporte direto / white-glove | $$ tempo humano |
 | Cap mensal alto de uso | soma de tokens |
 
-→ **Após v3 ou 3 anos:** holder continua com tier **Free** (5 análises/dia,
+→ **Após os 36 meses:** holder continua com tier **Free** (5 análises/dia,
 swap aberto). Sem corte de acesso à plataforma — só ao compute premium.
 
 ---
@@ -77,10 +88,10 @@ transforma o pass de "assinatura" em "pertencimento".
 | Benefício perpétuo | Custo p/ nós | Valor p/ holder |
 |--------------------|--------------|------------------|
 | Badge **"Z-SWAP Founder"** on-chain, visível em qualquer wallet check (Etherscan, Solscan…) | $0 (é o NFT existindo) | Status eterno, flex social |
-| **Whitelist automática** em TODAS as coleções/produtos futuros do ecossistema Zettaword (token ZETTA, próximas NFTs) | $0 (check de elegibilidade) | Acesso garantido, FOMO eliminado |
+| **Whitelist automática** em TODAS as coleções/produtos futuros do ecossistema Zettaword (token ZETTA, próximas NFTs) | $0 (check de elegibilidade) | Acesso garantido, FOMO eliminado  ⚠️ **fora do lançamento** (grupo C, OD-NFT-18, 04/10/2026) — não prometer |
 | **Hall of Fame** perpétuo no `/about` — wallet listada como "Founding Member" | $0 (1 query) | Reconhecimento público eterno |
-| **Founder rewards** do pool de royalty da coleção (ver §4 — framing legal) | $0 (vem do marketplace, não do caixa) | Recompensa de membro |
-| **Voto em governança** quando lançar — peso por tier de NFT | $0 | Influência no roadmap |
+| ~~**Founder rewards** do pool de royalty da coleção~~ — **REMOVIDO 04/10/2026 (OD-NFT-11):** royalty vai para a tesouraria; **nada** é distribuído a holders | — | — |
+| **Enquetes de produto não vinculantes** (OD-NFT-15, 04/10/2026), peso por tier; **sem** governança de tesouraria | $0 | Voz no roadmap |
 | **Beta access** perpétuo — testa features novas antes de todos | $0 | Insider feeling |
 | **Desconto em fees** on-chain se um dia cobrarmos (ex: 50% off swap fee) | opportunity cost mínimo | Economia real ao longo dos anos |
 | **Rate limit elevado** nas APIs públicas (`/api/quote`, `/api/prices`, `/api/trending`) | $0 (limite numérico) | Útil p/ power users que constroem bots |
@@ -90,6 +101,10 @@ transforma o pass de "assinatura" em "pertencimento".
 ---
 
 ## 4. ⚠️ Framing legal CRÍTICO do royalty-share
+
+> **Decisão do dono 04/10/2026 (OD-NFT-11):** royalty **para a tesouraria**; **nenhuma** distribuição de royalty ou
+> receita a holders; % ainda não definido. O "pool" descrito abaixo **não** será oferecido — o texto fica como
+> registro do risco que motivou a decisão.
 
 O pool de royalty é o item de **maior risco regulatório** (teste de Howey nos
 EUA / CVM no Brasil). A diferença está 100% no **enquadramento (framing)**:
@@ -116,14 +131,15 @@ retorno, não usa caixa próprio, não posiciona o NFT como investimento.
 
 ## 5. Narrativa de marketing (texto-base aprovado)
 
-> **Z-SWAP Access Pass NFT — 3 anos de poder, eternidade de pertencimento.**
+> **Z-SWAP Access Pass NFT — 36 meses de poder, pertencimento permanente.**
 >
-> Por 3 anos ou até a v3 da plataforma, você desbloqueia ZION AI no modelo
-> mais capaz do mercado, autopilot CEX, e cross-arb. Após esse período, seu
-> pass mantém o que importa pra sempre: badge de Founder on-chain, whitelist
-> automática em toda coleção futura do ecossistema Zettaword, participação nos
-> royalties da coleção, voto em governança, e seu nome eternizado no Hall of
-> Fame. **Você não compra acesso. Você se torna parte.**
+> Por 36 meses a partir do encerramento oficial da venda, você desbloqueia ZION AI no modelo
+> mais capaz do mercado, autopilot CEX, cross-arb e a taxa de swap reduzida do seu tier. Depois
+> desse período, seu passe mantém o status Founder on-chain e os benefícios de membro.
+> **Você não compra acesso. Você se torna parte.**
+>
+> *(Texto ajustado em 04/10/2026: saíram "v3", "participação nos royalties", "voto em governança" e
+> "whitelist automática" — OD-NFT-11, 14, 15, 18.)*
 
 ---
 
@@ -144,7 +160,7 @@ do nosso backend. Proposta (exemplo para o tier `trader`):
     { "trait_type": "Deity",           "value": "Thor" },
     { "trait_type": "Rune",            "value": "ᚦ" },
     { "trait_type": "Founder",         "value": "true" },
-    { "trait_type": "Premium Window",  "value": "3 years or v3" },
+    { "trait_type": "Premium Window",  "value": "36 months from sale close" },
     { "trait_type": "Founder Status",  "value": "Lifetime" },
     { "trait_type": "Governance Weight", "value": 2 },
     { "trait_type": "Whitelist",       "value": "All future Zettaword drops" },
@@ -166,13 +182,11 @@ do nosso backend. Proposta (exemplo para o tier `trader`):
 
 Estas escolhas não são código — são decisões de negócio que destravam o mint:
 
-1. ✅ **Supply por tier** — **DECIDIDO: 1.500 Pro / 500 Trader / 50 Pilot** (2.050 total).
-2. **Preço final** — confirmar 1.5 / 4 / 30 SOL ou ajustar.
-3. **Royalty %** — quanto de royalty secundário (ex: 5%) e **qual fração** vira
-   pool de Founder rewards vs. tesouraria.
-4. **Peso de governança** — usar `TIER_RANK` (1/2/3) ou outra curva.
-5. **Critério da v3** — definição objetiva de "v3 da plataforma" (marco público)
-   para o gatilho dos 3-anos-OU-v3 não ser ambíguo.
+1. ✅ **Supply por tier** — ~~1.500 / 500 / 50~~ → **substituído em 04/10/2026: 2.000 Pro / 750 Trader / 100 Pilot (2.850)**.
+2. **Preço final** — **parcialmente decidido em 04/10/2026:** $149 / $399 / $1.990 provisórios até a validação de demanda.
+3. **Royalty %** — **parcial 04/10/2026:** royalty para a tesouraria, sem pool para holders; % em aberto.
+4. ✅ **Peso de governança** — **04/10/2026:** enquetes não vinculantes, peso = `TIER_RANK` (1/2/3).
+5. ✅ **Critério da v3** — **REMOVIDO em 04/10/2026** (OD-NFT-14): o prazo é só tempo (36 meses do fim da venda).
 6. **Utilidade extra do pass** (opcional) — algo além do já listado?
 7. **Chain de mint** — Solana confirmada (Metaplex Core)?
 8. **Jurisdição/geoblock** — quem pode comprar (liga com `P2` do plano + a
@@ -182,7 +196,7 @@ Estas escolhas não são código — são decisões de negócio que destravam o 
 
 ## 8. Próximos passos (ordem de execução)
 
-- [x] **Travar decisão final** — 2 camadas: Premium 3a/v3, Founder vitalício. ✅
+- [x] **Travar decisão final** — 2 camadas: Premium 36 meses (OD-NFT-14, 04/10/2026), Founder permanente. ✅
 - [x] **Oficializar em `docs/NFT-BRIEFING.md`** — este documento. ✅
 - [ ] **Founder no metadata JSON** do mint (§6) — quando 5.4 for codar.
 - [ ] **Responder §7** (decisões do founder) — destrava o 5.4.
@@ -199,7 +213,7 @@ Dois produtos distintos, duas páginas separadas:
 
 | | **Lançamento — DEUSES** | **Normal — GUERREIROS** |
 |---|---|---|
-| Mecanismo | NFT one-time (3 anos premium) | Assinatura recorrente |
+| Mecanismo | NFT one-time (36 meses de premium) | Assinatura recorrente |
 | Função | Capital de lançamento + comunidade + runway | Motor de receita perpétuo |
 | Preço | 1.5 / 4 / 30 SOL (one-time) | **+30% vs o equivalente do NFT-holder** (mensal) |
 | Tema | Deuses nórdicos (Freyr/Thor/Odin) | Guerreiros que servem aos deuses |
@@ -229,7 +243,7 @@ Narrativa-âncora: *"Os deuses ergueram a plataforma. Os Einherjar a mantêm de 
 
 ## 10. Economia do lançamento — runway e salário
 
-**Captação no mint (por % de venda do supply 1.500/500/50):**
+**Captação no mint (por % de venda do supply 1.500/500/50) — ⚠️ HISTÓRICO; modelo vigente em `docs/FOUNDERS-NFT-CAPITAL-MODEL.md`:**
 
 | Vendido | SOL | ≈ R$ |
 |---------|-----|------|

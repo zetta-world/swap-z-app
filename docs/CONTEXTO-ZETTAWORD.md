@@ -58,7 +58,7 @@ ANTES de reativar a comunidade do token.**
 | Produto | Repo | Modelo de receita |
 |---|---|---|
 | **ZION Vision** (B2B visão computacional: CFTV existente→IA, RTSP/Intelbras/Hikvision/Dahua, alertas WhatsApp <10s, LGPD edge, deploy 48h; varejo/indústria/agro) | `zion_vision_institucional` | Cloud Starter **R$397/mês** (4 cams) · Pro Edge **R$597/mês + R$1.500 setup** (16) · Business **R$997/mês + R$2.500 setup** (32, multi-unidade) · Enterprise sob consulta. ⚠️ Landing com WhatsApp placeholder — checklist de go-live aberto |
-| **Z-SWAP NFT "O Panteão"** (Metaplex Core, Solana) | swap-z-app | 1.500 Freyr/Pro (~1.5 SOL) · 500 Thor/Trader (~4) · 50 Odin/Pilot (~30) = 2.050 NFTs ≈ R$4,6M a 100%. **USD-pegged via oráculo Pyth**. 2 camadas: Premium 3 anos/v3 + Founder vitalício. Bloqueado em: §7 do `NFT-BRIEFING.md` (royalty %, critério de v3) + revisão jurídica (framing rewards≠dividend) |
+| **Z-SWAP NFT "O Panteão"** (Metaplex Core, Solana) | swap-z-app | 1.500 Freyr/Pro (~1.5 SOL) · 500 Thor/Trader (~4) · 50 Odin/Pilot (~30) = 2.050 NFTs ≈ R$4,6M a 100%. **USD-pegged via oráculo Pyth**. 2 camadas: Premium 3 anos/v3 + Founder vitalício. [Atualizado 04/10/2026: premium = 36 meses do fim da venda, v3 removido; supply 2.000/750/100; preços provisórios $149/$399/$1.990 — `FOUNDERS-NFT-OWNER-DECISIONS.md`.] Bloqueado em: §7 do `NFT-BRIEFING.md` (royalty %, critério de v3) + revisão jurídica (framing rewards≠dividend) |
 | **Z-SWAP assinaturas "A Hird"** (mensal, trilho PIX futuro) | swap-z-app `plans.ts` | Drengr **$7.90** · Berserkr **$20.90** · Einherjar **$159** /mês (+30% vs equivalente NFT; margem maior). Free = Thrall |
 
 ### Demos prontos aguardando a vez (ordem futura por facilidade regulatória)
@@ -90,7 +90,7 @@ ANTES de reativar a comunidade do token.**
 4. **Gate jurídico** (2-3h advogado cripto-BR): framing royalty, autopilot=advice?, NFT utility, jurisdição — **trava QUALQUER marketing público**.
 5. **M7:** `TIER_GATES_ENABLED=true` antes de divulgar (ZION hoje aberto a anônimos).
 6. **Atualizar `zetta-official-docs`** para a tokenomics 2026 antes de reativar a comunidade.
-7. §7 do NFT-BRIEFING (royalty %, critério "v3") — decisões do founder.
+7. §7 do NFT-BRIEFING (royalty %, critério "v3" — removido em 04/10/2026, OD-NFT-14) — decisões do founder.
 8. Grant Solana Foundation (US$50k convertível, pitch pronto, faltam métricas `{{}}` via Vercel Analytics+Mixpanel) + Colosseum: **Eternal a qualquer momento; global 28/set–2/nov/2026**.
 9. Branch protection no GitHub (config manual) + prints mobile do admin (R3.4).
 

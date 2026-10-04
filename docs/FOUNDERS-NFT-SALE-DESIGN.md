@@ -1,10 +1,13 @@
-# FOUNDERS NFT SALE — DESIGN (P0 captação) · 🟡 PROPOSTA — aguardando o formulário do dono
+# FOUNDERS NFT SALE — DESIGN (P0 captação) · 🟡 decisões do dono aplicadas (04/10) — preço provisório
 
 > **Criado em:** 04/10/2026, lane B (`pre-vercel-forward-20261003T234200Z`, sobre `5792584`). **Só docs.**
 > Nada aqui é configuração de produto, data, preço ou política aprovada. As recomendações são **consultivas**.
 > Decisões abertas e formulário: `docs/FOUNDERS-NFT-OWNER-DECISIONS.md`. Economia: `docs/FOUNDERS-NFT-CAPITAL-MODEL.md`.
 > Funil/métricas/backlog: `docs/FOUNDERS-NFT-LAUNCH-FUNNEL.md`.
 > Invariantes: `NFT_REAL_SALE=OFF` · `MAINNET_MINT=OFF` · `PUBLIC_SALE=OFF`.
+> **Revisão 2 (04/10/2026):** aplica as decisões do dono — janela premium = **36 meses do encerramento oficial da venda**
+> (expiração por versão/"v3" **removida**), supply pago **2.000 / 750 / 100**, preços **provisórios** $149 / $399 / $1.990
+> (âncora USD, pagamento SOL, snapshot-e-congela por fase). Status de cada OD: `FOUNDERS-NFT-OWNER-DECISIONS.md` (rev. 3).
 
 ## 0. Moldura obrigatória: venda de PRODUTO, não captação de investimento
 
@@ -29,27 +32,27 @@ early access/fundraising.
 
 | item | estado | o que diz | fonte |
 |---|---|---|---|
-| propósito | **DECIDED** | Access Pass: 3 anos de premium OU até a v3 (o que vier primeiro) + status Founder vitalício; depois do prazo o holder cai para Free e mantém o Founder | `NFT-BRIEFING.md` §0 |
+| propósito | **DECIDED** (atualizado 04/10) | Access Pass: **36 meses** de premium contados do encerramento oficial da venda + status Founder permanente (segue a política de transferência, OD-NFT-12); depois do prazo o holder cai para Free e mantém o Founder. Nenhuma versão/"v3" encurta o prazo | OD-NFT-14 (dono, 04/10) — substitui "3 anos OU v3" de `NFT-BRIEFING.md` §0 |
 | público-alvo | **PARTIALLY_DECIDED** | usuários de cripto/DeFi BR-first que querem o premium do Z-SWAP (ZION, autopilot, arb) e o status de fundador; perfil de comprador por tier não detalhado | `NFT-BRIEFING.md` §1–§3, §9 |
 | papel no Z-SWAP | **DECIDED** | o NFT É o plano de lançamento ("Deuses"); os planos normais recorrentes ("Guerreiros") custam +30% | `NFT-BRIEFING.md` §9 · `src/lib/pricing/plans.ts` (`NORMAL_PREMIUM = 1.3`, mensal $7,90/$20,90/$159) |
-| supply | **DECIDED** | 1.500 Pro (Freyr) · 500 Trader (Thor) · 50 Pilot (Odin) = 2.050 | `NFT-BRIEFING.md` §7.1 · `plans.ts` `supply` |
+| supply pago | **DECIDED para a proposta comercial** (04/10) | **2.000 Pro · 750 Trader · 100 Pilot = 2.850** (substitui 1.500/500/50); reserva fora da venda segue OD-NFT-04 e **não** entra aqui | decisão do dono 04/10 (`FOUNDERS-NFT-OWNER-DECISIONS.md`) — o código (`plans.ts`) ainda tem 1.500/500/50 |
 | estrutura da coleção | **DECIDED** | 3 tiers ↔ `pro/trader/pilot` (`TIER_RANK` 1/2/3); arte fixa por tier (`public/nft/{pro.jpg,trader.png,pilot.jpg}`), card 3:4 obsidiana/ouro, "LIMITED EDITION", serial `ZS-{TIER}-0001` | `NFT-BRIEFING.md` §1 · `src/lib/tier/types.ts` |
 | benefícios premium (Camada A) por tier | **DECIDED + IMPLEMENTED_FOUNDATION** | `zionAdvisory→pro`, `cexAutopilot→pro`, `arbScanner→trader`, `prioritySupport→trader`; cotas diárias por tier | `NFT-BRIEFING.md` §1 · `src/lib/tier/*` (`FEATURE_TIER`, `TIER_DAILY_ANALYSES`) |
 | taxa de swap por tier | **DECIDED + IMPLEMENTED** | Free 100 bps (teto do dono) · Pro 50 · Trader 25 · Pilot 10; ligada em `/api/quote` (EVM; Solana hoje sem taxa — `MOTIVOS_SOLANA_SEM_TAXA`) | `src/lib/tier/fees.ts` · `src/app/api/quote/route.ts` |
 | leitura do passe | **IMPLEMENTED_FOUNDATION** | tier derivado do NFT pela Helius DAS (`getAssetsByOwner` + `ZSWAP_COLLECTION_ADDRESS`); sem coleção configurada = sem passe | `src/lib/tier/check.ts` |
 | benefícios Founder (Camada B) | **DECIDED (lista)** / implementação parcial | badge on-chain, whitelist automática em coleções futuras, Hall of Fame, Founder rewards (royalty), voto, beta perpétuo, desconto de taxa, rate limit maior, tema Founder, features grátis com badge | `NFT-BRIEFING.md` §3 · `src/components/pricing/FounderBenefits.tsx` |
 | framing jurídico | **DECIDED (regra)** / revisão **pendente** | "rewards", nunca "dividend"; advogado cripto-BR antes do mint | `NFT-BRIEFING.md` §4 |
-| narrativa | **DECIDED** | "3 anos de poder, eternidade de pertencimento" | `NFT-BRIEFING.md` §5 |
+| narrativa | **DECIDED**, com ajuste | "poder por 36 meses, pertencimento permanente" (o texto do §5 que cita "v3" foi neutralizado) | `NFT-BRIEFING.md` §5 + OD-NFT-14 |
 | metadata | **PARTIALLY_DECIDED** | schema proposto (Metaplex Core, atributos Founder perpétuos); `Governance Weight` = `TIER_RANK` só como proposta | `NFT-BRIEFING.md` §6 |
-| chain | **PARTIALLY_DECIDED** | código e planos assumem Solana/Metaplex Core/Helius; o briefing ainda pergunta "Solana confirmada?" | `types.ts` ("minted on Solana") · `check.ts` · `NFT-BRIEFING.md` §7.7 |
-| preço | **CONFLICTING** | código: `usdTarget` = "AUTHORITATIVE price (USD)", USD-pegged, liquidado em SOL (≈ $218 / $580 / $4.350 com SOL_USD_REF=145, "CONFIRM at mint"); briefing: "confirmar 1.5 / 4 / 30 SOL ou ajustar" | `src/lib/pricing/plans.ts` × `NFT-BRIEFING.md` §7.2 |
-| moeda | **PARTIALLY_DECIDED** | liquidação em SOL (preço em USD via oráculo Pyth) — só no código e no plano SUPERSEDED | `plans.ts` · `PLANO-MESTRE.md` |
-| royalty | **CONFLICTING** | copy ao vivo: "5% of every secondary sale funds a Founder rewards pool … distributed to holders"; briefing: % e fração **em aberto** + revisão jurídica obrigatória | `src/lib/i18n/messages.ts` (`pricing.founderRoyaltyDesc`) × `NFT-BRIEFING.md` §4, §7.3 |
-| allowlist / whitelist | **CONFLICTING / UNRESOLVED** | copy: "Founder allocation is first-come"; plano SUPERSEDED: "allowlist 48h → público"; nenhuma política autoritativa | `messages.ts` (`pricing.mintModalBody`) · `PLANO-MESTRE.md` Fase E |
+| chain | **APPROVED** (04/10) | Solana + Metaplex Core, programa de venda padrão, sem contrato próprio | OD-NFT-01 |
+| preço | **PARTIALLY_APPROVED** (04/10) | **$149 / $399 / $1.990 — PROVISIONAL_FOR_DEMAND_VALIDATION**; âncora USD, pagamento SOL, referência SOL/USD fotografada antes de cada fase e preço em SOL congelado na fase (fonte da referência não decidida); o código ainda tem 218/580/4.350 | OD-NFT-02 |
+| moeda | **APPROVED** (04/10) | só SOL no lançamento | OD-NFT-03 |
+| royalty | **PARTIALLY_APPROVED** (04/10) | royalty para a **tesouraria**; **nenhuma** distribuição de royalty/receita a holders; % não definido. A copy antiga ("5% … distributed to holders") está em correção (OD-NFT-19) | OD-NFT-11 |
+| allowlist / whitelist | **PARTIALLY_APPROVED** (04/10) | híbrido em princípio: Early Access verificado + lista curada pequena; Pilot só allowlist; país segue a política jurídica; "first-come" sai da copy | OD-NFT-06, 19 |
 | relação com o Early Access | **UNRESOLVED** (fundação existe) | Early Access Fases 1–2 certificadas, não deployadas, gate fechado; guarda carteira declarada, `wallet_verified_at` (sem fluxo de verificação), referral sem recompensa | `PLANO-EARLY-ACCESS.md` · `0068/0069` |
 | fases da venda | **UNRESOLVED** | — | — |
-| data | **CONFLICTING (stale)** | copy: "Mint opens July 2026" — já passou | `messages.ts` (`pricing.mintModalTitle`) |
-| tesouraria | **UNRESOLVED** | plano SUPERSEDED cita Phantom + Squads multisig | `PLANO-MESTRE.md` Fase B |
+| data | **APPROVED (regra)** | nenhuma data até jurídico + Vercel + ensaio em devnet; anúncio com ≥ 14 dias; "July 2026" sai da copy | OD-NFT-08, 19 |
+| tesouraria | **APPROVED (modelo)** | multisig 2-de-3 + política escrita de conversão parcial para stable; signatários e números abertos | OD-NFT-10, 22 |
 | experiência atual | **IMPLEMENTED_FOUNDATION** | `/pricing` com 3 artes, `FounderBenefits`, FAQ, `MintModal` = waitlist **só em localStorage** (ilusória, não alterar — decisão F) | `PricingView.tsx` · discovery §0 F, §5.2 |
 | fundações técnicas da venda | **IMPLEMENTED_FOUNDATION (local, lane B)** | máquina de estados, snapshot de allowlist, Merkle com hash injetado, livro de alocação sem oversell, mint falso, ciclo de tx, relógio do servidor, 14 estados de UI, admin local de 2 passos, evidência encadeada, telemetria sem PII, painel acessível 4 línguas | `src/lib/founders-sale/*` · `src/components/founders/*` · `PLANO-FOUNDERS-NFT-SALE-READINESS.md` |
 | modelo de segurança | **IMPLEMENTED_FOUNDATION (local)** | oversell impossível por fila, idempotência, frase de confirmação, segundo operador, snapshot congelado antes de abrir, "confirmada só com id de tx", isolamento sem rota | idem |
@@ -57,7 +60,9 @@ early access/fundraising.
 | PIX recorrente | **DEFERRED** | trilho B pós-NFT | `NFT-BRIEFING.md` §8 (5.5) |
 
 **Copy ao vivo em conflito** (no código; produção está fora do ar, 402): "Mint opens July 2026", "first-come",
-"5% … distributed to holders", "treasury governance". Não foi alterada (estágio só-docs) — ver OD-NFT-19.
+"5% … distributed to holders", "treasury governance", "3 years or until platform v3". Correção **aprovada** (OD-NFT-19);
+texto novo nas 4 línguas em `FOUNDERS-NFT-COPY-CORRECTION.md`; **aplicação pendente** — está em código de produto
+(`messages.ts`), fora de uma rodada só-docs.
 
 ## 5. Utilidade Founder — o que a plataforma consegue sustentar
 
@@ -68,7 +73,7 @@ LS = LEGAL_SENSITIVITY · REC = RECOMMENDED.
 
 | utilidade | TS | IR | OC | AR | LS | REC |
 |---|---|---|---|---|---|---|
-| Premium da Camada A pelo tier do passe (ZION advisory, autopilot CEX, arb scanner, suporte) por 3 anos/v3 | sim (`tier/check.ts`, gates) | configurar coleção + `ZSWAP_COLLECTION_ADDRESS` + fim do prazo (OD-NFT-14) | **real**: tokens de IA, RPC (limitado pelas cotas diárias por tier) | média: empréstimo/aluguel do NFT entre carteiras (cache de tier) | baixa | **SIM** (núcleo do produto) |
+| Premium da Camada A pelo tier do passe (ZION advisory, autopilot CEX, arb scanner, suporte) por 36 meses do encerramento da venda | sim (`tier/check.ts`, gates) | configurar coleção + `ZSWAP_COLLECTION_ADDRESS` + fim do prazo (36 meses, OD-NFT-14) | **real**: tokens de IA, RPC (limitado pelas cotas diárias por tier) | média: empréstimo/aluguel do NFT entre carteiras (cache de tier) | baixa | **SIM** (núcleo do produto) |
 | Taxa de swap reduzida (100 → 50/25/10 bps) | sim, EVM (`fees.ts`, `/api/quote`) | nenhuma no EVM; Solana hoje não cobra | receita de taxa abdicada | baixa (holder operando para terceiros) | baixa (é desconto) | **SIM** — e corrigir a copy "Future on-chain fee discount": o desconto já existe via tier |
 | Badge Founder on-chain (o próprio NFT) | sim (Metaplex Core) | atributos no metadata | zero | baixa | baixa | **SIM** |
 | Cotas diárias maiores de análise | sim (`TIER_DAILY_ANALYSES`) | nenhuma | IA | baixa | baixa | **SIM** (parte da Camada A) |
@@ -91,7 +96,7 @@ LS = LEGAL_SENSITIVITY · REC = RECOMMENDED.
 | utilidade | TS | IR | OC | AR | LS | REC |
 |---|---|---|---|---|---|---|
 | "Whitelist automática em coleções futuras do ecossistema" (já DECIDIDA no briefing §3) | não (coleções futuras não existem) | snapshot de holders no momento de cada coleção | zero | baixa | baixa–média | manter, redigida como **elegibilidade a allowlist**, sem promessa de preço/quantidade |
-| Founder rewards pool (distribuição de royalty a holders) | não (nenhum mecanismo de distribuição existe) | contrato/processo de distribuição + contabilidade + fiscal | operacional | alta (wash trading para gerar royalty) | **ALTA** (Howey/CVM) | **NÃO prometer** até revisão jurídica (OD-NFT-11) |
+| Founder rewards pool (distribuição de royalty a holders) | — | — | — | — | **ALTA** | **NÃO — decidido pelo dono (OD-NFT-11, 04/10): royalty vai para a tesouraria e nada é distribuído a holders** |
 | Alocação em eventos/tokens futuros (ex.: ZETTA) | não | — | — | alta | **ALTA** | NÃO prometer |
 | Acesso a eventos de lançamento | não | logística | variável | baixa | baixa | opcional |
 
@@ -126,7 +131,7 @@ esgotada/encerrada`, `pausada`, `cancelada`). Nenhuma data.
 
 | fase | objetivo | quem participa | alocação | preço | início | fim | não vendido | proteção | estado de UI |
 |---|---|---|---|---|---|---|---|---|---|
-| 1. ANÚNCIO | explicar o produto e abrir o funil | todos | — | divulgado em USD (OD-NFT-02) | aprovação jurídica + copy aprovada | abertura do registro | — | sem coleta fora do Early Access | COMING_SOON |
+| 1. ANÚNCIO | explicar o produto e abrir o funil | todos | — | em USD, provisório até a validação de demanda (OD-NFT-02, 21) | aprovação jurídica + copy aprovada | abertura do registro | — | sem coleta fora do Early Access | COMING_SOON |
 | 2. REGISTRO NA ALLOWLIST | qualificar carteiras | inscritos do Early Access + lista curada | — | — | gate do Early Access aberto | data de corte anunciada | — | double opt-in, assinatura de carteira, rate limit, país | ALLOWLIST_CHECK / NOT_ELIGIBLE |
 | 3. CONGELAMENTO | tornar a lista imutável e auditável | operadores (2 passos) | snapshot + raiz Merkle publicados | — | fim do registro | publicação da identidade do snapshot | — | frase + segundo operador, evidência encadeada | SALE_NOT_STARTED + contagem |
 | 4. JANELA ALLOWLIST (garantida) | dar prioridade real a quem se qualificou | carteiras do snapshot | **teto por carteira** (OD-NFT-05), Pilot só aqui | fixo da fase | horário anunciado | horário anunciado ou esgotado | passa para a fase 5 (se houver) | prova Merkle, teto, idempotência, pausa | ELIGIBLE / SALE_ACTIVE / tx |
@@ -141,16 +146,15 @@ Fase "alocação garantida para fundadores/time" **não** foi incluída: depende
 Tom: monumental, institucional, escasso, tecnológico, crível. Mesma identidade do app (obsidiana, ouro/violeta, Syne/
 DM Mono, cards dos deuses). Nada de confete, contagem falsa, "últimas unidades" fabricadas.
 
-1. **Hero** — a coleção dos três deuses (arte real), uma linha de tese ("3 anos de premium. Status Founder para
-   sempre."), estado atual da venda (um dos 14 estados) e **um** CTA coerente com o estado.
+1. **Hero** — a coleção dos três deuses (arte real), uma linha de tese ("36 meses de premium. Status Founder permanente."), estado atual da venda (um dos 14 estados) e **um** CTA coerente com o estado.
 2. **Contagem** — só com horário do servidor; sem horário → "Data não anunciada".
 3. **Coleção e supply** — 3 cards (supply fixo por tier, mintado / reservado / disponível reais; percentual só quando
    há dados).
-4. **Tese Founder** — o que é o passe (produto), Camada A × Camada B, o que acontece depois de 3 anos/v3.
+4. **Tese Founder** — o que é o passe (produto), Camada A × Camada B, o que acontece depois dos 36 meses (sem gatilho por versão).
 5. **Utilidades** — só A (+ B marcadas "em construção", sem data). Nada de C como promessa.
 6. **Elegibilidade da carteira** — conectar → "elegível / não elegível / verificando" + prova.
 7. **Alocação** — alocação, usado, restante, por tier.
-8. **Preço** — em USD com o equivalente em SOL ao vivo e quando ele é fixado (OD-NFT-02/03).
+8. **Preço** — em USD (âncora) e o preço em SOL **congelado da fase**, com a referência SOL/USD e o instante do snapshot; nada de preço mudando durante a fase (OD-NFT-02/03).
 9. **CTA de mint** — habilitado só em ELIGIBLE/SALE_ACTIVE; motivo visível quando desabilitado.
 10. **Progresso** — números on-chain reconciliados.
 11. **Estado da transação** — preparando → assinatura → pendente → confirmada (**só com id de transação**) / falhou.
@@ -180,7 +184,7 @@ O painel local `FoundersSalePanel` cobre 2, 3, 6, 7, 9, 10, 11 (14 estados, 4 l�
 | detecção de chain / rede errada | — | bloquear o CTA fora da rede certa | OD-NFT-01 |
 | reconciliação de esgotado | evidência `sold_out_reconciliation` | ler supply on-chain | — |
 
-**Implicação técnica a medir antes de fixar OD-NFT-02 (não verificada, medir em devnet):** preço **USD-pegged**
-(o que o código assume) não é nativo das guardas de pagamento em SOL de um Candy Machine padrão — exige atualizar o
-preço periodicamente (operação de admin auditada) ou um co-assinante do servidor. Preço **fixo em SOL** por fase é
-nativo e mais simples, mas expõe a receita à volatilidade do SOL durante a janela.
+**Preço por fase (decidido 04/10: snapshot-e-congela):** antes de cada fase, fotografar a referência SOL/USD e fixar o
+preço em SOL da fase — nativo das guardas de pagamento em SOL de um programa de venda padrão (uma atualização
+auditada de configuração por fase, com fingerprint). A fonte da referência **não** está decidida; o ensaio em devnet
+mede a operação. O preço USD-pegged contínuo do plano antigo **não** é o comportamento aprovado.
