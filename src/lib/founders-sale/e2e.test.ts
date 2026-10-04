@@ -92,10 +92,11 @@ describe("ensaio ponta a ponta local", () => {
     expect(new Set(rs.map((r) => JSON.stringify(r.final))).size).toBe(1);
   });
 
-  it("validação de demanda e funil sobre o ensaio: limiar pendente, nada FINAL", async () => {
+  it("validação de demanda e funil sobre o ensaio: sem coleta real não há veredito, nada FINAL", async () => {
     const r = await ensaioCompleto("d");
-    const pacote = pacoteDeValidacao(r.ins, r.m.cfg, r.m.relogio.t, T0);
-    expect(pacote.avaliacao.status).toBe("PENDING_OWNER_THRESHOLD");
+    const pacote = pacoteDeValidacao(r.ins, r.m.cfg, r.m.relogio.t);
+    expect(pacote.avaliacao.status).toBe("AWAITING_REAL_COLLECTION");
+    expect(pacote.avaliacao.versaoRegra).toBe(1);
     expect(pacote.statusPreco).toBe("PROVISIONAL_FOR_DEMAND_VALIDATION");
     const f = funil(r.s.telemetria);
     expect(f.sessoesPorEtapa.LANDING).toBe(1);

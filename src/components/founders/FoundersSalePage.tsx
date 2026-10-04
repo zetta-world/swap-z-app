@@ -105,6 +105,7 @@ export default function FoundersSalePage({ quadros, previa, inicial }: { quadros
               </div>
               <dl className="grid grid-cols-2 gap-2 font-mono text-xs">
                 <div><dt className="text-ink-3 uppercase tracking-wider text-[10px]">{t("founders.pg_tierSupply")}</dt><dd className="text-ink tabular-nums">{q.supplyPago[tier].toLocaleString("en-US")}</dd></div>
+                <div><dt className="text-ink-3 uppercase tracking-wider text-[10px]">{t("founders.pg_tierReserved")}</dt><dd className="text-ink tabular-nums">{q.reservaPorTier[tier].toLocaleString("en-US")}</dd></div>
                 <div><dt className="text-ink-3 uppercase tracking-wider text-[10px]">{t("founders.pg_tierFee")}</dt><dd className="text-ink tabular-nums">{pctFee(q.taxaBps[tier])}</dd></div>
                 <div className="col-span-2"><dt className="text-ink-3 uppercase tracking-wider text-[10px]">{t("founders.pg_priceLabel")}</dt>
                   <dd className="text-ink">{q.preco.status === "FINAL" ? `$${q.preco.porTier[tier].usd}` : t("founders.pg_priceFinalizing")}</dd>
@@ -236,7 +237,7 @@ export default function FoundersSalePage({ quadros, previa, inicial }: { quadros
       {/* 14. FAQ */}
       <Secao id={`${id}-faq`} titulo={t("founders.pg_faqTitle")}>
         <div className="flex flex-col gap-2">
-          {[1, 2, 3, 4, 5].map((n) => (
+          {[1, 2, 3, 4, 5, 6].map((n) => (
             <details key={n} className="group rounded-2xl border border-border-faint bg-bg-2/60 px-4 py-3">
               <summary className="cursor-pointer min-h-11 flex items-center font-display font-bold text-sm text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan">{t(`founders.pg_faq${n}Q` as MessageKey)}</summary>
               <p className="font-sans text-sm text-ink-1 mt-2 leading-relaxed">{t(`founders.pg_faq${n}A` as MessageKey)}</p>

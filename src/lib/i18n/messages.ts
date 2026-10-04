@@ -1941,6 +1941,9 @@ const en = {
   },
 
   founders: {
+    pg_tierReserved: "Reserved (not sold)",
+    pg_faq6Q: "Are any passes held back from the sale?",
+    pg_faq6A: "Yes, a small reserve disclosed in advance: 30 Pro and 10 Trader (no Pilot), on top of the 2,850 passes sold. They are used only for strategic ecosystem partners and audited community campaigns, each with a published approval and mint record. There is no team or insider allocation, and reserved passes that are not used stay unminted.",
     pg_previewBanner: "Local preview — simulated data. No real sale, no real network, no payment.",
     pg_heroEyebrow: "Z-SWAP Founders Pass",
     pg_heroTitle: "The Founders of Z-SWAP",
@@ -4126,6 +4129,9 @@ const pt: Schema = {
   },
 
   founders: {
+    pg_tierReserved: "Reservados (não vendidos)",
+    pg_faq6Q: "Algum passe fica fora da venda?",
+    pg_faq6A: "Sim, uma reserva pequena e divulgada antes: 30 Pro e 10 Trader (nenhum Pilot), além dos 2.850 passes vendidos. Ela só é usada para parceiros estratégicos do ecossistema e campanhas de comunidade auditadas, cada uma com registro público de aprovação e de mint. Não há alocação para a equipe ou para insiders, e o que não for usado continua sem mint.",
     pg_previewBanner: "Prévia local — dados simulados. Sem venda real, sem rede real, sem pagamento.",
     pg_heroEyebrow: "Z-SWAP Founders Pass",
     pg_heroTitle: "Os Fundadores do Z-SWAP",
@@ -6293,6 +6299,9 @@ const es: Schema = {
   },
 
   founders: {
+    pg_tierReserved: "Reservados (no se venden)",
+    pg_faq6Q: "¿Algún pase queda fuera de la venta?",
+    pg_faq6A: "Sí, una reserva pequeña y anunciada de antemano: 30 Pro y 10 Trader (ningún Pilot), además de los 2.850 pases vendidos. Solo se usa para socios estratégicos del ecosistema y campañas de comunidad auditadas, cada una con registro público de aprobación y de mint. No hay asignación para el equipo ni para insiders, y los pases reservados que no se usen quedan sin mintear.",
     pg_previewBanner: "Vista previa local — datos simulados. Sin venta real, sin red real, sin pago.",
     pg_heroEyebrow: "Z-SWAP Founders Pass",
     pg_heroTitle: "Los Fundadores de Z-SWAP",
@@ -8460,6 +8469,9 @@ const zh: Schema = {
   },
 
   founders: {
+    pg_tierReserved: "预留(不出售)",
+    pg_faq6Q: "是否有通行证不参与销售?",
+    pg_faq6A: "是的,有一小部分事先公开的预留:30 个 Pro 和 10 个 Trader(没有 Pilot),不计入出售的 2,850 个通行证。它们只用于生态系统战略合作伙伴和经过审计的社区活动,每一枚都有公开的审批和铸造记录。没有团队或内部人员分配,未使用的预留通行证保持未铸造。",
     pg_previewBanner: "本地预览——模拟数据。无真实销售、无真实网络、无付款。",
     pg_heroEyebrow: "Z-SWAP Founders Pass",
     pg_heroTitle: "Z-SWAP 创始人",

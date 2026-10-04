@@ -1,17 +1,43 @@
-import { TIERS, type ConfigVenda, type TierVenda } from "./config";
+import { TIERS, REGRA_DEMANDA_V1, type ConfigVenda, type TierVenda } from "./config";
 import { avaliar, type Inscricao, type IntencaoNaoVinculante } from "./allowlist-hibrida";
+import { canonico, sha256Hex } from "./evidencia";
 
 /**
- * VALIDAÇÃO DE DEMANDA (gate antes de `PRICE_STATUS=FINAL`) — docs/FOUNDERS-NFT-LAUNCH-FUNNEL.md §D.
+ * VALIDAÇÃO DE DEMANDA — regra PRÉ-REGISTRADA v1 (OD-NFT-21 APPROVED, 04/10/2026), congelada antes de qualquer
+ * dado real. Denominador = supply PAGO do tier (a reserva não entra).
  *
- * Calcula, por tier, o interesse QUALIFICADO (e-mail confirmado + carteira assinada + país permitido) com
- * preferência pelo tier, a razão interesse ÷ supply pago, a intenção NÃO VINCULANTE e o funil.
- * Os limiares (OD-NFT-21) são do dono e entram por configuração: sem eles o resultado é
- * `PENDING_OWNER_THRESHOLD` — o motor nunca escolhe um número. Com eles, classifica PASS / FAIL /
- * INCONCLUSIVE sem mudar código. Sem política de país (OD-NFT-16), "qualificado" depende do jurídico e
- * o resultado é INCONCLUSIVE (nunca PASS).
+ *   QUALIFIED_INTEREST          = e-mail verificado + carteira assinada + elegível pela política de jurisdição
+ *                                 + tier escolhido (`avaliar` = ELIGIBLE).
+ *   NON_BINDING_PURCHASE_INTENT = QUALIFIED_INTEREST + intenção explícita "pretende_comprar" AO PREÇO PROVISÓRIO
+ *                                 DECLARADO do tier (`precoIntencaoUsd` = preço atual). Ninguém fica obrigado.
+ *
+ *   PASS         — os TRÊS tiers com qualificados ≥ ⌈35 % supply⌉ E intenção ≥ ⌈20 % supply⌉ (inteiros, teto);
+ *   INCONCLUSIVE — algum tier fica abaixo, mas a demanda AGREGADA alcança a soma dos mínimos (demanda material);
+ *                  ou a política de jurisdição não estava final / mudou durante a janela (o denominador qualificado
+ *                  muda materialmente);
+ *   FAIL         — janela fechada e a demanda agregada abaixo da soma dos mínimos pré-registrados.
+ *
+ * Antes da coleta real: AWAITING_REAL_COLLECTION; janela aberta: COLLECTING (sem veredito parcial).
+ * Regra alterada sem nova versão = INVALID_RULE (falha fechada). Todo resultado carrega versão + fingerprint da regra,
+ * para que um resultado antigo continue auditável se o dono aprovar uma v2 no futuro.
  */
-export type StatusValidacao = "PENDING_OWNER_THRESHOLD" | "PASS" | "FAIL" | "INCONCLUSIVE";
+export type StatusValidacao = "AWAITING_REAL_COLLECTION" | "COLLECTING" | "PASS" | "FAIL" | "INCONCLUSIVE" | "INVALID_RULE";
+
+/** Mínimo inteiro = ⌈supply × bps / 10 000⌉ em aritmética inteira (sem ponto flutuante). */
+export const minimoInteiro = (supply: number, bps: number) => Math.floor((supply * bps + 9_999) / 10_000);
+
+export function minimosDemanda(cfg: ConfigVenda): Record<TierVenda, { qualificados: number; intencao: number }> {
+  const r = cfg.validacaoDemanda.regra;
+  const out = {} as Record<TierVenda, { qualificados: number; intencao: number }>;
+  for (const t of TIERS) out[t] = { qualificados: minimoInteiro(cfg.supplyPago[t], r.qualificadoBps), intencao: minimoInteiro(cfg.supplyPago[t], r.intencaoBps) };
+  return out;
+}
+
+export function fingerprintRegraDemanda(cfg: ConfigVenda): string {
+  return sha256Hex(`founders-demanda-regra\0${canonico({ regra: cfg.validacaoDemanda.regra, supplyPago: cfg.supplyPago })}`);
+}
+
+const regraIntegra = (cfg: ConfigVenda) => canonico(cfg.validacaoDemanda.regra) === canonico(REGRA_DEMANDA_V1);
 
 export interface RelatorioDemanda {
   inscricoes: number;
@@ -49,9 +75,9 @@ export function relatorio(inscricoes: readonly Inscricao[], cfg: ConfigVenda): R
     if (a.estado === "PENDING_LEGAL") qj++;
     if (a.estado !== "ELIGIBLE") continue;
     q++;
-    const t = i.preferenciaTier as TierVenda;
+    const t = i.preferenciaTier as TierVenda; // ELIGIBLE já exige tier escolhido
     interesse[t]++;
-    if (i.intencao === "pretende_comprar") intencaoQ[t]++;
+    if (i.intencao === "pretende_comprar" && i.precoIntencaoUsd === cfg.precoUsd[t]) intencaoQ[t]++;
   }
   const razao = { PRO: 0, TRADER: 0, PILOT: 0 };
   for (const t of TIERS) razao[t] = Math.round((interesse[t] / cfg.supplyPago[t]) * 10_000) / 10_000;
@@ -65,50 +91,52 @@ export function relatorio(inscricoes: readonly Inscricao[], cfg: ConfigVenda): R
 
 export interface AvaliacaoDemanda {
   status: StatusValidacao;
-  porTier: Record<TierVenda, StatusValidacao>;
+  porTier: Record<TierVenda, { qualificados: number; intencao: number; minimoQualificados: number; minimoIntencao: number; passa: boolean }>;
+  agregado: { qualificados: number; intencao: number; minimoQualificados: number; minimoIntencao: number; material: boolean };
   motivos: string[];
-  limiaresPendentes: string[];
+  versaoRegra: number;
+  fingerprintRegra: string;
 }
 
-/**
- * `agora` decide se a janela terminou: abaixo do limiar com a janela aberta = INCONCLUSIVE (ainda coletando),
- * com a janela fechada = FAIL. Amostra abaixo do mínimo = INCONCLUSIVE.
- */
-export function avaliarDemanda(r: RelatorioDemanda, cfg: ConfigVenda, agora: number, inicioJanela: number | null): AvaliacaoDemanda {
-  const { limiaresPorTier, janelaMs, minimoAmostra } = cfg.validacaoDemanda;
-  const limiaresPendentes = [
-    ...(limiaresPorTier.estado !== "CONFIGURADO" ? ["limiaresPorTier (OD-NFT-21)"] : []),
-    ...(janelaMs.estado !== "CONFIGURADO" ? ["janelaMs (OD-NFT-21)"] : []),
-    ...(minimoAmostra.estado !== "CONFIGURADO" ? ["minimoAmostra (OD-NFT-21)"] : []),
-  ];
-  const pend = { PRO: "PENDING_OWNER_THRESHOLD", TRADER: "PENDING_OWNER_THRESHOLD", PILOT: "PENDING_OWNER_THRESHOLD" } as Record<TierVenda, StatusValidacao>;
-  if (limiaresPorTier.estado !== "CONFIGURADO" || janelaMs.estado !== "CONFIGURADO" || minimoAmostra.estado !== "CONFIGURADO") {
-    return { status: "PENDING_OWNER_THRESHOLD", porTier: pend, motivos: ["limiares do dono não configurados"], limiaresPendentes };
-  }
-  const motivos: string[] = [];
-  if (r.qualificadasPendentesJuridico > 0 || cfg.juridico.paisesPermitidos.estado !== "CONFIGURADO") motivos.push("política de país pendente do jurídico");
-  const janelaFechada = inicioJanela !== null && agora >= inicioJanela + janelaMs.valor;
-  const amostraOk = r.qualificadas >= minimoAmostra.valor;
-  if (!amostraOk) motivos.push(`amostra ${r.qualificadas} < mínimo ${minimoAmostra.valor}`);
-  const porTier = {} as Record<TierVenda, StatusValidacao>;
+export interface OpcoesAvaliacao {
+  /** A política de jurisdição (OD-NFT-16) mudou durante a janela de coleta. */
+  politicaJuridicaMudouNaJanela?: boolean;
+}
+
+export function avaliarDemanda(r: RelatorioDemanda, cfg: ConfigVenda, agora: number, o: OpcoesAvaliacao = {}): AvaliacaoDemanda {
+  const min = minimosDemanda(cfg);
+  const porTier = {} as AvaliacaoDemanda["porTier"];
+  let aq = 0, ai = 0, mq = 0, mi = 0;
   for (const t of TIERS) {
-    if (motivos.length) { porTier[t] = "INCONCLUSIVE"; continue; }
-    const ok = r.razaoInteresseSupply[t] >= limiaresPorTier.valor[t];
-    porTier[t] = ok ? "PASS" : janelaFechada ? "FAIL" : "INCONCLUSIVE";
+    const q = r.interesseQualificadoPorTier[t], i = r.intencaoQualificadaPorTier[t];
+    porTier[t] = { qualificados: q, intencao: i, minimoQualificados: min[t].qualificados, minimoIntencao: min[t].intencao, passa: q >= min[t].qualificados && i >= min[t].intencao };
+    aq += q; ai += i; mq += min[t].qualificados; mi += min[t].intencao;
   }
-  const vals = Object.values(porTier);
-  const status: StatusValidacao = vals.every((v) => v === "PASS") ? "PASS" : vals.some((v) => v === "FAIL") ? "FAIL" : "INCONCLUSIVE";
-  return { status, porTier, motivos, limiaresPendentes };
+  const agregado = { qualificados: aq, intencao: ai, minimoQualificados: mq, minimoIntencao: mi, material: aq >= mq && ai >= mi };
+  const base = { porTier, agregado, versaoRegra: cfg.validacaoDemanda.regra.versao, fingerprintRegra: fingerprintRegraDemanda(cfg) };
+  if (!regraIntegra(cfg)) return { ...base, status: "INVALID_RULE", motivos: ["regra difere da v1 pré-registrada — mudança exige nova decisão do dono e nova versão"] };
+  const j = cfg.validacaoDemanda.janela;
+  if (j.estado !== "CONFIGURADO") return { ...base, status: "AWAITING_REAL_COLLECTION", motivos: [`janela de coleta: ${j.estado} (${j.ref})`] };
+  if (agora < j.valor.fim) return { ...base, status: "COLLECTING", motivos: ["janela aberta: sem veredito parcial"] };
+  const motivos: string[] = [];
+  if (cfg.juridico.paisesPermitidos.estado !== "CONFIGURADO" || r.qualificadasPendentesJuridico > 0) motivos.push("política de jurisdição não final: denominador qualificado pode mudar");
+  if (o.politicaJuridicaMudouNaJanela) motivos.push("política de jurisdição mudou durante a janela");
+  if (motivos.length) return { ...base, status: "INCONCLUSIVE", motivos };
+  if (TIERS.every((t) => porTier[t].passa)) return { ...base, status: "PASS", motivos: [] };
+  const abaixo = TIERS.filter((t) => !porTier[t].passa).map((t) => `${t} abaixo do mínimo`);
+  return agregado.material
+    ? { ...base, status: "INCONCLUSIVE", motivos: [...abaixo, "demanda agregada material"] }
+    : { ...base, status: "FAIL", motivos: [...abaixo, "demanda agregada abaixo da soma dos mínimos pré-registrados"] };
 }
 
 /** Pacote de validação (relatórios separados exigidos pelo dono) — dados agregados, sem PII. */
-export function pacoteDeValidacao(inscricoes: readonly Inscricao[], cfg: ConfigVenda, agora: number, inicioJanela: number | null) {
+export function pacoteDeValidacao(inscricoes: readonly Inscricao[], cfg: ConfigVenda, agora: number, o: OpcoesAvaliacao = {}) {
   const r = relatorio(inscricoes, cfg);
-  const a = avaliarDemanda(r, cfg, agora, inicioJanela);
-  const cobertura = {} as Record<TierVenda, { supply: number; interesseQualificado: number; razao: number; limiar: number | "PENDING_OWNER" }>;
+  const a = avaliarDemanda(r, cfg, agora, o);
+  const cobertura = {} as Record<TierVenda, { supply: number; interesseQualificado: number; razao: number; minimoQualificados: number; minimoIntencao: number }>;
   for (const t of TIERS) {
     cobertura[t] = { supply: cfg.supplyPago[t], interesseQualificado: r.interesseQualificadoPorTier[t], razao: r.razaoInteresseSupply[t],
-      limiar: cfg.validacaoDemanda.limiaresPorTier.estado === "CONFIGURADO" ? cfg.validacaoDemanda.limiaresPorTier.valor[t] : "PENDING_OWNER" };
+      minimoQualificados: a.porTier[t].minimoQualificados, minimoIntencao: a.porTier[t].minimoIntencao };
   }
   return {
     demandaPorTier: r.interesseQualificadoPorTier,

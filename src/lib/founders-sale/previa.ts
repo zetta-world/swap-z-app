@@ -1,4 +1,4 @@
-import { TIERS, CONFIG_APROVADA, fingerprintConfig, type TierVenda, type ConfigVenda } from "./config";
+import { TIERS, CONFIG_APROVADA, fingerprintConfig, reservaEfetiva, type TierVenda, type ConfigVenda } from "./config";
 import { configDeEnsaio, montarEnsaio, abrirAteAllowlist, abrirPublica, comprar, acompanharAte, inscricaoSintetica, carteiraSintetica, adminExecuta, qualificar, type MontagemEnsaio } from "./cenario-local";
 import { contagem, type Contagem } from "./relogio";
 import { estadoDaUI, visaoProgresso, visaoAlocacao, type EstadoUI, type VisaoProgresso, type VisaoAlocacao, type Elegibilidade, type EntradaVisao } from "./visao";
@@ -29,6 +29,8 @@ export interface QuadroPrevia {
   configFingerprint: string;
   preco: { status: string; porTier: Record<TierVenda, { usd: number; sol: string | null }> };
   supplyPago: Record<TierVenda, number>;
+  /** OD-NFT-04: reserva NÃO paga, divulgada (fora do supply pago). */
+  reservaPorTier: Record<TierVenda, number>;
   taxaBps: Record<TierVenda, number>;
   pilotSomenteAllowlist: boolean;
   onboarding: null | { tier: TierVenda; premiumAte: number | null; beneficiosAgora: string[]; beneficiosPlanejados: string[] };
@@ -53,7 +55,7 @@ function quadroSemVenda(id: string, cfg: ConfigVenda): QuadroPrevia {
     progressoPorTier: { PRO: SEM_DADOS, TRADER: SEM_DADOS, PILOT: SEM_DADOS },
     alocacao: visaoAlocacao({ alocacao: null, usado: null, elegibilidade: "desconhecida", prova: "ausente" }),
     carteira: "disconnected", tx: "IDLE", txRef: null, snapshot: null, configFingerprint: fingerprintConfig(cfg),
-    preco: { status: cfg.statusPreco, porTier }, supplyPago: cfg.supplyPago,
+    preco: { status: cfg.statusPreco, porTier }, supplyPago: cfg.supplyPago, reservaPorTier: reservaEfetiva(cfg).porTier,
     taxaBps: { PRO: TAXA_SWAP_BPS.PRO, TRADER: TAXA_SWAP_BPS.TRADER, PILOT: TAXA_SWAP_BPS.PILOT },
     pilotSomenteAllowlist: cfg.pilotSomenteAllowlist, onboarding: null, simulacao: true,
   };
@@ -81,7 +83,7 @@ function quadro(m: MontagemEnsaio, id: string, o: OpcoesQuadro = {}): QuadroPrev
     alocacao: visaoAlocacao({ alocacao: o.concedido ?? null, usado: o.usado ?? null, elegibilidade: eleg, prova: o.prova ?? "ausente" }),
     carteira: o.carteira ?? "disconnected", tx: estadoTxPublico(tx), txRef: o.txRef ?? null,
     snapshot: snap ? { id: snap.id, raiz: snap.raiz, versao: snap.versao } : null,
-    configFingerprint: s.fingerprint, preco: { status: cfg.statusPreco, porTier }, supplyPago: cfg.supplyPago,
+    configFingerprint: s.fingerprint, preco: { status: cfg.statusPreco, porTier }, supplyPago: cfg.supplyPago, reservaPorTier: reservaEfetiva(cfg).porTier,
     taxaBps: { PRO: TAXA_SWAP_BPS.PRO, TRADER: TAXA_SWAP_BPS.TRADER, PILOT: TAXA_SWAP_BPS.PILOT },
     pilotSomenteAllowlist: cfg.pilotSomenteAllowlist, onboarding: o.onboarding ?? null, simulacao: true,
   };

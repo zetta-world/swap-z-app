@@ -31,9 +31,12 @@ export function precoPublicoUsd(
   return status === "FINAL" ? plan.usdTarget : null;
 }
 
-/** Normal (warrior) recurring price = +30% vs the launch/NFT-holder rate —
- *  rewards launch buyers ("you're a god / Founder") and gives the recurring
- *  engine a fatter margin. */
+/** Planning baseline only: "+30% vs the launch/NFT-holder rate" (NFT-BRIEFING §9).
+ *  OD-NFT-20 (owner, 04/10/2026): NON_BINDING_PRICING_GUIDANCE — Founders NFT and
+ *  the recurring plans are separate commercial products; no customer is entitled
+ *  to any minimum premium of the monthly plan over NFT economics, and the
+ *  authoritative monthly prices are the explicit `monthlyUsd` anchors below.
+ *  Used only as the fallback for a tier with no anchor (none today). */
 export const NORMAL_PREMIUM = 1.3;
 
 export interface PlanTier {

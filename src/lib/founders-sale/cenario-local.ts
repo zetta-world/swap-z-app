@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { CONFIG_APROVADA, configurado, type ConfigVenda, type TierVenda } from "./config";
+import { CONFIG_APROVADA, configurado, type ConfigVenda, type ParametrosConversao, type TierVenda } from "./config";
 import { ServicoDaVenda } from "./servico";
 import { ProvedorReferenciaFixo } from "./preco";
 import { CadeiaFalsa, REDE_DA_VENDA, type OpcoesCadeia } from "./carteira";
@@ -42,6 +42,16 @@ export function configDeEnsaio(over: Partial<ConfigVenda> = {}): ConfigVenda {
   };
 }
 
+/**
+ * Parâmetros de conversão SÓ DE TESTE — exercitam o simulador; NÃO são recomendação nem decisão (OD-NFT-22: números
+ * reais dependem de análise de risco documentada + revisão contábil/jurídica). Contrapartes fictícias.
+ */
+export const PARAMETROS_CONVERSAO_TESTE: ParametrosConversao = {
+  solRetidoBps: 0, stableBps: 5_000, fiatBps: 5_000,
+  trancheMaxBrlCentavos: 5_000_000, tranchesPorDiaMax: 4, limitePorContraparteBps: 5_000,
+  contrapartes: ["contraparte-ficticia-a", "contraparte-ficticia-b"],
+};
+
 export class RelogioManual {
   constructor(public t: number = T0) {}
   agora = () => this.t;
@@ -53,7 +63,8 @@ export function inscricaoSintetica(n: number, tier: TierVenda | "indeciso" | nul
   return {
     id: `insc-${n}`, emailHash: createHash("sha256").update(`email-sintetico-${n}`).digest("hex"),
     emailVerificado: false, carteira: carteiraSintetica(n), carteiraAssinada: false, pais: "ZZ",
-    preferenciaTier: tier, intencao: "pretende_comprar", fonte: "ensaio_local", referral: null, em: T0 + n, ...extra,
+    preferenciaTier: tier, intencao: "pretende_comprar", precoIntencaoUsd: tier && tier !== "indeciso" ? CONFIG_APROVADA.precoUsd[tier] : null,
+    fonte: "ensaio_local", referral: null, em: T0 + n, ...extra,
   };
 }
 

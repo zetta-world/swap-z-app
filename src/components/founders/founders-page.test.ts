@@ -59,6 +59,20 @@ describe("FoundersSalePage", () => {
     expect(t).not.toMatch(/guaranteed (return|profit)|passive income|dividend(?!s)|revenue share(?! or)/i);
   });
 
+  it("reserva divulgada na vitrine pública (30/10/0, fora dos 2.850) e nenhum percentual de royalty exposto", () => {
+    for (const lang of LINGUAS) {
+      idioma.lang = lang;
+      const t = texto(render(quadros[0], false));
+      expect(t, lang).toMatch(/30[\s\S]*10[\s\S]*2[.,]850/);
+      expect(t, lang).not.toMatch(/royalt[^%]{0,80}\d\s?%|版税[^%]{0,40}\d\s?%|regal[^%]{0,80}\d\s?%/i);
+      expect(t, lang).not.toMatch(/\+\s?30\s?%/);
+    }
+    idioma.lang = "en";
+    const t = texto(render(quadros[0], false));
+    expect(t).toContain("Reserved (not sold)");
+    expect(t).toMatch(/no team or insider allocation/i);
+  });
+
   it("onboarding só com transação confirmada e referência; esgotado só no SOLD_OUT", () => {
     for (const q of quadros) {
       const html = render(q, true);

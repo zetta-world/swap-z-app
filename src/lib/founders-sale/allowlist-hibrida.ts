@@ -32,6 +32,8 @@ export interface Inscricao {
   pais: string;
   preferenciaTier: TierVenda | "indeciso" | null;
   intencao: IntencaoNaoVinculante | null;
+  /** Preço provisório EXIBIDO quando a intenção foi registrada (OD-NFT-21: intenção vale "ao preço declarado"). */
+  precoIntencaoUsd?: number | null;
   fonte: string;
   referral: string | null;
   em: number;

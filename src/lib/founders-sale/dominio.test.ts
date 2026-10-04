@@ -4,12 +4,12 @@ import { VendaAutoritativa, ArmazemEmMemoria, estadoInicial } from "./autoridade
 import { cotar, lamportsPara, formatarSol, PrecosDaVenda, ProvedorReferenciaFixo } from "./preco";
 import { EstoqueDaVenda } from "./estoque";
 import { avaliar, alocar, criarSnapshotAlocacao, congelar, snapshotIntegro, provaPara, verificarProva, normalizarSolana } from "./allowlist-hibrida";
-import { relatorio, avaliarDemanda, pacoteDeValidacao } from "./demanda";
+import { relatorio, avaliarDemanda, pacoteDeValidacao, minimosDemanda, minimoInteiro, fingerprintRegraDemanda } from "./demanda";
 import { proximoEstadoCarteira, AssinadorFalso, CadeiaFalsa, lerRecibo, mensagemDePosse, REDE_DA_VENDA, type EstadoCarteira, type EventoCarteira } from "./carteira";
 import { somarMesesUtc, janelaPremium, premiumAtivo, beneficiosPublicaveis, BENEFICIOS, TAXA_SWAP_BPS, relacaoPlanoMensal } from "./beneficios";
 import { funil } from "./funil";
 import { estadoTxPublico, ESTADOS_TX_PUBLICOS } from "./ciclo-tx";
-import { configDeEnsaio, carteiraSintetica, inscricaoSintetica, RelogioManual, T0 } from "./cenario-local";
+import { configDeEnsaio, carteiraSintetica, inscricaoSintetica, RelogioManual, T0, PARAMETROS_CONVERSAO_TESTE } from "./cenario-local";
 import { TIER_FEE_BPS } from "@/lib/tier/fees";
 
 const H = 3_600_000;
@@ -25,10 +25,13 @@ describe("configuração: aprovado como dado, pendente como estado", () => {
   it("pendências explícitas e nunca lidas como valor", () => {
     const p = pendencias(CONFIG_APROVADA);
     const refs = new Set(p.map((x) => x.ref));
-    for (const r of ["OD-NFT-04", "OD-NFT-11", "OD-NFT-16", "OD-NFT-17", "OD-NFT-20", "OD-NFT-21", "OD-NFT-22"]) expect([...refs].some((x) => x.includes(r.slice(3)))).toBe(true);
-    expect(p.find((x) => x.campo === "royalty.percentual")?.estado).toBe("PENDING_OWNER");
+    for (const r of ["OD-NFT-02", "OD-NFT-08", "OD-NFT-11", "OD-NFT-16", "OD-NFT-17", "OD-NFT-21", "OD-NFT-22"]) expect([...refs].some((x) => x.includes(r.slice(3)))).toBe(true);
+    // decididos em 04/10 (rev. 4): não aparecem mais como pendência
+    for (const c of ["reserva", "royalty.percentual", "relacaoPlanoMensal"]) expect(p.find((x) => x.campo === c)).toBeUndefined();
     expect(p.find((x) => x.campo === "juridico.paisesPermitidos")?.estado).toBe("PENDING_LEGAL");
-    expect(reservaEfetiva(CONFIG_APROVADA)).toEqual({ porTier: { PRO: 0, TRADER: 0, PILOT: 0 }, origem: "UNCONFIGURED_SIMULATION_ZERO" });
+    // única pendência do DONO: identidades humanas dos signatários
+    expect(p.filter((x) => x.estado === "PENDING_OWNER").map((x) => x.campo)).toEqual(["tesouraria.signatarios"]);
+    expect(reservaEfetiva(CONFIG_APROVADA)).toEqual({ porTier: { PRO: 30, TRADER: 10, PILOT: 0 }, origem: "CONFIGURADA" });
   });
   it("validação recusa rede real, royalty a holders, premium ≠ 36, preço FINAL sem validação, reserva sem finalidade, horários fora de ordem", () => {
     const bad = (o: Partial<ConfigVenda>) => validarConfig({ ...CONFIG_APROVADA, ...o });
@@ -36,7 +39,14 @@ describe("configuração: aprovado como dado, pendente como estado", () => {
     expect(bad({ royalty: { ...CONFIG_APROVADA.royalty, distribuicaoAHolders: true as never } })).toContain("royalty_fora_da_politica");
     expect(bad({ premium: { meses: 24 as never, inicio: "ENCERRAMENTO_OFICIAL_DA_VENDA" } })).toContain("premium_fora_da_politica");
     expect(bad({ statusPreco: "FINAL" })).toContain("preco_final_sem_validacao_de_demanda");
-    expect(bad({ reserva: configurado({ PRO: [{ quantidade: 5, finalidade: "" }], TRADER: [], PILOT: [] }, "t") })).toContain("reserva_sem_finalidade:PRO");
+    const fins = ["PARCEIRO_ESTRATEGICO_ECOSSISTEMA"] as const;
+    expect(bad({ reserva: configurado({ PRO: [{ quantidade: 5, finalidade: "", finalidadesPermitidas: fins }], TRADER: [], PILOT: [] }, "t") })).toContain("reserva_sem_finalidade:PRO");
+    expect(bad({ reserva: configurado({ PRO: [{ quantidade: 5, finalidade: "alocação da equipe", finalidadesPermitidas: ["EQUIPE" as never] }], TRADER: [], PILOT: [] }, "t") })).toContain("reserva_finalidade_fora_da_politica:PRO");
+    expect(bad({ reserva: configurado({ PRO: [], TRADER: [], PILOT: [{ quantidade: 1, finalidade: "sorteio de Pilot", finalidadesPermitidas: fins }] }, "t") })).toContain("reserva_pilot_proibida");
+    expect(bad({ reserva: configurado({ PRO: [{ quantidade: 31, finalidade: "parceiros do ecossistema", finalidadesPermitidas: fins }], TRADER: [], PILOT: [] }, "t") })).toContain("reserva_acima_do_aprovado:PRO");
+    expect(bad({ royalty: { ...CONFIG_APROVADA.royalty, publico: true as never } })).toContain("royalty_nao_pode_ser_beneficio_publico");
+    expect(bad({ validacaoDemanda: { ...CONFIG_APROVADA.validacaoDemanda, regra: { ...CONFIG_APROVADA.validacaoDemanda.regra, qualificadoBps: 3000 as never } } })).toContain("regra_de_demanda_alterada_sem_nova_versao");
+    expect(bad({ tesouraria: { ...CONFIG_APROVADA.tesouraria, limiarPlanejado: { m: 1 as never, n: 3 } } })).toContain("tesouraria_signatario_unico");
     expect(bad({ horarios: { inscricaoAbre: 10, inscricaoFecha: 5, allowlistAbre: null, publicaAbre: null, vendaFecha: null } })).toContain("horario_fora_de_ordem:inscricaoFecha");
   });
   it("fingerprint determinístico e sensível a qualquer mudança", () => {
@@ -272,28 +282,55 @@ describe("validação de demanda: limiar do dono, sem inventar", () => {
     expect(r.intencaoQualificadaPorTier.PRO).toBe(15);
     expect(r.aviso).toBe("INTENCAO_NAO_VINCULANTE");
   });
-  it("sem limiares do dono → PENDING_OWNER_THRESHOLD (configuração aprovada)", () => {
+  it("regra v1 pré-registrada: mínimos inteiros ⌈35 %⌉ e ⌈20 %⌉ do supply PAGO", () => {
+    expect(minimosDemanda(CONFIG_APROVADA)).toEqual({ PRO: { qualificados: 700, intencao: 400 }, TRADER: { qualificados: 263, intencao: 150 }, PILOT: { qualificados: 35, intencao: 20 } });
+    expect(minimoInteiro(750, 3500)).toBe(263); // 262,5 → teto
+    expect(minimoInteiro(100, 2000)).toBe(20);
+    expect(CONFIG_APROVADA.validacaoDemanda.regra).toEqual({ versao: 1, qualificadoBps: 3500, intencaoBps: 2000, arredondamento: "TETO_INTEIRO", passExige: "TODOS_OS_TIERS" });
+  });
+  it("sem coleta real → AWAITING_REAL_COLLECTION; janela aberta → COLLECTING (sem veredito parcial)", () => {
     const cfg = configDeEnsaio();
-    const a = avaliarDemanda(relatorio(ins, cfg), cfg, T0, T0);
-    expect(a.status).toBe("PENDING_OWNER_THRESHOLD");
-    expect(a.limiaresPendentes).toHaveLength(3);
+    expect(avaliarDemanda(relatorio(ins, cfg), cfg, T0).status).toBe("AWAITING_REAL_COLLECTION");
+    const comJanela = configDeEnsaio({ validacaoDemanda: { ...CONFIG_APROVADA.validacaoDemanda, janela: configurado({ inicio: T0, fim: T0 + 1000 }, "TESTE") } });
+    expect(avaliarDemanda(relatorio(ins, comJanela), comJanela, T0 + 500).status).toBe("COLLECTING");
   });
-  it("com limiares (valores de TESTE, não do dono) classifica PASS/FAIL/INCONCLUSIVE sem mudar código", () => {
-    const comLimiar = (k: number, min = 10) => configDeEnsaio({ validacaoDemanda: { limiaresPorTier: configurado({ PRO: k, TRADER: k, PILOT: k }, "TESTE"), janelaMs: configurado(1000, "TESTE"), minimoAmostra: configurado(min, "TESTE") } });
-    const cfgPass = comLimiar(0.01);
-    expect(avaliarDemanda(relatorio(ins, cfgPass), cfgPass, T0 + 2000, T0).status).toBe("PASS");
-    const cfgFail = comLimiar(0.5);
-    expect(avaliarDemanda(relatorio(ins, cfgFail), cfgFail, T0 + 2000, T0).status).toBe("FAIL");
-    expect(avaliarDemanda(relatorio(ins, cfgFail), cfgFail, T0 + 500, T0).status).toBe("INCONCLUSIVE"); // janela aberta
-    const cfgAmostra = comLimiar(0.01, 1000);
-    expect(avaliarDemanda(relatorio(ins, cfgAmostra), cfgAmostra, T0 + 2000, T0).status).toBe("INCONCLUSIVE");
-    const semJuridico = { ...cfgPass, juridico: CONFIG_APROVADA.juridico };
-    expect(avaliarDemanda(relatorio(ins, semJuridico), semJuridico, T0 + 2000, T0).status).toBe("INCONCLUSIVE");
+  it("PASS / INCONCLUSIVE / FAIL pela regra v1 (contagens sintéticas), com versão e fingerprint da regra", () => {
+    const cfg = configDeEnsaio({ validacaoDemanda: { ...CONFIG_APROVADA.validacaoDemanda, janela: configurado({ inicio: T0, fim: T0 + 1000 }, "TESTE") } });
+    const base = relatorio([], cfg);
+    const com = (q: [number, number, number], i: [number, number, number]) => ({ ...base,
+      interesseQualificadoPorTier: { PRO: q[0], TRADER: q[1], PILOT: q[2] }, intencaoQualificadaPorTier: { PRO: i[0], TRADER: i[1], PILOT: i[2] } });
+    const fim = T0 + 1000;
+    const pass = avaliarDemanda(com([700, 263, 35], [400, 150, 20]), cfg, fim);
+    expect(pass).toMatchObject({ status: "PASS", versaoRegra: 1 });
+    expect(pass.fingerprintRegra).toBe(fingerprintRegraDemanda(cfg));
+    // um tier abaixo, demanda agregada material → INCONCLUSIVE
+    expect(avaliarDemanda(com([800, 263, 34], [450, 150, 19]), cfg, fim).status).toBe("INCONCLUSIVE");
+    // intenção abaixo num tier mesmo com qualificados acima → não é PASS
+    expect(avaliarDemanda(com([700, 263, 35], [400, 149, 20]), cfg, fim).status).not.toBe("PASS");
+    // agregado abaixo da soma dos mínimos → FAIL
+    expect(avaliarDemanda(com([300, 100, 10], [100, 40, 5]), cfg, fim).status).toBe("FAIL");
+    // jurídico não final ou política mudada na janela → INCONCLUSIVE, mesmo com números de PASS
+    const semJuridico = { ...cfg, juridico: CONFIG_APROVADA.juridico };
+    expect(avaliarDemanda(com([700, 263, 35], [400, 150, 20]), semJuridico, fim).status).toBe("INCONCLUSIVE");
+    expect(avaliarDemanda(com([700, 263, 35], [400, 150, 20]), cfg, fim, { politicaJuridicaMudouNaJanela: true }).status).toBe("INCONCLUSIVE");
+    // regra mexida depois de ver os dados → INVALID_RULE (falha fechada)
+    const mexida = { ...cfg, validacaoDemanda: { ...cfg.validacaoDemanda, regra: { ...cfg.validacaoDemanda.regra, qualificadoBps: 1000 as never } } };
+    expect(avaliarDemanda(com([300, 100, 10], [100, 40, 5]), mexida, fim).status).toBe("INVALID_RULE");
   });
-  it("pacote de validação traz os 6 relatórios e mostra limiar PENDING_OWNER", () => {
-    const p = pacoteDeValidacao(ins, configDeEnsaio(), T0, null);
+  it("intenção só conta ao preço provisório declarado do tier", () => {
+    const cfg = configDeEnsaio();
+    const certo = inscricaoSintetica(9001, "PRO", { emailVerificado: true, carteiraAssinada: true });
+    const outroPreco = inscricaoSintetica(9002, "PRO", { emailVerificado: true, carteiraAssinada: true, precoIntencaoUsd: 99 });
+    const semPreco = inscricaoSintetica(9003, "PRO", { emailVerificado: true, carteiraAssinada: true, precoIntencaoUsd: null });
+    const r = relatorio([certo, outroPreco, semPreco], cfg);
+    expect(r.interesseQualificadoPorTier.PRO).toBe(3);
+    expect(r.intencaoQualificadaPorTier.PRO).toBe(1);
+  });
+  it("pacote de validação traz os 6 relatórios e os mínimos pré-registrados", () => {
+    const p = pacoteDeValidacao(ins, configDeEnsaio(), T0);
     expect(Object.keys(p)).toEqual(expect.arrayContaining(["demandaPorTier", "carteirasQualificadas", "preferencias", "intencaoNaoVinculante", "coberturaDeSupply", "funil", "avaliacao"]));
-    expect(p.coberturaDeSupply.PRO.limiar).toBe("PENDING_OWNER");
+    expect(p.coberturaDeSupply.PRO).toMatchObject({ minimoQualificados: 700, minimoIntencao: 400 });
+    expect(p.avaliacao.status).toBe("AWAITING_REAL_COLLECTION");
     expect(p.statusPreco).toBe("PROVISIONAL_FOR_DEMAND_VALIDATION");
   });
 });
@@ -345,11 +382,11 @@ describe("benefícios: 36 meses do encerramento, só utilidade real", () => {
     expect(premiumAtivo(CONFIG_APROVADA, Date.UTC(2030, 5, 1), Date.UTC(2033, 5, 1), true)).toBe(false);
     expect(premiumAtivo(CONFIG_APROVADA, null, T0, false)).toBe(false);
   });
-  it("grupo C nunca publicável; taxas espelham tier/fees.ts; plano mensal pendente", () => {
+  it("grupo C nunca publicável; taxas espelham tier/fees.ts; plano mensal = produto separado (+30 % não vinculante)", () => {
     for (const t of ["PRO", "TRADER", "PILOT"] as const) expect(beneficiosPublicaveis(t).some((b) => b.grupo === "C_EXCLUIDO")).toBe(false);
     expect(BENEFICIOS.filter((b) => b.grupo === "C_EXCLUIDO").map((b) => b.id)).toEqual(expect.arrayContaining(["royalty_distribution_to_holders", "treasury_governance"]));
     expect(TAXA_SWAP_BPS).toEqual({ FREE: TIER_FEE_BPS.free, PRO: TIER_FEE_BPS.pro, TRADER: TIER_FEE_BPS.trader, PILOT: TIER_FEE_BPS.pilot });
-    expect(relacaoPlanoMensal(CONFIG_APROVADA)).toEqual({ estado: "PENDING_OWNER", ref: "OD-NFT-20" });
+    expect(relacaoPlanoMensal(CONFIG_APROVADA)).toEqual({ estado: "CONFIGURADO", valor: { modelo: "PRODUTOS_COMERCIAIS_SEPARADOS", regraMais30: "NON_BINDING_PRICING_GUIDANCE", assinaturaDisponivelParaNaoHolders: true, garantiaDePremioFuturoSobreONft: false } });
   });
 });
 
@@ -370,13 +407,22 @@ describe("funil: só a partir de eventos válidos", () => {
 });
 
 describe("tesouraria: só verificação, signatários pendentes", () => {
+  it("papéis 2-de-3 definidos, identidades pendentes; nenhum signatário sozinho", () => {
+    expect(CONFIG_APROVADA.tesouraria).toMatchObject({ modo: "MULTISIG_REQUIRED", limiarPlanejado: { m: 2, n: 3 },
+      papeisSignatarios: ["A_CEO_AUTORIDADE_CORPORATIVA", "B_INDEPENDENTE_FINANCEIRO_SEGURANCA", "C_INDEPENDENTE_RECUPERACAO_CONTINUIDADE"],
+      signatarios: { estado: "PENDING_OWNER" }, endereco: { estado: "PENDING_CHAIN" },
+      politicaConversao: { principio: "OBRIGACOES_OPERACIONAIS_FORA_DO_RISCO_SOL", parametros: { estado: "PENDING_LEGAL" } } });
+  });
   it("config aprovada → PENDING_OWNER; declarado × observado detecta divergência; OK só com tudo igual", async () => {
     const { verificarTesouraria } = await import("./tesouraria");
     expect(verificarTesouraria(CONFIG_APROVADA, null)).toMatchObject({ estado: "PENDING_OWNER" });
     const donos = [carteiraSintetica("s1"), carteiraSintetica("s2"), carteiraSintetica("s3")];
     const end = carteiraSintetica("multisig-teste");
+    const soSignatarios: ConfigVenda = { ...CONFIG_APROVADA, tesouraria: { ...CONFIG_APROVADA.tesouraria, signatarios: configurado(donos, "TESTE") } };
+    expect(verificarTesouraria(soSignatarios, null)).toMatchObject({ estado: "PENDING_LEGAL" }); // parâmetros de conversão
     const cfg: ConfigVenda = { ...CONFIG_APROVADA, tesouraria: { ...CONFIG_APROVADA.tesouraria,
-      signatarios: configurado(donos, "TESTE"), endereco: configurado(end, "TESTE"), politicaConversao: configurado({ fracao: 0.5, gatilho: "TESTE" }, "TESTE") } };
+      signatarios: configurado(donos, "TESTE"), endereco: configurado(end, "TESTE"),
+      politicaConversao: { principio: "OBRIGACOES_OPERACIONAIS_FORA_DO_RISCO_SOL", parametros: configurado(PARAMETROS_CONVERSAO_TESTE, "TESTE") } } };
     expect(verificarTesouraria(cfg, null)).toMatchObject({ estado: "PENDING_EXTERNAL" });
     expect(verificarTesouraria(cfg, { endereco: end, donos, limiar: 2, simulacaoAprovada: true }).estado).toBe("OK");
     expect(verificarTesouraria(cfg, { endereco: carteiraSintetica("outro"), donos, limiar: 1, simulacaoAprovada: false })).toEqual({ estado: "DIVERGENTE", diferencas: ["endereco", "limiar", "simulacao"] });

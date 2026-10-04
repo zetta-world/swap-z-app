@@ -1,4 +1,4 @@
-import type { ConfigVenda, TierVenda } from "./config";
+import type { ConfigVenda, RelacaoPlanoMensal, TierVenda } from "./config";
 
 /**
  * BENEFÍCIOS DO PASSE — só o que a plataforma sustenta (OD-NFT-18, 04/10/2026).
@@ -63,6 +63,8 @@ export function premiumAtivo(cfg: ConfigVenda, encerramentoOficial: number | nul
   return j.estado === "AGUARDANDO_ENCERRAMENTO_DA_VENDA" ? true : agora < j.fim;
 }
 
-export function relacaoPlanoMensal(cfg: ConfigVenda): { estado: "PENDING_OWNER"; ref: "OD-NFT-20" } | { estado: "CONFIGURADO"; valor: string } {
+/** OD-NFT-20 (APPROVED): NFT e assinaturas são produtos separados; "+30 %" é orientação de preço NÃO vinculante —
+ *  nenhum cliente tem direito a um prêmio mínimo do mensal sobre o NFT, e a assinatura segue aberta a não holders. */
+export function relacaoPlanoMensal(cfg: ConfigVenda): { estado: "PENDING_OWNER"; ref: "OD-NFT-20" } | { estado: "CONFIGURADO"; valor: RelacaoPlanoMensal } {
   return cfg.relacaoPlanoMensal.estado === "CONFIGURADO" ? { estado: "CONFIGURADO", valor: cfg.relacaoPlanoMensal.valor } : { estado: "PENDING_OWNER", ref: "OD-NFT-20" };
 }
