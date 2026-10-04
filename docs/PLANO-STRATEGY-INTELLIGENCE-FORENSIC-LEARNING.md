@@ -207,7 +207,8 @@ O objetivo **não** é "deixar o backtest histórico verde". O objetivo é:
 |---|---|
 | auditoria forense (só leitura) | **feita** (dono, 03/10/2026) |
 | este documento | `DOCUMENTED` |
-| Fase A — **ferramenta** (só leitura) | `TOOLING_READY` (lane B, 04/10/2026) — ver §7. **Execução sobre dados reais: NOT_STARTED** (exige leitura do hospedado = autorização do dono) |
+| Fase A — **ferramenta** (só leitura) | `TOOLING_READY` (lane B, 04/10/2026) — ver §7 |
+| Fase A — **execução sobre dados reais** | **`COMPLETE`** (04/10/2026, leitura só-leitura autorizada pelo dono; escrita hospedada 0) — ver §8 |
 | Fase B — **esquema** de atribuição | `SCHEMA_READY` (rascunho v0, rótulos só locais) — ver §7 |
 | Fases C–G | `NOT_STARTED` |
 | mudança de estratégia, genoma, parâmetro, threshold, universo | **nenhuma** |
@@ -247,3 +248,25 @@ com dados **sintéticos**: fingerprint e `pg_stat_user_tables` idênticos antes/
 (`STRATEGY_PSQL=… node scripts/strategy/exportar.mjs --alvo hospedado --dono-autorizou …`) e fornecer as datas
 reais de reset/troca de semântica que conhecer (`--eventos`). Só então os deltas do FSL-10 (Arbiter, Radar,
 Mistral, Kimi, Self, Hybrid) recebem classificação.
+
+## 8. Resultado da Fase A sobre os dados reais (04/10/2026) — NADA otimizado, NADA alterado
+
+Evidência selada: `zswap-local/evidence/strategy-intelligence-phase-a-20261004T125509Z/` (MANIFEST
+`5d5e9436…`, segredos/PII PASS). Leitura pelo conector Supabase, toda consulta em `begin transaction read only …
+rollback`; `pg_stat_user_tables` idêntico antes/depois (0 escritas). Análise por agregados SQL no servidor.
+
+- **Contabilidade (FSL-10 resolvido):** realizado e caixa das 23 carteiras explicados por eventos datados do próprio
+  banco — reset 0017 (07-17), arquivo 07-28 sem reset, reset strat_* (08-02), **reset da coorte arbiter (08-03,
+  304,16 USD zerados, motivo registrado: ruído de feed)**, reparo 08-22, vazamento de caixa corrigido em 01/08.
+  Arbiter 199,43 = 9,16 + 190,27. Sem corrupção. Resíduo UNKNOWN só em wins/losses de 6 contas.
+- **Celeiro:** MATCH por posição; FSL-08 = recortes por era/braço (pré-A/B e controle).
+- **Bancada:** 9/9 rodadas sem `estrategia_id`; `BANCADA_STRATEGY_LINKAGE=PARTIAL` (3 recuperáveis por `params.mesa`).
+- **Perdas:** FSL-01 reproduzido exatamente (578 / 167 / 42). Causa primária provada em 31,2% de 970 perdedoras;
+  68,8% UNKNOWN (só há velas de BTC).
+- **Fato central:** VÖLUNDR e SKAÐI são **TEMPORALLY_CONCENTRATED** — todo o positivo vem da semana de 17/08 (BTC
+  +20,46%); fora dela, negativos (−33,43 / −33,31 USD). TRENDING_UP·buy sem essa semana: −0,443%.
+- **Hipóteses:** H1 MIXED · H2 SUPPORTED_DESCRIPTIVE (fraco) · H3 INSUFFICIENT_SAMPLE · H4 NOT_SUPPORTED (evento
+  único) · H5 SUPPORTED_DESCRIPTIVE · H6 trivial suportada / regra seletiva não validada.
+- Custo do simulador mudou de 0,20% para 0,40% (13–16/08): qualquer Fase C precisa normalizar.
+
+`STRATEGY_CERTIFICATE=NO` · `REAL_MONEY_AUTONOMY=NO` · `PILOT_PERMISSION=NO`.

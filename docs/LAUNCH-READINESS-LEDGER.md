@@ -477,3 +477,27 @@
 - **Validação da lane B (execução 5, IMPLEMENTER-REPORTED, container capado):** HEAD `bfef705`, árvore limpa · type-check 0 · lint 0 erros / 145 avisos (= baseline) · **suíte 283 arquivos / 4330 testes, 0 falhas** · guardas (subconjunto explícito) 11 arquivos / 141 testes · build PASS (`capped-build.sh`) · `git diff --check` limpo. Evidência `06e-lane-b-full-validation-run5.txt`.
 - **Itens de lane B e um futuro candidato (o dono decide):** migration **0070** (revoke de anon/authenticated/PUBLIC em `admin_kv`/`rate_limits`/`admin_audit_log`) · orçamento de 3 s da leitura do gate (`GATE_KV_TIMEOUT_MS`) · travas F-09 / runbook-controls / catálogo de env. Avaliação: **adequados para um futuro RC** — pequenos, fecham risco, falham fechado, provados na linhagem de produção (0070: T17 0/6→6/6) e com a suíte inteira verde; exigem novo C1 + recert completa no SHA exato. Nada movido para a lane de release.
 - **Estado:** `COMMITTED_FEATURE_CHECKPOINT` · não CERTIFIED · `CURRENT_RELEASE_CANDIDATE=NONE` · lane A intocada (`d896ce2`, limpa) · `CERTIFIED_FEATURE_SHA=53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` · nenhum push, merge, deploy, escrita hospedada, email real, transação on-chain ou dinheiro real.
+
+### L-035 · 2026-10-04 · Decisões do dono: R-03 = exceção estreita · Fase A executada (só leitura, hospedado) · decisões Founders
+
+- **OD R-03 (dono):** `R03_DECISION=TEMPORARY_NARROW_CI_EXCEPTION`; Tailwind v4 **não** adotado (spike preservado:
+  branch `spike-tailwind-v4-20261004T113734Z` `7776436` + evidência). Implementado só na lane B:
+  `scripts/release/audit-gate.mjs` + `lib/audit-gate.mjs` + `audit-exceptions.json` (advisory `braces` 1240992 /
+  GHSA-vfj7-8cjw-p6xm `<=3.0.3`, cadeia de 25 pacotes registrada item a item, `status: TEMPORARIA`,
+  `revisar_antes_do_rc: true`, `corrigido: false`); passo do `ci.yml` agora **bloqueante**: reprova CRITICAL, HIGH
+  novo, advisory alterado, deriva da cadeia e relatório ilegível. Provas: audit real da lane B → passa; audit real do
+  spike v4 → `DERIVA_CADEIA` (exit 1); offline → falha fechada; 9 testes (`src/lib/release/audit-gate.test.ts`).
+  Revisão obrigatória antes da seleção de RC registrada em `docs/RELEASE-CHAIN.md`. Doc `docs/R03-AUDIT-EXCEPTION.md`.
+- **Correção de registro (L-033):** o passo antigo tinha `continue-on-error: true` — R-03 deixava o **passo** vermelho,
+  não reprovava o **job**. "O CI do C1/C2 falharia hoje" estava impreciso. O portão novo é mais estrito que o antigo.
+- **OD Fase A (dono): leitura só-leitura do Supabase hospedado autorizada.** Executada pelo conector Supabase
+  (projeto `z-swap`), toda consulta em `begin transaction read only … rollback`; `pg_stat_user_tables` idêntico
+  antes/depois → **0 escritas**; sem PII (dono da bancada reduzido a hash dentro da consulta). Resultado:
+  `PLANO-STRATEGY-INTELLIGENCE-FORENSIC-LEARNING.md` §8; evidência selada
+  `zswap-local/evidence/strategy-intelligence-phase-a-20261004T125509Z/` (MANIFEST `5d5e9436…`, 19 arquivos,
+  segredos/PII PASS; **não** enviada a lugar nenhum).
+- **Founders:** `docs/FOUNDERS-NFT-OWNER-DECISIONS.md` — 14 decisões realmente em aberto (3 com padrão seguro).
+- **0070 / timeout do gate / travas:** continuam **LANE_B_ONLY**; nenhuma evidência nova muda a avaliação (L-034).
+- **Estado:** `COMMITTED_FEATURE_CHECKPOINT` · não CERTIFIED · `CURRENT_RELEASE_CANDIDATE=NONE` · lane A intocada
+  (`d896ce2`) · nenhum push, merge, deploy, escrita hospedada, email real, transação on-chain ou dinheiro real ·
+  nenhuma estratégia/genoma/parâmetro/mesa alterado.

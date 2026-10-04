@@ -69,9 +69,14 @@ jobs:
         run: npm run type-check
       - name: Unit tests
         run: npm test
-      # Advisory scan — WARNS (doesn't block) so a new upstream advisory with
-      # no fix released yet can't freeze deploys; the step turns yellow and
-      # the operator triages. Dependabot opens the fix PR when one exists.
-      - name: npm audit (high+)
-        run: npm audit --audit-level=high
-        continue-on-error: true
+      # Advisory scan — BLOQUEANTE, com UMA exceção estreita e temporária (R-03,
+      # decisão do dono 04/10/2026; docs/R03-AUDIT-EXCEPTION.md). O portão reprova:
+      # qualquer CRITICAL, qualquer advisory HIGH novo, e qualquer deriva da cadeia
+      # registrada de `braces` (GHSA-vfj7-8cjw-p6xm). A vulnerabilidade NÃO está
+      # corrigida; a exceção tem revisão obrigatória antes da seleção de RC.
+      # `|| true` só no `npm audit --json` (que sai 1 quando há achado): quem decide
+      # é o portão, e relatório ilegível/ausente falha fechado.
+      - name: npm audit (portão estreito R-03)
+        run: |
+          npm audit --json > npm-audit.json || true
+          node scripts/release/audit-gate.mjs npm-audit.json

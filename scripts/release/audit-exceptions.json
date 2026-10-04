@@ -1,0 +1,330 @@
+{
+  "versao": 1,
+  "status": "TEMPORARIA",
+  "revisar_antes_do_rc": true,
+  "decisao": "dono, 2026-10-04: R03_DECISION=TEMPORARY_NARROW_CI_EXCEPTION (Tailwind v4 NÃO adotado para R-03; spike spike-tailwind-v4-20261004T113734Z = evidência)",
+  "criado_em": "2026-10-04",
+  "lockfile_sha256_na_criacao": "8e9b522771c06ba6415c025ca363cb5015f8c3dc221b31dd191ab014766dd38a",
+  "excecoes": [
+    {
+      "id": "R-03",
+      "advisory": {
+        "source": 1240992,
+        "name": "braces",
+        "severity": "high",
+        "range": "<=3.0.3",
+        "url": "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm"
+      },
+      "corrigido": false,
+      "por_que": "braces <=3.0.3 (DoS por padrão aninhado; não há versão corrigida). Alcançado por tailwindcss@3 (build), eslint-config-next (lint) e @solana/wallet-adapter-react → @solana-mobile/* → react-native → metro/jest-haste-map → micromatch (dependência de produção, código de bundler/teste do React Native que não processa entrada de usuário no app web). Tailwind v4 removeria só 1 das 3 raízes (spike). Ver docs/R03-AUDIT-EXCEPTION.md.",
+      "cadeia": [
+        {
+          "name": "@jest/environment",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@jest/environment"
+          ],
+          "via": [
+            "@jest/fake-timers"
+          ]
+        },
+        {
+          "name": "@jest/fake-timers",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@jest/fake-timers"
+          ],
+          "via": [
+            "jest-message-util"
+          ]
+        },
+        {
+          "name": "@jest/transform",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@jest/transform"
+          ],
+          "via": [
+            "jest-haste-map",
+            "micromatch"
+          ]
+        },
+        {
+          "name": "@next/eslint-plugin-next",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@next/eslint-plugin-next"
+          ],
+          "via": [
+            "fast-glob"
+          ]
+        },
+        {
+          "name": "@react-native/community-cli-plugin",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@react-native/community-cli-plugin",
+            "node_modules/@solana-mobile/mobile-wallet-adapter-protocol-web3js/node_modules/@react-native/community-cli-plugin",
+            "node_modules/@solana-mobile/wallet-standard-mobile/node_modules/@react-native/community-cli-plugin"
+          ],
+          "via": [
+            "metro",
+            "metro-config"
+          ]
+        },
+        {
+          "name": "@react-native/virtualized-lists",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@solana/wallet-adapter-react/node_modules/@react-native/virtualized-lists"
+          ],
+          "via": [
+            "react-native"
+          ]
+        },
+        {
+          "name": "@solana-mobile/mobile-wallet-adapter-protocol",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@solana-mobile/mobile-wallet-adapter-protocol-web3js/node_modules/@solana-mobile/mobile-wallet-adapter-protocol",
+            "node_modules/@solana-mobile/wallet-standard-mobile/node_modules/@solana-mobile/mobile-wallet-adapter-protocol",
+            "node_modules/@solana/wallet-adapter-react/node_modules/@solana-mobile/mobile-wallet-adapter-protocol"
+          ],
+          "via": [
+            "react-native"
+          ]
+        },
+        {
+          "name": "@solana-mobile/mobile-wallet-adapter-protocol-web3js",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@solana-mobile/mobile-wallet-adapter-protocol-web3js"
+          ],
+          "via": [
+            "@solana-mobile/mobile-wallet-adapter-protocol",
+            "@solana/web3.js"
+          ]
+        },
+        {
+          "name": "@solana-mobile/wallet-adapter-mobile",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@solana/wallet-adapter-react/node_modules/@solana-mobile/wallet-adapter-mobile"
+          ],
+          "via": [
+            "@solana-mobile/mobile-wallet-adapter-protocol",
+            "@solana-mobile/mobile-wallet-adapter-protocol-web3js",
+            "@solana-mobile/wallet-standard-mobile",
+            "@solana/wallet-adapter-base",
+            "@solana/web3.js",
+            "react-native"
+          ]
+        },
+        {
+          "name": "@solana-mobile/wallet-standard-mobile",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@solana-mobile/wallet-standard-mobile"
+          ],
+          "via": [
+            "@solana-mobile/mobile-wallet-adapter-protocol"
+          ]
+        },
+        {
+          "name": "babel-jest",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/babel-jest"
+          ],
+          "via": [
+            "@jest/transform"
+          ]
+        },
+        {
+          "name": "braces",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/braces"
+          ],
+          "via": [
+            "advisory:1240992"
+          ]
+        },
+        {
+          "name": "chokidar",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/chokidar"
+          ],
+          "via": [
+            "braces"
+          ]
+        },
+        {
+          "name": "eslint-config-next",
+          "severity": "high",
+          "isDirect": true,
+          "nodes": [
+            "node_modules/eslint-config-next"
+          ],
+          "via": [
+            "@next/eslint-plugin-next"
+          ]
+        },
+        {
+          "name": "fast-glob",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@next/eslint-plugin-next/node_modules/fast-glob",
+            "node_modules/fast-glob"
+          ],
+          "via": [
+            "micromatch"
+          ]
+        },
+        {
+          "name": "jest-environment-node",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/jest-environment-node"
+          ],
+          "via": [
+            "@jest/environment",
+            "@jest/fake-timers"
+          ]
+        },
+        {
+          "name": "jest-haste-map",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/jest-haste-map"
+          ],
+          "via": [
+            "micromatch"
+          ]
+        },
+        {
+          "name": "jest-message-util",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/jest-message-util"
+          ],
+          "via": [
+            "micromatch"
+          ]
+        },
+        {
+          "name": "metro",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@solana-mobile/mobile-wallet-adapter-protocol-web3js/node_modules/metro",
+            "node_modules/@solana-mobile/wallet-standard-mobile/node_modules/metro",
+            "node_modules/metro"
+          ],
+          "via": [
+            "metro-config",
+            "metro-file-map",
+            "metro-transform-worker"
+          ]
+        },
+        {
+          "name": "metro-config",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@solana-mobile/mobile-wallet-adapter-protocol-web3js/node_modules/metro-config",
+            "node_modules/@solana-mobile/wallet-standard-mobile/node_modules/metro-config",
+            "node_modules/metro-config"
+          ],
+          "via": [
+            "metro"
+          ]
+        },
+        {
+          "name": "metro-file-map",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@solana-mobile/mobile-wallet-adapter-protocol-web3js/node_modules/metro-file-map",
+            "node_modules/@solana-mobile/wallet-standard-mobile/node_modules/metro-file-map",
+            "node_modules/metro-file-map"
+          ],
+          "via": [
+            "micromatch"
+          ]
+        },
+        {
+          "name": "metro-transform-worker",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@solana-mobile/mobile-wallet-adapter-protocol-web3js/node_modules/metro-transform-worker",
+            "node_modules/@solana-mobile/wallet-standard-mobile/node_modules/metro-transform-worker",
+            "node_modules/metro-transform-worker"
+          ],
+          "via": [
+            "metro"
+          ]
+        },
+        {
+          "name": "micromatch",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/micromatch"
+          ],
+          "via": [
+            "braces"
+          ]
+        },
+        {
+          "name": "react-native",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@solana-mobile/mobile-wallet-adapter-protocol-web3js/node_modules/react-native",
+            "node_modules/@solana-mobile/wallet-standard-mobile/node_modules/react-native",
+            "node_modules/@solana/wallet-adapter-react/node_modules/react-native"
+          ],
+          "via": [
+            "@react-native/community-cli-plugin",
+            "@react-native/virtualized-lists",
+            "babel-jest",
+            "jest-environment-node"
+          ]
+        },
+        {
+          "name": "tailwindcss",
+          "severity": "high",
+          "isDirect": true,
+          "nodes": [
+            "node_modules/tailwindcss"
+          ],
+          "via": [
+            "chokidar",
+            "fast-glob",
+            "micromatch"
+          ]
+        }
+      ]
+    }
+  ]
+}

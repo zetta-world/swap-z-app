@@ -115,6 +115,10 @@ prova AP-LOCK hospedada (`RELEASE-RUNBOOK.md` §6–§7).
 `BLOCKED_BY_ACCOUNT_PAYMENT`, produção em 402) e **R-02** (`CEX_RECOVERY_HMAC_KEY` ausente na Vercel, exigida
 pelo alvo). `RC_SELECTION_READY=NO`; recomendação (≠ seleção) de feature: `53cd85a`. Runbook vigente:
 `RELEASE-RUNBOOK.md` revisão 2.
+**Atualização L-035 (04/10, só lane B):** pré-requisito adicional da seleção de RC — **revisão obrigatória da
+exceção temporária R-03** do `npm audit` (`docs/R03-AUDIT-EXCEPTION.md`, `scripts/release/audit-exceptions.json`
+`revisar_antes_do_rc: true`). A vulnerabilidade não está corrigida; o RC não pode ser selecionado sem o dono
+reafirmar ou remover a exceção. (Na lane de release, o passo de audit ainda é o antigo, não bloqueante.)
 
 ## 2. Nós da cadeia
 
