@@ -185,8 +185,15 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
      * linhagem de produção: `anon` tinha TRUNCATE nas três. Não toca
      * `service_role`, RLS, policies nem dados (teste 17).
      *
-     * ⚠️ NENHUMA DAS OITO (0063–0070) FOI APLICADA EM PRODUÇÃO. A 0070 existe só
-     * na lane B (`pre-vercel-forward-*`); o alvo de release (C1 `53cd85a`) vai até a 0069.
+     * E uma OITAVA vez, na LANE B (venda Founders, L-038): a 0071 é ADITIVA e
+     * fora do domínio financeiro — quatro tabelas novas da venda Founders
+     * (snapshot da allowlist congelado imutável, entradas, sinais de demanda NÃO
+     * vinculantes ligados ao Early Access com cascata na purga, trilha de
+     * evidência append-only), RLS ligada e zero policies, ACL mínima ao
+     * service_role. Não toca tabela, função ou dado existente (teste 18).
+     *
+     * ⚠️ NENHUMA DAS NOVE (0063–0071) FOI APLICADA EM PRODUÇÃO. 0070 e 0071 existem
+     * só na lane B (`pre-vercel-forward-*`); o alvo de release (C1 `53cd85a`) vai até a 0069.
      */
     const novas = readdirSync("supabase/migrations")
       .filter((f) => f.endsWith(".sql") && f.slice(0, 4) > "0062")
@@ -200,6 +207,7 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
       "0068_early_access.sql",
       "0069_early_access_email_optin.sql",
       "0070_acl_tabelas_operacionais.sql",
+      "0071_founders_sale.sql",
     ]);
   });
 });
