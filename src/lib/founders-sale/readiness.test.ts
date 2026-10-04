@@ -107,6 +107,14 @@ describe("progresso: sem percentual fabricado", () => {
     expect(visaoProgresso({ supply: 3, mintados: 2, reservados: 0 })).toMatchObject({ disponiveis: 1, percentualMintado: 66.6 });
     expect(visaoProgresso({ supply: 1000, mintados: 999, reservados: 1 })).toMatchObject({ disponiveis: 0, percentualMintado: 99.9 });
   });
+  it("marcos 0/25/50/75/99/última/100 % vêm só do estado", () => {
+    for (const m of [0, 25, 50, 75, 99]) {
+      expect(visaoProgresso({ supply: 100, mintados: m, reservados: 0 })).toMatchObject({ tipo: "ok", disponiveis: 100 - m, percentualMintado: m });
+    }
+    // última unidade reservada (não mintada): 0 disponível, mas não é 100 % nem esgotado
+    expect(visaoProgresso({ supply: 100, mintados: 99, reservados: 1 })).toMatchObject({ tipo: "ok", disponiveis: 0, percentualMintado: 99 });
+    expect(visaoProgresso({ supply: 100, mintados: 100, reservados: 0 })).toMatchObject({ tipo: "ok", disponiveis: 0, percentualMintado: 100 });
+  });
 });
 
 describe("alocação: campos abstratos, nada inventado", () => {
