@@ -24,3 +24,18 @@ describe("migration 0071 — venda Founders", () => {
     expect(codigo).not.toMatch(/\b(preco|price|royalty|tesouraria|treasury|email|secret|private_key|lamports)\b/i);
   });
 });
+
+describe("migration 0072 — preço exibido e versão da regra no sinal de demanda", () => {
+  const sql72 = readFileSync("supabase/migrations/0072_founders_demand_price_rule.sql", "utf8").replace(/--[^\n]*/g, "");
+  it("aditiva, só em founders_demand_signals; sem policy; anon/authenticated revogados", () => {
+    expect(sql72).not.toMatch(/\bdrop table\b|\btruncate\b|create policy/i);
+    for (const m of sql72.matchAll(/alter table (public\.[a-z_]+)/gi)) expect(m[1]).toBe("public.founders_demand_signals");
+    expect(sql72).toMatch(/revoke all on table public\.founders_demand_signals from public, anon, authenticated/);
+    expect(sql72).toMatch(/grant update \(preco_intencao_usd\)/);
+    expect(sql72).not.toMatch(/grant [^;]*regra_versao/);
+  });
+  it("pretende_comprar exige preço; nada de royalty, tesouraria, e-mail ou chave", () => {
+    expect(sql72).toMatch(/intencao_nao_vinculante is distinct from 'pretende_comprar' or preco_intencao_usd is not null/);
+    expect(sql72).not.toMatch(/\b(royalty|tesouraria|treasury|email|secret|private_key|lamports)\b/i);
+  });
+});

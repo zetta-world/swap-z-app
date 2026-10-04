@@ -192,8 +192,13 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
      * evidência append-only), RLS ligada e zero policies, ACL mínima ao
      * service_role. Não toca tabela, função ou dado existente (teste 18).
      *
-     * ⚠️ NENHUMA DAS NOVE (0063–0071) FOI APLICADA EM PRODUÇÃO. 0070 e 0071 existem
-     * só na lane B (`pre-vercel-forward-*`); o alvo de release (C1 `53cd85a`) vai até a 0069.
+     * E uma NONA vez, na LANE B (decisões do dono Founders, L-039): a 0072 é
+     * ADITIVA sobre a 0071 — duas colunas em `founders_demand_signals` (preço
+     * provisório exibido na intenção e versão da regra de demanda) e um CHECK.
+     * Não toca nada financeiro nem fora da venda Founders (teste 19).
+     *
+     * ⚠️ NENHUMA DAS DEZ (0063–0072) FOI APLICADA EM PRODUÇÃO. 0070, 0071 e 0072
+     * existem só na lane B (`pre-vercel-forward-*`); o alvo de release (C1 `53cd85a`) vai até a 0069.
      */
     const novas = readdirSync("supabase/migrations")
       .filter((f) => f.endsWith(".sql") && f.slice(0, 4) > "0062")
@@ -208,6 +213,7 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
       "0069_early_access_email_optin.sql",
       "0070_acl_tabelas_operacionais.sql",
       "0071_founders_sale.sql",
+      "0072_founders_demand_price_rule.sql",
     ]);
   });
 });
