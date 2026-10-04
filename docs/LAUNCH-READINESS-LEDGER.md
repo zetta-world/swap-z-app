@@ -501,3 +501,19 @@
 - **Estado:** `COMMITTED_FEATURE_CHECKPOINT` · não CERTIFIED · `CURRENT_RELEASE_CANDIDATE=NONE` · lane A intocada
   (`d896ce2`) · nenhum push, merge, deploy, escrita hospedada, email real, transação on-chain ou dinheiro real ·
   nenhuma estratégia/genoma/parâmetro/mesa alterado.
+- **Adendo L-035 — arquivamento da evidência da lane B (04/10/2026): `PRE_VERCEL_LANE_B_EVIDENCE_ARCHIVED=PASS`.**
+  Destino `gdrive:01_ZETTA_WORLD/01_Z-SWAP/Auditorias_e_Rounds/Pre_Vercel_Forward/`. Diretório local
+  `pre-vercel-forward-20261003T234200Z/` com **43** arquivos; **41** enviados; os **2** com linhas sintéticas de banco
+  (`strategy-phase-a/seed-sintetico-descartavel.sql`, `strategy-phase-a/exportacao.json`) omitidos de propósito,
+  documentados com sha256 em `pre-vercel-forward-20261003T234200Z.UPLOAD-EXCLUSIONS.txt` (nome real do arquivo no Drive)
+  e preservados localmente sem alteração. Arquivo `pre-vercel-forward-20261003T234200Z.tar.gz` (3.432.880 B, 41
+  arquivos) sha256 `bd4f96e699af7a8ff88260bc70fac233a4da8bd333cd91b445c2055bf8cd0806`. `MANIFEST_STATUS=PASS` (local
+  43/43; cópia no Drive 41/41 — as 2 exclusões aparecem como ausentes por desenho) · `SECRET_SCAN_STATUS=PASS`
+  (varredura nova antes do envio; `pre-vercel-forward-20261003T234200Z.PRE-UPLOAD-SCAN.txt`) ·
+  `DIRECTORY_REMOTE_CHECK=PASS` (rclone check 0 diferenças / 41) · `ARCHIVE_REMOTE_CHECK=PASS` (rclone check 0
+  diferenças; sha256 do arquivo baixado de volta = local). **Não** enviados: dump bruto do banco hospedado, segredos,
+  PII, node_modules, cache Docker, linhas sintéticas.
+  Spike Tailwind v4 arquivado à parte e verificado no mesmo destino: `spike-tailwind-v4-20261004T113734Z/` (202
+  arquivos, rclone check 0 diferenças / 202) e `spike-tailwind-v4-20261004T113734Z.tar.gz` (23.433.787 B) sha256
+  `27fb19a21c43cd1b562bb14251e60602ba1b82b91839c919fa882820a593162c` (conferido por download). Sem volume de
+  node_modules nem cache. Commit só de docs; nenhum push, merge, deploy ou escrita hospedada.
