@@ -29,8 +29,10 @@ const orcamentoDia = (t) => Math.floor(P.tiers[t].backtestsPorDia * tetoPorRodad
 /** Custo de UMA análise do ZION (provedor ativo = Kimi; Sonnet como sensibilidade). */
 function custoAnalise(cen, provedor = "kimi") {
   const c = P.cenarios[cen];
-  const entrada = un.zionPrefixoTokens + un.zionPayloadUsuarioTokens + 100;
-  const cacheados = un.zionPrefixoTokens * c.cacheHitPrefixo;
+  // RM-09: o bloco de fatos do ask é estável → parte do prefixo cacheável (somado a TODAS as análises: limite superior).
+  const prefixo = un.zionPrefixoTokens + (un.zionFatosTokens ?? 0);
+  const entrada = prefixo + un.zionPayloadUsuarioTokens + 100;
+  const cacheados = prefixo * c.cacheHitPrefixo;
   const naoCacheados = entrada - cacheados;
   const saida = un[c.saida];
   const k = provedor === "kimi"
@@ -209,6 +211,34 @@ const pilotStressWb = L("pilot", "STRESS").workbench;
 out.push(`- O Workbench do Pilot em STRESS (orçamento de unidades do CE-05/CE-15 usado todo dia, fração 1/16) custa ${usd(pilotStressWb)} em 36 meses, ${pct(pilotStressWb / P.tiers.pilot.preco)} do preço; com a fração uniforme de ¼ seriam ~4× isso (ver o relatório, CE-05-R1).`);
 out.push(`- Trocar Kimi por Sonnet multiplica a linha do ZION por ~${(custoAnalise("EXPECTED", "sonnet") / custoAnalise("EXPECTED")).toFixed(1)}× (EXPECTED).`);
 out.push("- O HUMANO depende inteiramente de `horaHumanaUsd` e das horas por plano, que são hipóteses: o dono precisa fixá-las antes de qualquer conclusão sobre margem.");
+out.push("");
+out.push("## 10. Quebra por categoria (AUDIT REMEDIATION §20) — 36 meses por holder");
+out.push("");
+out.push("MÁQUINA = Workbench (CPU + egress + espera no banco) + papel (tique) · IA = ZION · BANCO/INFRA = armazenamento · HUMANO = suporte · FIXO = rateio dos fixos mensais.");
+out.push("");
+out.push("| cenário | plano | máquina | IA | banco/infra | humano | fixo | **econômico** | humano/econômico |");
+out.push("|---|---|---|---|---|---|---|---|---|");
+for (const l of linhas) {
+  out.push(`| ${l.cenario} | ${l.tier} | ${usd(l.workbench + l.papel)} | ${usd(l.ia)} | ${usd(l.armazenamento)} | ${usd(l.humano)} | ${usd(l.fixo)} | **${usd(l.economico)}** | ${pct(l.humano / l.economico)} |`);
+}
+out.push("");
+out.push("## 11. Suporte humano — definição e sensibilidade (hipótese econômica, NÃO contrato)");
+out.push("");
+out.push(`Direção comercial provisória (${P.suporte._fonte}):`);
+out.push("");
+for (const t of TIERS) out.push(`- **${t}**: ${P.suporte.porPlano[t]}.`);
+out.push(`- Em todos: ${P.suporte.emTodos.join("; ")}.`);
+out.push("");
+out.push(P.suporte.nota);
+out.push("");
+out.push(`Margem com referral 0% conforme as horas de suporte (× as horas da premissa; hora a ${usd(pr.horaHumanaUsd)}):`);
+out.push("");
+const FATORES = [0, 0.25, 0.5, 1, 2];
+out.push(`| cenário | plano | ${FATORES.map((f) => `horas × ${f}`).join(" | ")} |`);
+out.push(`|---|---|${FATORES.map(() => "---").join("|")}|`);
+for (const l of linhas) {
+  out.push(`| ${l.cenario} | ${l.tier} | ${FATORES.map((f) => { const m = l.preco - (l.economico - l.humano + l.humano * f); return `${usd(m)} (${pct(m / l.preco)})`; }).join(" | ")} |`);
+}
 out.push("");
 writeFileSync("docs/COST-ENGINEERING-36M-MODEL.md", out.join("\n") + "\n");
 const j = process.argv.indexOf("--json");

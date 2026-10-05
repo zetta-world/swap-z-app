@@ -43,19 +43,19 @@
   },
   "precos": {
     "kimiInputPorMTok": {
-      "valor": 0.6,
-      "fonte": "ESTIMATED",
-      "nota": "tabela de src/lib/admin/ai-cost.ts (fonte única do repo)"
+      "valor": 0.95,
+      "fonte": "PUBLISHED_LIST_PRICE",
+      "nota": "kimi-k2.6, cache miss — página oficial de preços do Kimi consultada em 05/10/2026 (sem data na página). RM-08: antes 0,60 da tabela do repo (abaixo da lista). Fatura do console é a fonte autoritativa."
     },
     "kimiOutputPorMTok": {
-      "valor": 2.5,
-      "fonte": "ESTIMATED",
-      "nota": "idem"
+      "valor": 4.0,
+      "fonte": "PUBLISHED_LIST_PRICE",
+      "nota": "idem; antes 2,50"
     },
     "kimiCacheReadPorMTok": {
-      "valor": 0.06,
-      "fonte": "ESTIMATED",
-      "nota": "0,1× input pela tabela do repo; o preço público de cache-hit do provedor pode ser maior — conferir"
+      "valor": 0.16,
+      "fonte": "PUBLISHED_LIST_PRICE",
+      "nota": "idem, cache hit; antes 0,06 (0,1× input — regra da Anthropic, não do Kimi). A série K2 não publica preço de ESCRITA de cache: escrita sai a preço de entrada (cache miss), que é o que o modelo já cobra dos tokens não cacheados."
     },
     "sonnetInputPorMTok": {
       "valor": 3.0,
@@ -136,6 +136,11 @@
       "fonte": "MEASURED",
       "nota": "fundação 12.819 + modo trading 9.030 caracteres ≈ 5,5k tokens (÷4)"
     },
+    "zionFatosTokens": {
+      "valor": 905,
+      "fonte": "MEASURED",
+      "nota": "RM-09: bloco de fatos oficiais do modo ask = 3.618 caracteres ≈ 905 tokens (÷4), medido em src/lib/zion/fatos-da-plataforma.test.ts. LIMITE SUPERIOR: o modelo soma a TODAS as análises (só o ask recebe; a fração de ask é desconhecida com tráfego 0). Estável → entra no prefixo cacheável."
+    },
     "zionPayloadUsuarioTokens": {
       "valor": 3000,
       "fonte": "ESTIMATED",
@@ -189,9 +194,9 @@
       "fonte": "ESTIMATED"
     },
     "tiqueRequisicoes3250": {
-      "valor": 308,
+      "valor": 310,
       "fonte": "MEASURED",
-      "nota": "CE-10 depois, 3.250 desks, por tique"
+      "nota": "AUDIT REMEDIATION, 3.250 desks, por tique: 310 = 308 do CE-10 + 2 do lease (tomar/soltar, 0076). Medido na mesma sessão contra o código auditado 14e5a20 (308). Tempo por tique não separável do ruído da máquina (+6% na mesma sessão; o mesmo código variou 1,7–2,9 s entre execuções) — tiqueCpuS3250 mantido."
     },
     "tiqueCpuS3250": {
       "valor": 1.2,
@@ -310,5 +315,24 @@
       "trader": 0.2,
       "pilot": 0.1
     }
+  },
+  "suporte": {
+    "_fonte": "DIRECAO_COMERCIAL_PROVISORIA (mandato da AUDIT REMEDIATION, 05/10/2026) — NÃO é contrato; só define o que a hipótese de horas cobre",
+    "porPlano": {
+      "pro": "suporte padrão assíncrono",
+      "trader": "fila prioritária assíncrona",
+      "pilot": "prioridade máxima assíncrona + incidentes de produto"
+    },
+    "emTodos": [
+      "sem 24/7",
+      "sem SLA financeiro",
+      "sem concierge",
+      "sem consultoria de trading",
+      "sem execução de estratégia pelo CEO",
+      "sem chamada privada garantida",
+      "sem suporte humano ilimitado",
+      "ZION como primeira linha"
+    ],
+    "nota": "As horas por plano e cenário (cenarios.*.suporteHorasMes) e o custo da hora (precos.horaHumanaUsd) NÃO foram alterados: a definição diz o que elas cobrem, não as torna menores. Sensibilidade das horas na tabela da seção 11 do modelo."
   }
 }

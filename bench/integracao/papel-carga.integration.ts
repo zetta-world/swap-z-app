@@ -113,7 +113,9 @@ describe.skipIf(!URL || !SECRET)(`CE-10 · carga dos desks de papel (${DESKS} de
       medidas.push(m);
       console.log(`[${ROTULO}] N=${DESKS} tick ${k}: ${ms.toFixed(0)} ms, ${requisicoes} req (+${m.tier} tier), `
         + `avaliadas=${m.avaliadas} adiadas=${m.adiadasNoBanco} naoVistas=${m.naoVistas} `
-        + `abertas=${r.abertas} fechadas=${r.fechadas} problemas=${r.problemas.length}`);
+        + `abertas=${r.abertas} fechadas=${r.fechadas} problemas=${r.problemas.length}`
+        // RM-01: sem o lease o tique não roda — uma passagem 'ocupado'/'indisponivel' mediria nada.
+        + (r.exclusividade !== undefined ? ` excl=${r.exclusividade}` : ""));
     }
 
     const total = DESKS;
