@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { lerTodasAsPaginas } from "@/lib/supabase/paginar";
 
 export const dynamic = "force-dynamic";
 
@@ -26,9 +27,9 @@ export async function GET(): Promise<NextResponse> {
     { count: mau },
     { count: new1d },
     { count: new7d },
-    { data: opsWallets },
-    { data: apWallets },
-    { data: tiers },
+    opsWallets,
+    apWallets,
+    tiers,
   ] = await Promise.all([
     db.from("users").select("*", { count: "exact", head: true }),
     db.from("users").select("*", { count: "exact", head: true }).gte("last_seen_at", ago1d),
@@ -36,14 +37,18 @@ export async function GET(): Promise<NextResponse> {
     db.from("users").select("*", { count: "exact", head: true }).gte("last_seen_at", ago30d),
     db.from("users").select("*", { count: "exact", head: true }).gte("created_at", ago1d),
     db.from("users").select("*", { count: "exact", head: true }).gte("created_at", ago7d),
-    db.from("operations").select("wallet_address").not("wallet_address", "is", null),
-    db.from("autopilot_sessions").select("wallet_address"),
-    db.from("tier_cache").select("tier"),
+    // ⚠️ PAGINADO (CE-14): eram as primeiras 1.000 linhas (`db-max-rows`).
+    lerTodasAsPaginas<{ wallet_address: string }>((de, ate) => db.from("operations").select("id, wallet_address")
+      .not("wallet_address", "is", null).order("id", { ascending: true }).range(de, ate)),
+    lerTodasAsPaginas<{ wallet_address: string }>((de, ate) => db.from("autopilot_sessions").select("id, wallet_address")
+      .order("id", { ascending: true }).range(de, ate)),
+    lerTodasAsPaginas<{ tier: string }>((de, ate) => db.from("tier_cache").select("wallet_address, tier")
+      .order("wallet_address", { ascending: true }).range(de, ate)),
   ]);
 
-  const traded    = new Set((opsWallets ?? []).map((r) => r.wallet_address as string)).size;
-  const autopilot = new Set((apWallets  ?? []).map((r) => r.wallet_address as string)).size;
-  const paid      = (tiers ?? []).filter((t) => PAID.has(t.tier)).length;
+  const traded    = new Set(opsWallets.linhas.map((r) => r.wallet_address)).size;
+  const autopilot = new Set(apWallets.linhas.map((r) => r.wallet_address)).size;
+  const paid      = tiers.linhas.filter((t) => PAID.has(t.tier)).length;
 
   const signedUp = total ?? 0;
   const pct = (n: number, base: number) => (base > 0 ? n / base : null);

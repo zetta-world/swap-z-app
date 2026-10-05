@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { lerTodasAsPaginas } from "@/lib/supabase/paginar";
 import { TIER_FEE_BPS, receitaUsd, MOTIVOS_SOLANA_SEM_TAXA } from "@/lib/tier/fees";
 import { separarPorAtribuicao, temIdentidadeAssinada } from "@/lib/admin/atribuicao";
 import type { Tier } from "@/lib/tier/types";
@@ -80,12 +81,24 @@ export async function GET(): Promise<NextResponse> {
 
   if (db) {
     try {
-      const { data, error } = await db
+      /**
+       * ⚠️ PAGINADO (CE-14). Uma leitura só devolvia as primeiras 1.000
+       * operações confirmadas (o `db-max-rows`), e a receita, o volume e a
+       * quebra por origem desta tela passavam a ser os das 1.000 primeiras —
+       * sem aviso. Ordem por `id` (única) para a paginação não pular linha.
+       */
+      const leitura = await lerTodasAsPaginas<{
+        volume_usd: number | string | null; created_at: string; status: string; kind: string | null;
+        platform_fee_usd: number | string | null; wallet_address: string | null;
+      }>((de, ate) => db
         .from("operations")
-        .select("volume_usd, created_at, status, kind, platform_fee_usd, wallet_address")
-        .eq("status", "confirmed");
-      if (error) throw new Error(error.message);
-      const linhas = data ?? [];
+        .select("id, volume_usd, created_at, status, kind, platform_fee_usd, wallet_address")
+        .eq("status", "confirmed")
+        .order("id", { ascending: true })
+        .range(de, ate));
+      if (leitura.erro) throw new Error(leitura.erro);
+      if (leitura.truncado) throw new Error("operações demais para somar nesta tela — use a agregação no banco");
+      const linhas = leitura.linhas;
       /**
        * ⚠️ TRÊS BALDES, NÃO DOIS. `null` é ausência de medição e sai por uma
        * porta com nome; `0` declarado é sonda e sai por outra. Somar os dois

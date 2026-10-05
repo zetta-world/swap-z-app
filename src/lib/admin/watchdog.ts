@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { lerTodasAsPaginas } from "@/lib/supabase/paginar";
 import { notifyTelegram } from "@/lib/admin/track";
 import { getCronHeartbeats, pingAiProviders } from "@/lib/admin/health";
 import { checkExternalDeps } from "@/lib/admin/deps";
@@ -371,22 +372,31 @@ async function sendDailyDigest(): Promise<void> {
   const db = getSupabaseAdmin();
   if (!db) return;
   const ago24h = new Date(Date.now() - 86_400_000).toISOString();
-  const [{ count: users }, { count: active24h }, { data: ops }, { data: sess }, { data: positions }, flywheel, paper] = await Promise.all([
+  /**
+   * ⚠️ PAGINADO (CE-14): volume, P&L e exposição do resumo eram somas sobre as
+   * primeiras 1.000 linhas (`db-max-rows`). Ordem por `id` (única). Se uma das
+   * leituras falhar ou for truncada, o resumo DIZ isso em vez de somar menos.
+   */
+  const [{ count: users }, { count: active24h }, opsL, sessL, posL, flywheel, paper] = await Promise.all([
     db.from("users").select("*", { count: "exact", head: true }),
     db.from("users").select("*", { count: "exact", head: true }).gte("last_seen_at", ago24h),
-    db.from("operations").select("volume_usd, pnl_usd, created_at"),
-    db.from("autopilot_sessions").select("pnl_today, is_active"),
-    db.from("autopilot_positions").select("cost_usd").neq("status", "closed"),
+    lerTodasAsPaginas<{ volume_usd: number | string | null; pnl_usd: number | string | null; created_at: string }>(
+      (de, ate) => db.from("operations").select("id, volume_usd, pnl_usd, created_at").order("id", { ascending: true }).range(de, ate)),
+    lerTodasAsPaginas<{ pnl_today: number | string | null; is_active: boolean | null }>(
+      (de, ate) => db.from("autopilot_sessions").select("id, pnl_today, is_active").order("id", { ascending: true }).range(de, ate)),
+    lerTodasAsPaginas<{ cost_usd: number | string | null }>(
+      (de, ate) => db.from("autopilot_positions").select("id, cost_usd").neq("status", "closed").order("id", { ascending: true }).range(de, ate)),
     flywheelDigestBlock(db),
     paperDigestBlock(db),
   ]);
+  const incompleto = [opsL, sessL, posL].some((l) => l.erro != null || l.truncado);
 
   let vol24 = 0, pnlAll = 0;
-  for (const o of ops ?? []) { pnlAll += Number(o.pnl_usd) || 0; if (o.created_at >= ago24h) vol24 += Number(o.volume_usd) || 0; }
+  for (const o of opsL.linhas) { pnlAll += Number(o.pnl_usd) || 0; if (o.created_at >= ago24h) vol24 += Number(o.volume_usd) || 0; }
   let apPnl = 0, apActive = 0;
-  for (const s of sess ?? []) { apPnl += Number(s.pnl_today) || 0; if (s.is_active) apActive++; }
+  for (const s of sessL.linhas) { apPnl += Number(s.pnl_today) || 0; if (s.is_active) apActive++; }
   let exposure = 0;
-  for (const p of positions ?? []) exposure += Number(p.cost_usd) || 0;
+  for (const p of posL.linhas) exposure += Number(p.cost_usd) || 0;
   const m = (n: number) => `$${Math.round(n).toLocaleString()}`;
 
   notifyTelegram(
@@ -395,6 +405,7 @@ async function sendDailyDigest(): Promise<void> {
     `📊 Volume 24h: ${m(vol24)}\n` +
     `💰 Realized P&L (all): ${pnlAll >= 0 ? "+" : ""}${m(pnlAll)}\n` +
     `🤖 Autopilot: ${apActive} active · today ${apPnl >= 0 ? "+" : ""}${m(apPnl)} · exposure ${m(exposure)}` +
+    (incompleto ? `\n⚠️ <i>leitura incompleta — os totais acima não cobrem tudo</i>` : "") +
     flywheel + paper,
   );
 }
