@@ -1,0 +1,62 @@
+{
+  "_leia": "Premissas do modelo de 36 meses (CE-15). Cada valor tem fonte: MEASURED (medido neste round, evidência no relatório), ESTIMATED (preço público ou hipótese — o dono deve conferir), DECISAO (decisão do dono registrada no repo). Mudar um número aqui e rodar `node scripts/cost/modelo-36-meses.mjs` refaz todas as tabelas.",
+  "meses": { "valor": 36, "fonte": "DECISAO", "nota": "OD-NFT-14: premium por 36 meses do encerramento da venda" },
+  "tiers": {
+    "pro":    { "preco": 149,  "supplyPago": 2000, "reserva": 30, "zionPorDia": 10, "backtestsPorDia": 100,  "mesasDePapel": 0,  "simbolosPorTeste": 10, "janelaMaxDias": 730 },
+    "trader": { "preco": 399,  "supplyPago": 750,  "reserva": 10, "zionPorDia": 25, "backtestsPorDia": 500,  "mesasDePapel": 3,  "simbolosPorTeste": 10, "janelaMaxDias": 730 },
+    "pilot":  { "preco": 1990, "supplyPago": 100,  "reserva": 0,  "zionPorDia": 30, "backtestsPorDia": 5000, "mesasDePapel": 10, "simbolosPorTeste": 10, "janelaMaxDias": 730 },
+    "_fonte": "DECISAO (preços provisórios, supply e reserva: FOUNDERS-NFT-OWNER-DECISIONS.md) + código (BANCADA_COTAS, TIER_DAILY_ANALYSES em src/lib/tier/types.ts)"
+  },
+  "precos": {
+    "kimiInputPorMTok":        { "valor": 0.60,  "fonte": "ESTIMATED", "nota": "tabela de src/lib/admin/ai-cost.ts (fonte única do repo)" },
+    "kimiOutputPorMTok":       { "valor": 2.50,  "fonte": "ESTIMATED", "nota": "idem" },
+    "kimiCacheReadPorMTok":    { "valor": 0.06,  "fonte": "ESTIMATED", "nota": "0,1× input pela tabela do repo; o preço público de cache-hit do provedor pode ser maior — conferir" },
+    "sonnetInputPorMTok":      { "valor": 3.00,  "fonte": "ESTIMATED", "nota": "sensibilidade: provedor Anthropic (ai-cost.ts)" },
+    "sonnetOutputPorMTok":     { "valor": 15.00, "fonte": "ESTIMATED" },
+    "sonnetCacheReadPorMTok":  { "valor": 0.30,  "fonte": "ESTIMATED" },
+    "cpuHoraUsd":              { "valor": 0.18,  "fonte": "ESTIMATED", "nota": "Vercel Active CPU por hora, região gru1 (lista pública ~0,128 US; folga para região)" },
+    "memoriaGbHoraUsd":        { "valor": 0.0106,"fonte": "ESTIMATED", "nota": "Vercel provisioned memory" },
+    "invocacaoPorMilhaoUsd":   { "valor": 0.60,  "fonte": "ESTIMATED" },
+    "egressGbUsd":             { "valor": 0.09,  "fonte": "ESTIMATED", "nota": "Supabase egress acima do incluído" },
+    "egressIncluidoGbMes":     { "valor": 250,   "fonte": "ESTIMATED", "nota": "Supabase Pro" },
+    "horaHumanaUsd":           { "valor": 35,    "fonte": "ESTIMATED", "nota": "suporte/operação — o CEO NÃO trabalha de graça no modelo; o dono deve fixar a taxa" }
+  },
+  "fixosMensaisUsd": {
+    "vercelPro":     { "valor": 20, "fonte": "ESTIMATED" },
+    "supabasePro":   { "valor": 40, "fonte": "ESTIMATED", "nota": "Pro 25 + compute Small ~15" },
+    "helius":        { "valor": 49, "fonte": "ESTIMATED", "nota": "checagem on-chain do passe (tier)" },
+    "resend":        { "valor": 20, "fonte": "ESTIMATED", "nota": "email (Fase 2 do Early Access)" },
+    "dominiosEMisc": { "valor": 15, "fonte": "ESTIMATED" }
+  },
+  "unitarios": {
+    "zionPrefixoTokens":        { "valor": 5500,  "fonte": "MEASURED", "nota": "fundação 12.819 + modo trading 9.030 caracteres ≈ 5,5k tokens (÷4)" },
+    "zionPayloadUsuarioTokens": { "valor": 3000,  "fonte": "ESTIMATED", "nota": "dados de mercado do pedido; não medido em produção (tráfego 0, L-029)" },
+    "zionSaidaEsperada":        { "valor": 1200,  "fonte": "ESTIMATED" },
+    "zionSaidaPesada":          { "valor": 1600,  "fonte": "ESTIMATED" },
+    "zionSaidaStress":          { "valor": 2000,  "fonte": "ESTIMATED", "nota": "maior saída observada ~1.904 (auditoria anterior); teto de 4.000" },
+    "bytesPorVela":             { "valor": 85,    "fonte": "ESTIMATED", "nota": "linha JSON do PostgREST (abriu_em + 4 numéricos)" },
+    "cpuPorVelaPropriaUs":      { "valor": 1.5,   "fonte": "MEASURED+ESTIMATED", "nota": "motor 0,19 µs/vela medido (HEAVY 33 ms/175.200) + ~1,3 µs de parse JSON estimado" },
+    "cpuPorVelaPropriaUsAntes": { "valor": 369,   "fonte": "MEASURED", "nota": "HEAVY RSI antes: 64,6 s/175.200 velas" },
+    "cpuPorBarraMesaUs":        { "valor": 29,    "fonte": "MEASURED", "nota": "HEAVY mesa depois: 1,24 s/43.200 barras" },
+    "cpuPorBarraMesaUsAntes":   { "valor": 443,   "fonte": "MEASURED", "nota": "HEAVY mesa antes: 19,1 s/43.200 barras" },
+    "msDbPorPagina":            { "valor": 20,    "fonte": "ESTIMATED", "nota": "ida e volta Vercel→Supabase por página de 1.000 velas" },
+    "memoriaFuncaoGb":          { "valor": 1,     "fonte": "ESTIMATED" },
+    "tiqueRequisicoes3250":     { "valor": 308,   "fonte": "MEASURED", "nota": "CE-10 depois, 3.250 desks, por tique" },
+    "tiqueCpuS3250":            { "valor": 1.2,   "fonte": "MEASURED", "nota": "CE-10 depois (local)" },
+    "tiqueEgressMb":            { "valor": 4,     "fonte": "ESTIMATED", "nota": "~80 séries × ~600 velas × 85 B" },
+    "tiquesPorDia":             { "valor": 48,    "fonte": "MEASURED", "nota": "cadência 30 min (papel.ts CADENCIA_MS)" },
+    "tiqueDesksAntesPorTique":  { "valor": 30,    "fonte": "MEASURED", "nota": "CE-10 antes: 30 avaliados/tique, universo máximo 200" }
+  },
+  "cenarios": {
+    "EXPECTED": { "zionUso": 0.30, "cacheHitPrefixo": 0.5, "saida": "zionSaidaEsperada", "backtestsUso": { "pro": 5,   "trader": 20,   "pilot": 60 },   "velasPorBacktest": 2000,  "mesasAtivas": 0.5, "suporteHorasMes": { "pro": 0.05, "trader": 0.15, "pilot": 0.5 } },
+    "HEAVY":    { "zionUso": 0.80, "cacheHitPrefixo": 0.3, "saida": "zionSaidaPesada",   "backtestsUso": { "pro": 30,  "trader": 150,  "pilot": 1500 }, "velasPorBacktest": 20000, "mesasAtivas": 1.0, "suporteHorasMes": { "pro": 0.15, "trader": 0.4,  "pilot": 1.5 } },
+    "STRESS":   { "zionUso": 1.00, "cacheHitPrefixo": 0.0, "saida": "zionSaidaStress",   "backtestsUso": "orcamento",                                        "velasPorBacktest": null,  "mesasAtivas": 1.0, "suporteHorasMes": { "pro": 0.3,  "trader": 0.8,  "pilot": 3.0 } },
+    "_fonte": "ESTIMATED — hipóteses de uso; STRESS usa o teto técnico de cada plano (100% da cota do ZION todo dia, orçamento de unidades do Workbench (CE-05) todo dia, cache de prefixo 0%)"
+  },
+  "orcamentoWorkbench": { "fracaoDoTeto": 0.25, "fonte": "MEASURED", "nota": "código (cotas.ts, CE-05): unidades/dia = backtests/dia × teto por rodada × 1/4" },
+  "referral": [0, 0.10, 0.15, 0.20],
+  "reservaDeServico": {
+    "40/35/15": { "pro": 0.40, "trader": 0.35, "pilot": 0.15 },
+    "25/20/10": { "pro": 0.25, "trader": 0.20, "pilot": 0.10 }
+  }
+}
