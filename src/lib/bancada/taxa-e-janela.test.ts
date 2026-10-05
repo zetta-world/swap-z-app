@@ -121,7 +121,15 @@ describe("③ o teto do tique conta TRABALHO, e a guarda anda dentro do laço", 
     // cinco posições do mesmo movimento, inflando a amostra do cliente.
     expect(TIQUE).toMatch(/let temAberta = mesa\.temPosicaoAberta/);
     expect(TIQUE).toMatch(/temPosicaoAberta: temAberta/);
-    expect(TIQUE).toMatch(/if \(r\.ok\) \{ resumo\.abertas\+\+; temAberta = true; \}/);
+    // ⚠️ RM-02 (audit remediation): a abertura agora pode voltar `criada: false`
+    // (o banco já tinha a mesma oportunidade) ou uma recusa do banco — nos dois
+    // casos a mesa NÃO abre outro símbolo nesta vela. Só o ERRO deixa a guarda
+    // aberta. A intenção é a mesma; o comportamento é provado contra Postgres
+    // real em bench/integracao/papel-concorrencia.integration.ts.
+    expect(TIQUE).toMatch(/if \(r\.criada\) resumo\.abertas\+\+; else resumo\.jaRegistradas\+\+;\s*temAberta = true;/);
+    const ramoDeErro = TIQUE.slice(TIQUE.indexOf('} else if (r.motivo === "erro") {'), TIQUE.indexOf("} else {", TIQUE.indexOf('} else if (r.motivo === "erro") {')));
+    expect(ramoDeErro).toMatch(/resumo\.problemas\.push/);
+    expect(ramoDeErro).not.toMatch(/temAberta = true/);
   });
 
   it("⚠️ fechar UMA posição tira o símbolo, não a mesa inteira", () => {
@@ -156,7 +164,9 @@ describe("④ o teto do tique gira, pesa e carimba", () => {
    *   · nada sai do teto sem carimbo.
    */
   it("⚠️ a fila gira entre TODAS as mesas, com cursor persistido", () => {
-    expect(TIQUE).toMatch(/const cursor = await lerCursor\(db\)/);
+    // ⚠️ RM-06: a leitura do cursor distingue "sem cursor" de "erro" — os dois recomeçam do início.
+    expect(TIQUE).toMatch(/const lido = await lerCursor\(db\)/);
+    expect(TIQUE).toMatch(/const cursor = lido\.ok \? lido\.valor : null/);
     expect(TIQUE).toMatch(/fila\.findIndex\(\(id\) => id > cursor\)/);
     expect(TIQUE).toMatch(/fila\[\(inicio \+ k\) % fila\.length\]/);
     expect(TIQUE).toMatch(/await gravarCursor\(db, ultimoAvaliado, agoraMs\)/);

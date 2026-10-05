@@ -123,12 +123,21 @@ function bancoFalso(inicial: Record<string, Linha[]> = {}, falhas: Record<string
         },
         update(patch: Linha) {
           const filtros: Array<(r: Linha) => boolean> = [];
+          // ⚠️ RM-04/RM-06: o UPDATE devolve as linhas que MUDOU quando pedido (`.select`) —
+          // é assim que "zero linhas" (posse errada, já fechada) deixa de passar por sucesso.
+          const aplicar = () => {
+            if (falhas[t]) return { data: null, error: { message: falhas[t] } };
+            const mudou: Linha[] = [];
+            for (const r of alvo(t)) if (filtros.every((f) => f(r))) { Object.assign(r, patch); mudou.push({ id: r.id }); }
+            return { data: mudou, error: null };
+          };
           const api = {
             eq(col: string, val: unknown) { filtros.push((r) => r[col] === val); return api; },
+            select(_cols?: string) {
+              return { then<R>(ok: (v: ReturnType<typeof aplicar>) => R) { return Promise.resolve(aplicar()).then(ok); } };
+            },
             then<R>(ok: (v: { error: { message: string } | null }) => R) {
-              if (falhas[t]) return Promise.resolve(ok({ error: { message: falhas[t] } }));
-              for (const r of alvo(t)) if (filtros.every((f) => f(r))) Object.assign(r, patch);
-              return Promise.resolve(ok({ error: null }));
+              return Promise.resolve(ok({ error: aplicar().error }));
             },
           };
           return api;
@@ -149,6 +158,24 @@ function bancoFalso(inicial: Record<string, Linha[]> = {}, falhas: Record<string
     // MAPEAMENTO do wrapper (e que ele falha fechado).
     rpc(nome: string, args: Record<string, unknown>) {
       chamadasRpc.push({ nome, args });
+      /**
+       * ⚠️ RM-02: a abertura agora é RPC. A semântica (trava, chave canônica,
+       * vela já avaliada) é provada no Postgres real (supabase/tests/23*); aqui
+       * o falso só GRAVA a linha com o dono que veio, para que os testes de
+       * isolamento continuem medindo o que voltou do banco.
+       */
+      if (nome === "bancada_abrir_posicao_papel") {
+        if (falhas.bancada_posicao) return Promise.resolve({ data: null, error: { message: falhas.bancada_posicao } });
+        const id = `bancada_posicao-${++seq}`;
+        alvo("bancada_posicao").push({
+          id, dono: args.p_dono, estrategia_id: args.p_estrategia_id, simbolo: args.p_simbolo, lado: args.p_lado,
+          entrada: args.p_entrada, tamanho_usd: args.p_tamanho_usd, alvo_pct: args.p_alvo_pct, stop_pct: args.p_stop_pct,
+          expira_em: args.p_expira_em, vela_em: args.p_vela_em, playbook: args.p_playbook, horas_limite: args.p_horas_limite,
+          status: "aberta", aberta_em: new Date(Date.now() - seq).toISOString(),
+          chave_entrada: `v1:${String(args.p_estrategia_id)}:${String(args.p_intervalo)}:${String(args.p_vela_em)}`,
+        });
+        return Promise.resolve({ data: { ok: true, criada: true, id }, error: null });
+      }
       return Promise.resolve(respostaRpc);
     },
   } as unknown as SupabaseClient;
@@ -404,7 +431,7 @@ describe("a cota — janela móvel, custo em trabalho, e o portão que não cobr
 describe("papel adiante: isolado por dono, menos onde o cron precisa de todos", () => {
   const POSICAO = {
     estrategiaId: "e1", simbolo: "BTC", lado: "long" as const,
-    entrada: 100, tamanhoUsd: 500, alvoPct: 2, stopPct: 1.2, expiraEm: null, velaEm: null,
+    entrada: 100, tamanhoUsd: 500, alvoPct: 2, stopPct: 1.2, expiraEm: null, velaEm: 1_700_000_000_000, intervalo: "1h",
   };
 
   it("A vê as suas posições abertas e nenhuma de B", async () => {
@@ -419,9 +446,11 @@ describe("papel adiante: isolado por dono, menos onde o cron precisa de todos", 
   it("⚠️ A não fecha a posição de B", async () => {
     const { db, tabelas } = bancoFalso();
     const daB = await abrirPosicao(B, db, POSICAO);
-    const idB = daB.ok ? daB.valor : "";
+    const idB = daB.ok ? daB.id : "";
 
-    await fecharPosicao(A, db, idB, "perdeu", 90, -10);
+    const deA = await fecharPosicao(A, db, idB, "perdeu", 90, -10);
+    // ⚠️ RM-02: a tentativa de A não é "sucesso que não mudou nada" — é erro dito.
+    expect(deA.ok).toBe(false);
     expect(tabelas.bancada_posicao[0].status).toBe("aberta");
 
     await fecharPosicao(B, db, idB, "expirada", null, null);
@@ -433,7 +462,7 @@ describe("papel adiante: isolado por dono, menos onde o cron precisa de todos", 
     await abrirPosicao(A, db, POSICAO);
     await abrirPosicao(B, db, { ...POSICAO, simbolo: "ETH" });
 
-    const todas = await posicoesAbertasParaOCron(db);
+    const todas = (await posicoesAbertasParaOCron(db))!;
     expect(todas).toHaveLength(2);
     // ⚠️ O dono de cada posição é reconstruído da PRÓPRIA LINHA
     // (`donoDeLinhaDoBanco`), nunca de requisição. É o que permite o cron
@@ -445,7 +474,7 @@ describe("papel adiante: isolado por dono, menos onde o cron precisa de todos", 
   it("a posição fechada sai da varredura do cron", async () => {
     const { db } = bancoFalso();
     const daA = await abrirPosicao(A, db, POSICAO);
-    await fecharPosicao(A, db, daA.ok ? daA.valor : "", "ganhou", 102, 2);
+    await fecharPosicao(A, db, daA.ok ? daA.id : "", "ganhou", 102, 2);
     expect(await posicoesAbertasParaOCron(db)).toHaveLength(0);
   });
 });
@@ -513,7 +542,8 @@ describe("mesasDasPosicoesParaOCron — a leitura que NÃO filtra por ligada", (
 
   it("a leitura das LIGADAS segue estrita — e é isso que impede abrir de novo", () => {
     const { db } = bancoFalso({ bancada_estrategia: LINHAS });
-    return mesasLigadasParaOCron(db as unknown as SupabaseClient).then((ms) => {
+    return mesasLigadasParaOCron(db as unknown as SupabaseClient).then((lidas) => {
+      const ms = lidas!;
       expect(ms.map((m) => m.id)).toEqual(["viva"]);
     });
   });
@@ -611,7 +641,7 @@ describe("⚠️⚠️ CE-09 — o cron lê TODAS as mesas e posições, e o `.i
 
   it("2.500 mesas ligadas voltam TODAS — antes eram as 200 mais antigas", async () => {
     const { db } = bancoFalso({ bancada_estrategia: Array.from({ length: 2500 }, (_, i) => ESTRATEGIA(i)) });
-    const ligadas = await mesasLigadasParaOCron(db);
+    const ligadas = (await mesasLigadasParaOCron(db))!;
     expect(ligadas).toHaveLength(2500);
     expect(new Set(ligadas.map((m) => m.id)).size).toBe(2500);
   });

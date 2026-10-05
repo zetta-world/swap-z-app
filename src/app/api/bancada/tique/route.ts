@@ -10,9 +10,14 @@
  * ⚠️ AGENDAR É PASSO DO DONO (cron-job.org, como os outros crons — ver
  * CLAUDE.md). Enquanto esta rota não for agendada, nada muda: o tique segue no
  * cron do backtest. Quando ela rodar, grava `bancada:tique:dedicado_em`, e o
- * cron do backtest deixa de rodar o tique por 40 minutos — os dois nunca
- * disputam a mesma passagem por muito tempo (e a guarda `vela_ja_avaliada`
- * impede abertura dobrada mesmo se disputarem).
+ * cron do backtest deixa de rodar o tique por 40 minutos.
+ *
+ * ⚠️⚠️ A EXCLUSÃO NÃO É ESTA MARCA (RM-01, auditoria do round de custo). Havia
+ * aqui uma "trava" SELECT → decide → UPSERT em `admin_kv` — duas invocações
+ * liam "livre" e rodavam juntas. A exclusão agora é o LEASE do banco (0076),
+ * tomado dentro de `tiqueDoPapelAdiante` com o MESMO escopo que o cron do
+ * backtest usa; e a abertura é idempotente no banco (chave canônica + UNIQUE).
+ * Sem a 0076 o tique não roda: 503 aqui, falha fechada.
  *
  * Auth: CRON_SECRET, comparação de tempo constante. Gate: `pause_bancada`.
  */
@@ -29,7 +34,6 @@ export const maxDuration = 60;
 
 /** Prazo do tique nesta rota: a função inteira, menos folga para gravar e responder. */
 const PRAZO_DEDICADO_MS = Number(process.env.BANCADA_TIQUE_DEDICADO_PRAZO_MS ?? 45_000);
-const LOCK_MS = 3 * 60_000;
 export const CHAVE_DEDICADO = "bancada:tique:dedicado_em";
 
 function authorized(req: NextRequest): boolean {
@@ -52,28 +56,34 @@ export async function POST(req: NextRequest) {
   const gates = await getFlywheelGates();
   if (gates.pause_bancada) return NextResponse.json({ ok: true, paused: true });
 
-  // Lock de passagem (mesmo padrão do cron do backtest): melhor-esforço — o
-  // pior caso de duas passagens juntas é avaliar a mesma vela duas vezes, e a
-  // guarda `vela_ja_avaliada` impede a segunda abertura.
-  const chaveLock = "lock:bancada_tique";
-  try {
-    const { data } = await db.from("admin_kv").select("value").eq("key", chaveLock).maybeSingle();
-    const ultimo = data?.value ? Date.parse(data.value) : NaN;
-    if (Number.isFinite(ultimo) && Date.now() - ultimo < LOCK_MS) {
-      return NextResponse.json({ ok: true, skipped: "duplicate_tick" });
-    }
-    const agora = new Date().toISOString();
-    await db.from("admin_kv").upsert([
-      { key: chaveLock, value: agora, updated_at: agora },
-      { key: CHAVE_DEDICADO, value: agora, updated_at: agora },
-    ], { onConflict: "key" });
-  } catch { /* melhor-esforço */ }
-
   const r = await tiqueDoPapelAdiante(db, Date.now(), { prazoMs: PRAZO_DEDICADO_MS });
+
+  if (r.exclusividade === "tomada") {
+    /**
+     * ⚠️ A MARCA "a rota dedicada está viva" (o cron do backtest cede o tique
+     * por 40 min). Só depois de uma passagem que RODOU — marcar antes faria o
+     * cron ceder para uma rota que não conseguiu rodar. O erro é declarado.
+     */
+    const agora = new Date().toISOString();
+    try {
+      const { error } = await db.from("admin_kv").upsert(
+        { key: CHAVE_DEDICADO, value: agora, updated_at: agora }, { onConflict: "key" });
+      if (error) r.problemas.push(`marca da rota dedicada não gravada: ${error.message}`);
+    } catch (e) {
+      r.problemas.push(`marca da rota dedicada não gravada: ${e instanceof Error ? e.message : "exceção"}`);
+    }
+  }
+
   await recordEvent("bancada_papel_tique", {
     meta: { mesas: r.mesas, abertas: r.abertas, fechadas: r.fechadas, cortadasPorPlano: r.cortadasPorPlano,
             adiadas: r.adiadas, leituras: r.leituras, cicloCompleto: r.cicloCompleto, dedicado: true,
+            exclusividade: r.exclusividade, jaRegistradas: r.jaRegistradas,
             problemas: r.problemas.slice(0, 5) },
   }).catch(() => {});
+
+  if (r.exclusividade === "ocupado") return NextResponse.json({ ok: true, skipped: "duplicate_tick" });
+  if (r.exclusividade === "indisponivel") {
+    return NextResponse.json({ ok: false, error: "exclusao_indisponivel", problemas: r.problemas.slice(0, 3) }, { status: 503 });
+  }
   return NextResponse.json({ ok: true, mesas: r.mesas, adiadas: r.adiadas, cicloCompleto: r.cicloCompleto });
 }

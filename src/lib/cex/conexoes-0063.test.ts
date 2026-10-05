@@ -213,7 +213,12 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
      * da fonte, velas do cache), em vez de um evento por rodada numa tabela sem
      * retenção (teste 22).
      *
-     * ⚠️ NENHUMA DAS TREZE (0063–0075) FOI APLICADA EM PRODUÇÃO. 0070–0075
+     * E uma DÉCIMA TERCEIRA vez, na AUDIT REMEDIATION do mesmo round: a 0076 é
+     * ADITIVA — lease do tique do papel, identidade canônica da abertura
+     * (`chave_entrada` com UNIQUE parcial), `ultima_vela_aberta` na estratégia e
+     * a RPC de abertura idempotente. Recusa rodar sem 0073–0075 (teste 23).
+     *
+     * ⚠️ NENHUMA DAS CATORZE (0063–0076) FOI APLICADA EM PRODUÇÃO. 0070–0076
      * existem só na lane B; o alvo de release (C1 `53cd85a`) vai até a 0069.
      */
     const novas = readdirSync("supabase/migrations")
@@ -233,6 +238,7 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
       "0073_bancada_reserva_atomica.sql",
       "0074_bancada_ultimos_tiques_em_lote.sql",
       "0075_bancada_rodada_metricas_de_custo.sql",
+      "0076_bancada_papel_exclusivo_e_idempotente.sql",
     ]);
   });
 });

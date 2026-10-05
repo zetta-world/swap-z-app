@@ -93,6 +93,10 @@ const CATALOGO: Record<string, string> = {
   bancada_reservar_rodada: "0073_bancada_reserva_atomica.sql",
   // CE-09: o último tique em lote (posse conferida por linha) nasce fechado na 0074.
   bancada_gravar_ultimos_tiques: "0074_bancada_ultimos_tiques_em_lote.sql",
+  // RM-01/RM-02 (audit remediation): lease do tique e abertura idempotente nascem fechados na 0076.
+  bancada_tique_arrendar: "0076_bancada_papel_exclusivo_e_idempotente.sql",
+  bancada_tique_liberar: "0076_bancada_papel_exclusivo_e_idempotente.sql",
+  bancada_abrir_posicao_papel: "0076_bancada_papel_exclusivo_e_idempotente.sql",
 };
 
 const ARQUIVOS = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();

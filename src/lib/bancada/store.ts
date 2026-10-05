@@ -80,20 +80,33 @@ export interface EstrategiaNova {
 }
 
 /**
- * ⚠️⚠️ O QUE O CRON VIU NA ÚLTIMA PASSAGEM (0044) — melhor-esforço, e o retorno
- * é IGNORADO de propósito por quem chama dentro do laço do tique.
+ * ⚠️⚠️ O QUE O CRON VIU NA ÚLTIMA PASSAGEM (0044).
  *
  * Perder o registro do que aconteceu é ruim; deixar de abrir a posição que ia
- * abrir é pior. Esta é a única escrita da bancada cujo erro não vira aviso na
- * tela — porque a tela já tem como perceber sozinha: `ultimo_tique` velho é
- * exatamente o que `saudeDoTique` chama de `atrasado`.
+ * abrir é pior — por isso quem chama dentro do laço do tique NÃO derruba o
+ * tique por causa desta escrita. Mas o desfecho É LIDO (RM-06, auditoria do
+ * round de custo): `supabase-js` resolve com `{ error }` em vez de lançar, e o
+ * `try/catch` que envolvia esta chamada não pegava nada — a falha virava
+ * `gravados++`. Agora volta `ok:false` com o motivo, e o tique o declara.
+ *
+ * ⚠️ `.select("id")` para CONTAR a linha: posse errada (`dono` ≠) ou id
+ * inexistente atualiza zero linhas sem erro nenhum, e zero linhas não é
+ * "gravado".
  */
 export async function gravarUltimoTique(
   dono: Dono, db: SupabaseClient, id: string, visto: Record<string, unknown>, emMs: number,
-): Promise<void> {
-  await db.from("bancada_estrategia")
-    .update({ ultimo_tique: { em: emMs, simbolos: visto } })
-    .eq("dono", dono).eq("id", id);
+): Promise<Escrita<true>> {
+  try {
+    const { data, error } = await db.from("bancada_estrategia")
+      .update({ ultimo_tique: { em: emMs, simbolos: visto } })
+      .eq("dono", dono).eq("id", id)
+      .select("id");
+    if (error) return falhou(error, "gravar último tique");
+    if (!Array.isArray(data) || data.length === 0) return { ok: false, porque: "gravar último tique: nenhuma linha (id/dono)" };
+    return { ok: true, valor: true };
+  } catch (e) {
+    return falhou(e instanceof Error ? e : null, "gravar último tique");
+  }
 }
 
 /**
@@ -115,6 +128,14 @@ export interface UltimoTiqueEmLote {
   visto: Record<string, unknown>;
 }
 
+/** O desfecho da escrita do último tique: quantas gravaram, por qual caminho, e o que falhou. */
+export interface GravacaoDosTiques {
+  viaLote: boolean;
+  gravados: number;
+  /** ⚠️ RM-06: as que NÃO gravaram, com o motivo — nunca contadas como gravadas. */
+  falhas: string[];
+}
+
 /**
  * ⚠️⚠️ O ÚLTIMO TIQUE DE MUITAS MESAS NUMA ESCRITA (CE-09, migration 0074).
  *
@@ -123,43 +144,69 @@ export interface UltimoTiqueEmLote {
  * grava o lote com a MESMA guarda de posse (`id` e `dono` por linha) e o mesmo
  * formato `{ em, simbolos }`.
  *
- * ⚠️ Melhor-esforço, como o PATCH que substitui. E se a RPC não existir (0074
- * ainda não aplicada) ou falhar, cai para o caminho antigo, item a item — o
- * registro não pode sumir por causa da otimização.
+ * ⚠️ Se a RPC não existir (0074 ainda não aplicada) ou falhar, cai para o
+ * caminho antigo, item a item — o registro não pode sumir por causa da
+ * otimização. ⚠️ RM-06: no fallback, `gravados` só conta o que o banco
+ * CONFIRMOU; o resto vai para `falhas`. Antes, `gravados++` vinha depois de um
+ * `await` cujo `{ error }` ninguém lia — falha contada como sucesso.
  */
 export async function gravarUltimosTiques(
   db: SupabaseClient, itens: ReadonlyArray<UltimoTiqueEmLote>, emMs: number,
-): Promise<{ viaLote: boolean; gravados: number }> {
-  if (itens.length === 0) return { viaLote: true, gravados: 0 };
+): Promise<GravacaoDosTiques> {
+  if (itens.length === 0) return { viaLote: true, gravados: 0, falhas: [] };
   const LOTE = 500;
   let gravados = 0;
+  const falhas: string[] = [];
   for (let i = 0; i < itens.length; i += LOTE) {
     const fatia = itens.slice(i, i + LOTE);
-    const { data, error } = await db.rpc("bancada_gravar_ultimos_tiques", {
-      p_itens: fatia.map((x) => ({ id: x.id, dono: x.dono, em: emMs, simbolos: x.visto })),
-    });
-    if (error) {
-      for (const x of itens.slice(i)) {
-        try { await gravarUltimoTique(x.dono, db, x.id, x.visto, emMs); gravados++; } catch { /* melhor-esforço */ }
-      }
-      return { viaLote: false, gravados };
+    let erro: string | null = null;
+    let n = 0;
+    try {
+      const { data, error } = await db.rpc("bancada_gravar_ultimos_tiques", {
+        p_itens: fatia.map((x) => ({ id: x.id, dono: x.dono, em: emMs, simbolos: x.visto })),
+      });
+      if (error) erro = error.message ?? "erro sem mensagem";
+      else n = Number(data);
+      if (!erro && !Number.isFinite(n)) erro = "resposta do lote fora do formato";
+    } catch (e) {
+      erro = e instanceof Error ? e.message : "exceção sem mensagem";
     }
-    gravados += Number(data) || 0;
+    if (erro) {
+      for (const x of itens.slice(i)) {
+        const r = await gravarUltimoTique(x.dono, db, x.id, x.visto, emMs);
+        if (r.ok) gravados++;
+        else falhas.push(`${x.id}: ${r.porque}`);
+      }
+      return { viaLote: false, gravados, falhas };
+    }
+    gravados += n;
+    // ⚠️ O lote devolve QUANTAS linhas mudou. Menos do que o pedido = itens sem par id/dono.
+    if (n < fatia.length) falhas.push(`lote: ${fatia.length - n} de ${fatia.length} sem linha (id/dono)`);
   }
-  return { viaLote: true, gravados };
+  return { viaLote: true, gravados, falhas };
 }
 
 export async function marcarTiqueAdiado(
   db: SupabaseClient, ids: string[], emMs: number,
-): Promise<void> {
-  if (ids.length === 0) return;
+): Promise<Escrita<true>> {
+  if (ids.length === 0) return { ok: true, valor: true };
   /**
    * ⚠️ `jsonb_set` no SERVIDOR, num UPDATE só. Ler-modificar-gravar por linha
    * seriam duas idas por instância adiada dentro do laço do cron — e um
    * intervalo em que duas passagens se sobrescrevem. `coalesce` cobre a linha
    * que ainda não tem `ultimo_tique` nenhum.
+   *
+   * ⚠️ RM-06: o `{ error }` é lido. A marca de adiada é o que separa "teto
+   * conhecido" de "incidente" na tela (`saudeDoTique`); perdê-la em silêncio
+   * troca um pelo outro.
    */
-  await db.rpc("bancada_marcar_adiado", { ids, em: emMs });
+  try {
+    const { error } = await db.rpc("bancada_marcar_adiado", { ids, em: emMs });
+    if (error) return falhou(error, "marcar adiadas");
+    return { ok: true, valor: true };
+  } catch (e) {
+    return falhou(e instanceof Error ? e : null, "marcar adiadas");
+  }
 }
 
 export interface Estrategia extends EstrategiaNova {
@@ -354,7 +401,18 @@ export interface MesaDoCron {
    */
   praca: Praca;
   papel: Papel;
+  /**
+   * ⚠️⚠️ A VELA DA ÚLTIMA ABERTURA DESTA MESA (0076, RM-03) — o estado
+   * AUTORITATIVO de "já abri nesta vela". Antes ele era derivado só das
+   * posições ABERTAS: a posição fechava, sumia da leitura do cron, e a mesma
+   * vela podia abrir de novo no tique seguinte.
+   */
+  ultimaVelaAberta: number | null;
 }
+
+/** As colunas que as duas leituras do cron trazem — uma lista só, pela mesma razão do mapeamento. */
+const COLUNAS_MESA_DO_CRON =
+  "id, dono, params, simbolos, intervalo, criada_em, mesa, papel_desde, praca, papel, ultima_vela_aberta";
 
 /**
  * ⚠️⚠️ TODAS AS MESAS LIGADAS, DE TODO MUNDO — a segunda função sem dono deste
@@ -377,21 +435,25 @@ export interface MesaDoCron {
  * Paginação por chave (`id > último`), 1.000 por página (o `db-max-rows`).
  * `teto` é um freio de sanidade, não um limite de produto: acima dele o tique
  * declara o corte em `problemas` em vez de calar.
+ *
+ * ⚠️⚠️ ERRO DE LEITURA DEVOLVE `null`, NUNCA `[]` (RM-06). Lista vazia diz
+ * "nenhuma mesa ligada"; `null` diz "não sei". Quem chama (o tique) PARA em
+ * vez de seguir com um mundo vazio — a mesma regra de `contarEstrategiasVivas`.
  */
 export const TETO_DE_MESAS_DO_CRON = 20_000;
 
 export async function mesasLigadasParaOCron(
   db: SupabaseClient, teto = TETO_DE_MESAS_DO_CRON,
-): Promise<MesaDoCron[]> {
+): Promise<MesaDoCron[] | null> {
   const linhas: unknown[] = [];
   let depoisDe: string | null = null;
   while (linhas.length < teto) {
     let q = db.from("bancada_estrategia")
-      .select("id, dono, params, simbolos, intervalo, criada_em, mesa, papel_desde, praca, papel")
+      .select(COLUNAS_MESA_DO_CRON)
       .eq("papel_adiante", true).is("arquivada_em", null);
     if (depoisDe) q = q.gt("id", depoisDe);
     const { data, error } = await q.order("id", { ascending: true }).limit(Math.min(1000, teto - linhas.length));
-    if (error || !data) return [];
+    if (error || !data) return null;
     if (data.length === 0) break;
     linhas.push(...data);
     depoisDe = String((data[data.length - 1] as { id: string }).id);
@@ -411,6 +473,7 @@ function paraMesasDoCron(data: unknown): MesaDoCron[] {
     id: string; dono: string; params: Record<string, unknown> | null;
     simbolos: string[] | null; intervalo: string | null; criada_em: string;
     mesa: string | null; papel_desde: string | null; praca: string; papel: string;
+    ultima_vela_aberta?: number | string | null;
   }>;
   return linhas.flatMap((r) => {
     const d = donoDeLinhaDoBanco(r.dono);
@@ -420,6 +483,8 @@ function paraMesasDoCron(data: unknown): MesaDoCron[] {
       simbolos: r.simbolos ?? [], intervalo: r.intervalo ?? "1h", criadaEm: r.criada_em,
       mesa: r.mesa, papelDesde: r.papel_desde,
       praca: r.praca as Praca, papel: r.papel as Papel,
+      // ⚠️ `Number(null)` é 0 e passaria por "abriu na vela 0" — nulo continua nulo.
+      ultimaVelaAberta: r.ultima_vela_aberta == null ? null : Number(r.ultima_vela_aberta),
     }];
   });
 }
@@ -450,10 +515,14 @@ function paraMesasDoCron(data: unknown): MesaDoCron[] {
  *
  * ⚠️ SEM DONO, como as irmãs `paraOCron` — e o nome carrega o aviso. Numa rota
  * de cliente isto seria vazamento.
+ *
+ * ⚠️ RM-06: lote que falha não apaga os outros, mas é CONTADO em `lotesComFalha`
+ * — o tique declara "leitura falhou", em vez de as posições daquele lote
+ * aparecerem como "sem linha de estratégia" (que é outro problema).
  */
 export async function mesasDasPosicoesParaOCron(
   db: SupabaseClient, ids: ReadonlyArray<string>,
-): Promise<MesaDoCron[]> {
+): Promise<MesaDoCron[] & { lotesComFalha?: number }> {
   if (ids.length === 0) return [];
   // ⚠️ Sem `.eq("papel_adiante")` e sem `.is("arquivada_em", null)` DE PROPÓSITO:
   // é exatamente o filtro que congelava a posição órfã.
@@ -467,16 +536,15 @@ export async function mesasDasPosicoesParaOCron(
   const LOTE = 100;
   const linhas: unknown[] = [];
   const unicos = [...new Set(ids)];
+  let lotesComFalha = 0;
   for (let i = 0; i < unicos.length; i += LOTE) {
     const { data, error } = await db.from("bancada_estrategia")
-      .select("id, dono, params, simbolos, intervalo, criada_em, mesa, papel_desde, praca, papel")
+      .select(COLUNAS_MESA_DO_CRON)
       .in("id", unicos.slice(i, i + LOTE));
-    // Lote que falha não apaga os outros: as posições dele aparecem como
-    // "sem linha" (declarado em `problemas`) e as demais seguem fechando.
-    if (error || !data) continue;
+    if (error || !data) { lotesComFalha++; continue; }
     linhas.push(...data);
   }
-  return paraMesasDoCron(linhas);
+  return Object.assign(paraMesasDoCron(linhas), { lotesComFalha });
 }
 
 // ── RODADAS ─────────────────────────────────────────────────────────
@@ -1012,26 +1080,74 @@ export interface PosicaoNova {
   horasLimite?: number | null;
 }
 
+/** O que a abertura precisa além da posição: o intervalo em que a mesa DECIDIU (parte da identidade). */
+export interface AberturaNova extends PosicaoNova {
+  /** ⚠️ Obrigatória aqui: sem a vela não há identidade da oportunidade. */
+  velaEm: number;
+  /** O intervalo da decisão — o da estratégia própria, ou `INTERVALO_DO_AGENTE` numa instância. */
+  intervalo: string;
+}
+
+export type MotivoSemAbertura = "vela_ja_avaliada" | "ja_tem_posicao" | "sem_estrategia" | "dono_divergente";
+
+/**
+ * O desfecho de uma abertura.
+ *
+ * ⚠️ `criada: false` com `ok: true` é o REPLAY: a mesma oportunidade já está
+ * registrada (outro worker, retry, cron concorrente). Não é erro — é o banco
+ * dizendo que o trabalho já foi feito, e o id é o da posição que existe.
+ */
+export type DesfechoDaAbertura =
+  | { ok: true; id: string; criada: boolean }
+  | { ok: false; motivo: MotivoSemAbertura }
+  | { ok: false; motivo: "erro"; porque: string };
+
+/**
+ * ⚠️⚠️ ABRE PELA RPC IDEMPOTENTE (0076, RM-02/RM-03) — nunca mais por INSERT cru.
+ *
+ * O INSERT comum não tinha identidade da oportunidade nem UNIQUE: dois tiques
+ * que viam "nenhuma posição" abriam duas posições do MESMO sinal. A RPC trava a
+ * linha da estratégia, confere o dono, devolve `ja_registrada` quando a chave
+ * canônica `v1:<estrategia>:<intervalo>:<vela>` já existe, recusa vela já
+ * avaliada e mesa com posição aberta, e avança `ultima_vela_aberta`.
+ *
+ * ⚠️ SEM FALLBACK para o INSERT antigo: sem a 0076, abrir FALHA (fechado). O
+ * fallback reabriria exatamente a porta que esta função fecha.
+ */
 export async function abrirPosicao(
-  dono: Dono, db: SupabaseClient, p: PosicaoNova,
-): Promise<Escrita<string>> {
-  const { data, error } = await db.from("bancada_posicao").insert({
-    dono,
-    estrategia_id: p.estrategiaId,
-    simbolo: p.simbolo,
-    lado: p.lado,
-    entrada: p.entrada,
-    tamanho_usd: p.tamanhoUsd,
-    alvo_pct: p.alvoPct,
-    stop_pct: p.stopPct,
-    expira_em: p.expiraEm,
-    vela_em: p.velaEm,
-    playbook: p.playbook ?? null,
-    horas_limite: p.horasLimite ?? null,
-    status: "aberta",
-  }).select("id").single();
-  if (error || !data) return falhou(error, "abrir posição");
-  return { ok: true, valor: String((data as { id: string }).id) };
+  dono: Dono, db: SupabaseClient, p: AberturaNova,
+): Promise<DesfechoDaAbertura> {
+  let data: unknown = null;
+  try {
+    const r = await db.rpc("bancada_abrir_posicao_papel", {
+      p_dono: dono,
+      p_estrategia_id: p.estrategiaId,
+      p_simbolo: p.simbolo,
+      p_lado: p.lado,
+      p_entrada: p.entrada,
+      p_tamanho_usd: p.tamanhoUsd,
+      p_alvo_pct: p.alvoPct,
+      p_stop_pct: p.stopPct,
+      p_expira_em: p.expiraEm,
+      p_vela_em: p.velaEm,
+      p_intervalo: p.intervalo,
+      p_playbook: p.playbook ?? null,
+      p_horas_limite: p.horasLimite ?? null,
+    });
+    if (r.error) return { ok: false, motivo: "erro", porque: falhou(r.error, "abrir posição").porque };
+    data = r.data;
+  } catch (e) {
+    return { ok: false, motivo: "erro", porque: falhou(e instanceof Error ? e : null, "abrir posição").porque };
+  }
+  const r = data as { ok?: unknown; criada?: unknown; id?: unknown; motivo?: unknown } | null;
+  if (r?.ok === true && typeof r.id === "string" && r.id.length > 0 && typeof r.criada === "boolean") {
+    return { ok: true, id: r.id, criada: r.criada };
+  }
+  if (r?.ok === false && (r.motivo === "vela_ja_avaliada" || r.motivo === "ja_tem_posicao"
+      || r.motivo === "sem_estrategia" || r.motivo === "dono_divergente")) {
+    return { ok: false, motivo: r.motivo };
+  }
+  return { ok: false, motivo: "erro", porque: "abrir posição: resposta fora do formato" };
 }
 
 export interface Posicao extends PosicaoNova { id: string; dono: Dono; status: StatusPosicao; abertaEm: string }
@@ -1101,14 +1217,20 @@ export async function posicoesAbertas(dono: Dono, db: SupabaseClient): Promise<P
  */
 export async function posicoesAbertasParaOCron(
   db: SupabaseClient, teto = TETO_DE_MESAS_DO_CRON,
-): Promise<Posicao[]> {
+): Promise<Posicao[] | null> {
   const linhas: LinhaPosicao[] = [];
   let depoisDe: string | null = null;
   while (linhas.length < teto) {
     let q = db.from("bancada_posicao").select(COLUNAS_POSICAO).eq("status", "aberta");
     if (depoisDe) q = q.gt("id", depoisDe);
     const { data, error } = await q.order("id", { ascending: true }).limit(Math.min(1000, teto - linhas.length));
-    if (error || !data) return [];
+    /**
+     * ⚠️⚠️ `null`, NUNCA `[]` (RM-06). Com `[]` toda mesa que TEM posição aberta
+     * parecia livre, e o tique abria uma segunda por cima — o defeito que a
+     * guarda "uma posição por mesa" existe para impedir, entrando pela porta do
+     * erro de leitura.
+     */
+    if (error || !data) return null;
     if (data.length === 0) break;
     linhas.push(...(data as unknown as LinhaPosicao[]));
     depoisDe = String(linhas[linhas.length - 1].id);
@@ -1195,10 +1317,68 @@ function paraExtrato(r: LinhaExtrato): PosicaoFechada {
 export async function fecharPosicao(
   dono: Dono, db: SupabaseClient, id: string,
   status: Exclude<StatusPosicao, "aberta">, saida: number | null, resultadoPct: number | null,
-): Promise<Escrita<true>> {
-  const { error } = await db.from("bancada_posicao").update({
-    status, saida, resultado_pct: resultadoPct, fechada_em: new Date().toISOString(),
-  }).eq("dono", dono).eq("id", id);
-  if (error) return falhou(error, "fechar posição");
-  return { ok: true, valor: true };
+): Promise<Escrita<{ fechou: boolean }>> {
+  /**
+   * ⚠️⚠️ SÓ `aberta → desfecho` (RM-02). Dois tiques que decidem fechar a mesma
+   * posição (replay, cron concorrente) não podem reescrever o primeiro desfecho
+   * com o segundo — `fechada_em` e até a saída mudariam depois do fato. O
+   * segundo atualiza zero linhas e devolve `fechou: false` (idempotente).
+   */
+  try {
+    const { data, error } = await db.from("bancada_posicao").update({
+      status, saida, resultado_pct: resultadoPct, fechada_em: new Date().toISOString(),
+    }).eq("dono", dono).eq("id", id).eq("status", "aberta").select("id");
+    if (error) return falhou(error, "fechar posição");
+    if (Array.isArray(data) && data.length > 0) return { ok: true, valor: { fechou: true } };
+    const { data: atual, error: e2 } = await db.from("bancada_posicao")
+      .select("status").eq("dono", dono).eq("id", id).maybeSingle();
+    if (e2) return falhou(e2, "fechar posição (conferência)");
+    const st = (atual as { status?: string } | null)?.status;
+    if (st != null && st !== "aberta") return { ok: true, valor: { fechou: false } };
+    return { ok: false, porque: "fechar posição: posição não encontrada para este dono" };
+  } catch (e) {
+    return falhou(e instanceof Error ? e : null, "fechar posição");
+  }
+}
+
+// ── EXCLUSÃO DO TIQUE (0076, RM-01) ─────────────────────────────────
+
+export type Arrendamento =
+  | { ok: true; ate: number }
+  | { ok: false; motivo: "ocupado"; ate: number | null }
+  /** ⚠️ "Não consegui saber" — quem chama NÃO roda o tique (falha fechada). */
+  | { ok: false; motivo: "indisponivel"; porque: string };
+
+/**
+ * ⚠️⚠️ O LEASE DO TIQUE, NO BANCO. A trava antiga era SELECT → decide → UPSERT
+ * em `admin_kv`: duas invocações liam "livre" e rodavam juntas. Aqui é uma
+ * instrução atômica (`INSERT … ON CONFLICT DO UPDATE … WHERE vencido`), com
+ * TTL para recuperar de queda, e um `dono` (token aleatório por passagem) para
+ * que só quem tomou possa liberar.
+ */
+export async function arrendarTique(
+  db: SupabaseClient, escopo: string, dono: string, ttlMs: number,
+): Promise<Arrendamento> {
+  try {
+    const { data, error } = await db.rpc("bancada_tique_arrendar", { p_escopo: escopo, p_dono: dono, p_ttl_ms: Math.round(ttlMs) });
+    if (error) return { ok: false, motivo: "indisponivel", porque: falhou(error, "arrendar tique").porque };
+    const r = data as { ok?: unknown; ate?: unknown; motivo?: unknown } | null;
+    const ate = Number(r?.ate);
+    if (r?.ok === true && Number.isFinite(ate)) return { ok: true, ate };
+    if (r?.ok === false && r.motivo === "ocupado") return { ok: false, motivo: "ocupado", ate: Number.isFinite(ate) ? ate : null };
+    return { ok: false, motivo: "indisponivel", porque: "arrendar tique: resposta fora do formato" };
+  } catch (e) {
+    return { ok: false, motivo: "indisponivel", porque: falhou(e instanceof Error ? e : null, "arrendar tique").porque };
+  }
+}
+
+/** Solta o lease — só se ainda for deste `dono`. Falhar aqui não prende nada: o TTL vence sozinho. */
+export async function liberarTique(db: SupabaseClient, escopo: string, dono: string): Promise<Escrita<boolean>> {
+  try {
+    const { data, error } = await db.rpc("bancada_tique_liberar", { p_escopo: escopo, p_dono: dono });
+    if (error) return falhou(error, "liberar tique");
+    return { ok: true, valor: data === true };
+  } catch (e) {
+    return falhou(e instanceof Error ? e : null, "liberar tique");
+  }
 }

@@ -321,14 +321,17 @@ export async function POST(req: NextRequest) {
           } catch { /* sem a leitura, roda aqui como sempre */ }
         }
         if (db && !dedicadoRecente) {
+          // ⚠️ RM-01: o tique toma o MESMO lease da rota dedicada — os dois nunca
+          // rodam juntos. `ocupado` = a outra entrada está rodando; nada a fazer.
           const r = await tiqueDoPapelAdiante(db);
-          if (r.mesas > 0) {
+          if (r.mesas > 0 || r.exclusividade === "indisponivel" || r.problemas.length > 0) {
             await recordEvent("bancada_papel_tique", {
               // ⚠️ `adiadas` entra no evento: sem ela, a única forma de
               // descobrir que o teto de trabalho está apertado seria um cliente
               // reclamando que a mesa dele não abre.
               meta: { mesas: r.mesas, abertas: r.abertas, fechadas: r.fechadas,
                       cortadasPorPlano: r.cortadasPorPlano, adiadas: r.adiadas,
+                      exclusividade: r.exclusividade, jaRegistradas: r.jaRegistradas,
                       problemas: r.problemas.slice(0, 5) },
             });
           }

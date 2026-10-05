@@ -10,13 +10,14 @@
  * oráculo e o papel da casa.
  */
 
+import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getTiersForWallets } from "@/lib/tier/check";
 import { velasDoIntervalo, type LeituraDeVelas } from "@/lib/mercado/store";
 import { lerEstrategia } from "@/lib/bancada/vocabulario";
 import {
   mesasLigadasParaOCron, mesasDasPosicoesParaOCron, posicoesAbertasParaOCron, abrirPosicao, fecharPosicao,
-  gravarUltimosTiques, marcarTiqueAdiado, type MesaDoCron, type UltimoTiqueEmLote,
+  gravarUltimosTiques, marcarTiqueAdiado, arrendarTique, liberarTique, type MesaDoCron, type UltimoTiqueEmLote,
 } from "@/lib/bancada/store";
 import { motivoFechado, type VistoNoSimbolo } from "@/lib/bancada/ultimo-tique";
 import { duracaoDoIntervaloMs } from "@/lib/mercado/velas";
@@ -70,6 +71,15 @@ export interface ResumoDoTique {
   leituras: number;
   /** CE-09: `true` quando todas as mesas elegíveis foram avaliadas nesta passagem. */
   cicloCompleto: boolean;
+  /**
+   * ⚠️⚠️ RM-01: se ESTA passagem teve a exclusão do tique.
+   *   · `tomada`       — rodou;
+   *   · `ocupado`      — outra passagem segura o lease: esta NÃO rodou (normal em retry/cron duplo);
+   *   · `indisponivel` — não deu para saber (RPC ausente/erro): NÃO rodou — falha fechada.
+   */
+  exclusividade: "tomada" | "ocupado" | "indisponivel";
+  /** RM-02: aberturas que o banco reconheceu como JÁ registradas (replay/concorrência) — não contam em `abertas`. */
+  jaRegistradas: number;
   problemas: string[];
 }
 
@@ -96,6 +106,14 @@ export const LEITURAS_POR_TIQUE = Number(process.env.BANCADA_LEITURAS_POR_TIQUE 
 export const TOLERANCIA_DO_TIER_MS = 55 * 60_000;
 /** Onde mora o cursor da fila justa (admin_kv é o KV de operação da casa). */
 export const CHAVE_DO_CURSOR = "bancada:tique:cursor";
+/**
+ * ⚠️ RM-01: o escopo do lease. As DUAS entradas do tique (rota dedicada e cron
+ * do backtest) usam ESTE escopo — exclusão entre elas também, não só entre
+ * duas chamadas da mesma rota.
+ */
+export const ESCOPO_DO_TIQUE = "bancada_tique";
+/** Validade do lease: maior que a função mais longa (60 s); queda = libera sozinho depois disto. */
+export const TTL_DO_TIQUE_MS = 3 * 60_000;
 
 export interface OpcoesDoTique {
   prazoMs?: number;
@@ -139,22 +157,69 @@ export async function tiqueDoPapelAdiante(
   db: SupabaseClient, agoraMs: number = Date.now(), opcoes: OpcoesDoTique = {},
 ): Promise<ResumoDoTique> {
   const resumo: ResumoDoTique = {
-    mesas: 0, abertas: 0, fechadas: 0, cortadasPorPlano: 0, adiadas: 0, leituras: 0, cicloCompleto: false, problemas: [],
+    mesas: 0, abertas: 0, fechadas: 0, cortadasPorPlano: 0, adiadas: 0, leituras: 0, cicloCompleto: false,
+    exclusividade: "indisponivel", jaRegistradas: 0, problemas: [],
   };
+
+  /**
+   * ⚠️⚠️ UMA PASSAGEM POR VEZ, GARANTIDO PELO BANCO (RM-01).
+   *
+   * A trava antiga (SELECT em `admin_kv` → decide → UPSERT) deixava duas
+   * invocações simultâneas passarem juntas — retry do cron-job.org, a rota
+   * dedicada e o cron do backtest na mesma janela. O lease agora é tomado AQUI,
+   * dentro do tique, para que nenhum chamador possa esquecê-lo.
+   *
+   * ⚠️ FALHA FECHADA: sem conseguir o lease (RPC ausente ou erro), o tique NÃO
+   * roda. Rodar sem exclusão é exatamente o defeito; ficar 30 minutos sem
+   * tique é visível (`saudeDoTique` → `atrasado`) e não abre nada errado.
+   */
+  const token = `tique-${randomUUID()}`;
+  const lease = await arrendarTique(db, ESCOPO_DO_TIQUE, token, TTL_DO_TIQUE_MS);
+  if (!lease.ok) {
+    resumo.exclusividade = lease.motivo;
+    if (lease.motivo === "indisponivel") resumo.problemas.push(`tique NÃO rodou — exclusão indisponível: ${lease.porque}`);
+    return resumo;
+  }
+  resumo.exclusividade = "tomada";
+  try {
+    await passagem(db, agoraMs, opcoes, resumo);
+  } finally {
+    // ⚠️ Liberar é cortesia: se falhar, o TTL vence sozinho. Mas a falha é dita.
+    const solto = await liberarTique(db, ESCOPO_DO_TIQUE, token);
+    if (!solto.ok) resumo.problemas.push(`lease não liberado (vence pelo TTL): ${solto.porque}`);
+  }
+  return resumo;
+}
+
+async function passagem(
+  db: SupabaseClient, agoraMs: number, opcoes: OpcoesDoTique, resumo: ResumoDoTique,
+): Promise<void> {
   const relogio = opcoes.relogio ?? Date.now;
   const prazo = relogio() + (opcoes.prazoMs ?? PRAZO_DO_TIQUE_MS);
   const leiturasMax = opcoes.leiturasMax ?? LEITURAS_POR_TIQUE;
   const leitor = new LeitorDoTique(db, agoraMs);
   const semTempo = () => relogio() >= prazo;
 
-  const ligadas = await mesasLigadasParaOCron(db);
-  const abertas = await posicoesAbertasParaOCron(db);
+  const ligadasLidas = await mesasLigadasParaOCron(db);
+  const abertasLidas = await posicoesAbertasParaOCron(db);
+  /**
+   * ⚠️⚠️ "NÃO SEI" NÃO É "NADA" (RM-06). Se uma das duas leituras falhar, o
+   * tique PARA. Com as posições lidas como `[]`, toda mesa que tem posição
+   * aberta pareceria livre e abriria uma segunda; com as mesas como `[]`, nada
+   * fecharia por falta de praça e papel.
+   */
+  if (ligadasLidas == null || abertasLidas == null) {
+    resumo.problemas.push(`tique parado — leitura falhou: ${ligadasLidas == null ? "mesas ligadas" : ""}${ligadasLidas == null && abertasLidas == null ? " e " : ""}${abertasLidas == null ? "posições abertas" : ""}`);
+    return;
+  }
+  const ligadas = ligadasLidas;
+  const abertas = abertasLidas;
   /**
    * ⚠️ SEM MESA LIGADA, AINDA HÁ O QUE FECHAR (CE-09). Antes o tique voltava aqui
    * se nenhuma mesa estivesse ligada — e as posições de mesas pausadas ficavam
    * no ar, contra a regra escrita logo abaixo ("quem abriu tem de fechar").
    */
-  if (ligadas.length === 0 && abertas.length === 0) return resumo;
+  if (ligadas.length === 0 && abertas.length === 0) return;
 
   /**
    * ⚠️⚠️ QUEM ABRIU TEM DE FECHAR, MESA LIGADA OU NÃO (12/09).
@@ -168,6 +233,10 @@ export async function tiqueDoPapelAdiante(
    * Desligar a mesa diz "não abra mais". Nunca "esqueça o que já está no ar".
    */
   const mesasDasAbertas = await mesasDasPosicoesParaOCron(db, [...new Set(abertas.map((p) => p.estrategiaId))]);
+  if ((mesasDasAbertas.lotesComFalha ?? 0) > 0) {
+    resumo.problemas.push(`fechamento: ${mesasDasAbertas.lotesComFalha} lote(s) de mesas não foram lidos — essas posições ficam para o próximo tique`);
+  }
+  const lotesFalharam = (mesasDasAbertas.lotesComFalha ?? 0) > 0;
   const mesaPorId = new Map(mesasDasAbertas.map((m) => [m.id, m]));
 
   /**
@@ -179,7 +248,21 @@ export async function tiqueDoPapelAdiante(
    * parecer livre e reabria por cima do que já estava no ar.
    */
   const abertasPorEstrategia = new Map<string, Set<string>>();
+  /**
+   * ⚠️⚠️ A ÚLTIMA VELA VEM DO BANCO, NÃO SÓ DAS ABERTAS (0076, RM-03).
+   *
+   * Derivá-la só das posições ABERTAS (como era) esquecia a vela no instante em
+   * que a posição fechava: o tique seguinte não carregava mais a posição e a
+   * mesma vela podia abrir de novo. `ultima_vela_aberta` fica na linha da
+   * estratégia e só anda para frente; as abertas entram por cima (defesa para
+   * linha legada). E a RPC de abertura confere a mesma coisa no banco.
+   */
   const ultimaVelaPorEstrategia = new Map<string, number>();
+  for (const m of [...ligadas, ...mesasDasAbertas]) {
+    if (m.ultimaVelaAberta != null) {
+      ultimaVelaPorEstrategia.set(m.id, Math.max(ultimaVelaPorEstrategia.get(m.id) ?? 0, m.ultimaVelaAberta));
+    }
+  }
   for (const p of abertas) {
     const s = abertasPorEstrategia.get(p.estrategiaId) ?? new Set<string>();
     s.add(p.simbolo); abertasPorEstrategia.set(p.estrategiaId, s);
@@ -206,8 +289,10 @@ export async function tiqueDoPapelAdiante(
     const mesa = mesaPorId.get(p.estrategiaId);
     if (!mesa) {
       // ⚠️ A LINHA DA ESTRATÉGIA SUMIU e a posição ficou. Não dá para fechar
-      // sem praça/papel, e ficar calado foi o defeito anterior.
-      resumo.problemas.push(`${p.id}: posição aberta sem linha de estratégia (${p.estrategiaId})`);
+      // sem praça/papel, e ficar calado foi o defeito anterior. ⚠️ Com lote
+      // falhado a causa pode ser a LEITURA, já declarada acima — não acusar
+      // "sem linha" à toa.
+      if (!lotesFalharam) resumo.problemas.push(`${p.id}: posição aberta sem linha de estratégia (${p.estrategiaId})`);
       continue;
     }
 
@@ -279,7 +364,8 @@ export async function tiqueDoPapelAdiante(
 
       const r = await fecharPosicao(p.dono, db, p.id, f.status, f.saida, f.resultadoPct);
       // ⚠️ TIRA O SÍMBOLO, não a mesa inteira: as outras posições dela seguem no ar.
-      if (r.ok) { resumo.fechadas++; abertasPorEstrategia.get(p.estrategiaId)?.delete(p.simbolo); }
+      // `fechou: false` = outro já fechou (replay) — a posição não está mais no ar de qualquer jeito.
+      if (r.ok) { if (r.valor.fechou) resumo.fechadas++; abertasPorEstrategia.get(p.estrategiaId)?.delete(p.simbolo); }
       else resumo.problemas.push(`fechar ${p.id}: ${r.porque}`);
     }
   }
@@ -355,7 +441,10 @@ export async function tiqueDoPapelAdiante(
    * cada um entra com as mesas que o plano dele cobre (o teto acima).
    */
   const fila = ligadas.filter((m) => elegiveis.has(m.id)).map((m) => m.id);
-  const cursor = await lerCursor(db);
+  const lido = await lerCursor(db);
+  // ⚠️ RM-06: cursor ilegível = recomeça do início, e DIZ. Nada se perde (a fila é a lista inteira).
+  if (!lido.ok) resumo.problemas.push(`cursor ilegível, recomeçando do início: ${lido.porque}`);
+  const cursor = lido.ok ? lido.valor : null;
   let inicio = cursor == null ? 0 : fila.findIndex((id) => id > cursor);
   if (inicio < 0) inicio = 0;
 
@@ -415,11 +504,26 @@ export async function tiqueDoPapelAdiante(
       visto[simbolo] = p.visto;
       if (!p.abertura) continue;
 
-      const r = await abrirPosicao(mesa.dono, db, { ...p.abertura, estrategiaId: mesa.id, simbolo });
-      // ⚠️ SÓ O SUCESSO fecha a guarda. Uma escrita que falhou não abriu nada,
-      // e tratá-la como abertura deixaria a mesa muda até o tique seguinte.
-      if (r.ok) { resumo.abertas++; temAberta = true; }
-      else resumo.problemas.push(`abrir ${mesa.id}/${simbolo}: ${r.porque}`);
+      const r = await abrirPosicao(mesa.dono, db, { ...p.abertura, estrategiaId: mesa.id, simbolo, intervalo: mesa.intervalo });
+      /**
+       * ⚠️ O BANCO É A ÚLTIMA PALAVRA (0076). `criada` = abriu agora; `ok` sem
+       * `criada` = a mesma oportunidade já estava registrada (outro worker,
+       * replay); `vela_ja_avaliada`/`ja_tem_posicao` = o banco viu o que esta
+       * leitura não viu. Nos três a mesa NÃO pode abrir outro símbolo nesta
+       * vela — a guarda fecha. Só o ERRO deixa a guarda aberta: uma escrita que
+       * falhou não abriu nada.
+       */
+      if (r.ok) {
+        if (r.criada) resumo.abertas++; else resumo.jaRegistradas++;
+        temAberta = true;
+      } else if (r.motivo === "erro") {
+        resumo.problemas.push(`abrir ${mesa.id}/${simbolo}: ${r.porque}`);
+      } else {
+        temAberta = true;
+        if (r.motivo !== "vela_ja_avaliada" && r.motivo !== "ja_tem_posicao") {
+          resumo.problemas.push(`abrir ${mesa.id}/${simbolo}: ${r.motivo}`);
+        }
+      }
     }
 
     ultimos.push({ id: mesa.id, dono: mesa.dono, visto });
@@ -429,13 +533,16 @@ export async function tiqueDoPapelAdiante(
   resumo.leituras = leitor.leituras;
 
   /**
-   * ⚠️ MELHOR-ESFORÇO, E O ERRO NÃO VIRA AVISO — a única escrita da bancada
-   * de que isso vale. Perder o registro é ruim; derrubar o tique que ia
-   * abrir a próxima posição é pior. E a tela percebe sozinha: um
-   * `ultimo_tique` velho é exatamente o que `saudeDoTique` chama de
-   * `atrasado`. ⚠️ CE-09: em LOTE (0074), com queda para o PATCH antigo.
+   * ⚠️ NÃO DERRUBA O TIQUE, MAS O ERRO É DITO (RM-06). Perder o registro é
+   * ruim; derrubar o tique que já abriu e fechou posições é pior. Antes isto
+   * era um `try/catch` vazio em volta de uma função que nunca lançava — o erro
+   * do Supabase vinha em `{ error }` e o fallback contava a falha como gravada.
+   * ⚠️ CE-09: em LOTE (0074), com queda para o PATCH antigo.
    */
-  try { await gravarUltimosTiques(db, ultimos, agoraMs); } catch { /* ver acima */ }
+  const gravacao = await gravarUltimosTiques(db, ultimos, agoraMs);
+  if (gravacao.falhas.length > 0) {
+    resumo.problemas.push(`último tique: ${gravacao.falhas.length} não gravado(s)${gravacao.viaLote ? "" : " (lote indisponível, caminho por mesa)"} — ${gravacao.falhas.slice(0, 3).join("; ")}`);
+  }
 
   /**
    * ⚠️⚠️ O QUE O ORÇAMENTO CORTOU SAI CARIMBADO, E CONTADO (13/09).
@@ -450,38 +557,45 @@ export async function tiqueDoPapelAdiante(
    */
   if (cortadasPeloTeto.length > 0) {
     resumo.adiadas += cortadasPeloTeto.length;
-    try { await marcarTiqueAdiado(db, [...new Set(cortadasPeloTeto)], agoraMs); }
-    catch { /* ver acima */ }
+    const marca = await marcarTiqueAdiado(db, [...new Set(cortadasPeloTeto)], agoraMs);
+    if (!marca.ok) resumo.problemas.push(`adiadas não carimbadas (a tela pode ler 'atrasado'): ${marca.porque}`);
   }
 
   // O cursor anda até a última mesa avaliada: a próxima passagem começa depois dela.
   if (ultimoAvaliado != null) {
-    try { await gravarCursor(db, ultimoAvaliado, agoraMs); } catch { /* melhor-esforço: sem cursor, recomeça do início */ }
+    const g = await gravarCursor(db, ultimoAvaliado, agoraMs);
+    if (!g.ok) resumo.problemas.push(`cursor não gravado (a próxima passagem recomeça do início): ${g.porque}`);
   }
-
-  return resumo;
 }
 
-async function lerCursor(db: SupabaseClient): Promise<string | null> {
+/** ⚠️ RM-06: `{ ok:false }` ≠ "sem cursor". Os dois recomeçam do início, mas só um é problema. */
+async function lerCursor(db: SupabaseClient): Promise<{ ok: true; valor: string | null } | { ok: false; porque: string }> {
   try {
     // leitura-limitada: uma chave só — é um cursor, não um histórico.
-    const { data } = await db.from("admin_kv").select("value").eq("key", CHAVE_DO_CURSOR).limit(1);
+    const { data, error } = await db.from("admin_kv").select("value").eq("key", CHAVE_DO_CURSOR).limit(1);
+    if (error) return { ok: false, porque: (error.message ?? "erro sem mensagem").slice(0, 160) };
     const v = data?.[0]?.value;
-    return typeof v === "string" && v.length > 0 ? v : null;
-  } catch {
-    return null;
+    return { ok: true, valor: typeof v === "string" && v.length > 0 ? v : null };
+  } catch (e) {
+    return { ok: false, porque: e instanceof Error ? e.message.slice(0, 160) : "exceção sem mensagem" };
   }
 }
 
-async function gravarCursor(db: SupabaseClient, id: string, agoraMs: number): Promise<void> {
-  await db.from("admin_kv").upsert(
-    { key: CHAVE_DO_CURSOR, value: id, updated_at: new Date(agoraMs).toISOString() },
-    { onConflict: "key" },
-  );
+async function gravarCursor(db: SupabaseClient, id: string, agoraMs: number): Promise<{ ok: true } | { ok: false; porque: string }> {
+  try {
+    const { error } = await db.from("admin_kv").upsert(
+      { key: CHAVE_DO_CURSOR, value: id, updated_at: new Date(agoraMs).toISOString() },
+      { onConflict: "key" },
+    );
+    if (error) return { ok: false, porque: (error.message ?? "erro sem mensagem").slice(0, 160) };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, porque: e instanceof Error ? e.message.slice(0, 160) : "exceção sem mensagem" };
+  }
 }
 
-/** O que abrir, sem o `estrategiaId`/`simbolo` que o laço já sabe. */
-type Abertura = Omit<Parameters<typeof abrirPosicao>[2], "estrategiaId" | "simbolo">;
+/** O que abrir, sem o `estrategiaId`/`simbolo`/`intervalo` que o laço já sabe. */
+type Abertura = Omit<Parameters<typeof abrirPosicao>[2], "estrategiaId" | "simbolo" | "intervalo">;
 
 /**
  * ⚠️⚠️ O TIQUE DEVOLVE O QUE VIU, NÃO SÓ O QUE ABRIU (0044).
