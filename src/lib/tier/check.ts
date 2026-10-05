@@ -91,6 +91,58 @@ export async function getTierForWallet(address: string, chain: WalletChain): Pro
   return free;
 }
 
+/**
+ * ⚠️⚠️ O TIER DE MUITAS CARTEIRAS DE UMA VEZ (CE-09) — para o tique do papel.
+ *
+ * O tique relia o tier de cada dono a cada passagem: 1 leitura do `tier_cache`
+ * e, como o cache vale 5 minutos e o tique roda a cada 30, quase sempre o
+ * caminho inteiro (Helius para Solana, e uma escrita do resultado). Com a fila
+ * consertada para incluir TODOS os donos, isso seria 850 leituras + 850
+ * escritas (+ Helius) por tique no direito contratado.
+ *
+ * Aqui o `tier_cache` é lido em LOTES de 100 carteiras. Linha fresca — dentro
+ * de `toleranciaMs` além do `expires_at` — vale. O resto passa pelo caminho de
+ * sempre (`getTierForWallet`), com a mesma regra, a mesma Helius e a mesma
+ * escrita: nada muda para quem não está no cache.
+ *
+ * ⚠️ `toleranciaMs` > 0 É UMA ESCOLHA DE QUEM CHAMA, declarada: o tique usa 55
+ * minutos — um rebaixamento de plano corta a mesa de papel em até ~60 min, em
+ * vez de no tique seguinte. Papel não move dinheiro; o custo evitado é uma
+ * chamada à Helius por dono por tique. Rotas de usuário NÃO usam isto.
+ */
+export async function getTiersForWallets(
+  carteiras: ReadonlyArray<{ address: string; chain: WalletChain }>,
+  toleranciaMs = 0,
+): Promise<Map<string, TierResult>> {
+  const out = new Map<string, TierResult>();
+  const db = getSupabaseAdmin();
+  const unicas = [...new Map(carteiras.map((c) => [c.address, c])).values()];
+  if (db) {
+    const LOTE = 100;
+    const agora = Date.now();
+    for (let i = 0; i < unicas.length; i += LOTE) {
+      const fatia = unicas.slice(i, i + LOTE);
+      try {
+        const { data } = await db.from("tier_cache")
+          .select("wallet_address, tier, source, expires_at")
+          .in("wallet_address", fatia.map((c) => c.address));
+        for (const r of (data ?? []) as Array<{ wallet_address: string; tier: string; source: string; expires_at: string }>) {
+          const expira = new Date(r.expires_at).getTime();
+          if (isTier(r.tier) && expira + toleranciaMs > agora) {
+            out.set(r.wallet_address, { tier: r.tier, source: r.source as TierSource, expiresAt: expira });
+          }
+        }
+      } catch {
+        // Lote que falha cai para o caminho individual, abaixo — nunca vira "free" calado.
+      }
+    }
+  }
+  for (const c of unicas) {
+    if (!out.has(c.address)) out.set(c.address, await getTierForWallet(c.address, c.chain));
+  }
+  return out;
+}
+
 async function writeCache(address: string, result: TierResult): Promise<void> {
   const db = getSupabaseAdmin();
   if (!db) return;

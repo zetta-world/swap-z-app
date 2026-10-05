@@ -103,9 +103,17 @@ describe("③ o teto do tique conta TRABALHO, e a guarda anda dentro do laço", 
    * ela exige a INTENÇÃO: o contador não conta mesas, e não conta símbolos
    * crus; ele soma um custo calculado.
    */
-  it("⚠️ `processadas` não conta mesas — soma um custo", () => {
+  /**
+   * ⚠️ CE-09 (05/10): a INTENÇÃO desta guarda continua — o teto não conta
+   * mesas —, mas o mecanismo mudou e a asserção literal mudou com ele. O
+   * orçamento agora é das LEITURAS que de fato custam (séries distintas,
+   * compartilhadas entre mesas) e do TEMPO que sobra no cron. Contar mesas ou
+   * "símbolos × peso" cobrava dez vezes a mesma leitura de BTC 1h.
+   */
+  it("⚠️ o teto não conta mesas — conta as leituras reais e o tempo", () => {
     expect(TIQUE).not.toMatch(/processadas\+\+/);
-    expect(TIQUE).toMatch(/processadas \+= custoDoTrabalho\(mesa\)/);
+    expect(TIQUE).toMatch(/if \(semTempo\(\) \|\| leitor\.leituras >= leiturasMax\)/);
+    expect(TIQUE).toMatch(/this\.leituras\+\+/);
   });
 
   it("⚠️⚠️ a guarda de uma-posição-por-mesa é reavaliada a cada símbolo", () => {
@@ -137,16 +145,28 @@ describe("③ o teto do tique conta TRABALHO, e a guarda anda dentro do laço", 
  * justamente para o teto que morde primeiro.
  */
 describe("④ o teto do tique gira, pesa e carimba", () => {
-  it("⚠️ a janela gira entre DONOS, com a mesma peça já testada", () => {
-    expect(TIQUE).toMatch(/const donosDaVez = aVezDeQuem\(donosNaFila, DONOS_POR_TICK, tickAtual\(agoraMs\)\)/);
-    expect(TIQUE).toMatch(/for \(const dono of donosDaVez\)/);
-    // O laço não pode voltar a iterar o Map direto: era isso que era o corte.
-    expect(TIQUE).not.toMatch(/for \(const \[dono, doDono\] of porDono\)/);
+  /**
+   * ⚠️ CE-09 (05/10): a rotação por DONOS (12 por tique, dentro das 200 mesas
+   * mais antigas) virou uma fila por MESA, sobre a lista INTEIRA, com cursor
+   * persistido. Medido no teste de carga: com 3.250 desks, 3.050 nunca eram
+   * vistos. As intenções destas guardas seguem exigidas:
+   *   · gira — começa onde a passagem anterior parou, e dá a volta;
+   *   · ninguém monopoliza — cada dono entra só com as mesas que o PLANO cobre,
+   *     contadas sobre TODAS as mesas dele;
+   *   · nada sai do teto sem carimbo.
+   */
+  it("⚠️ a fila gira entre TODAS as mesas, com cursor persistido", () => {
+    expect(TIQUE).toMatch(/const cursor = await lerCursor\(db\)/);
+    expect(TIQUE).toMatch(/fila\.findIndex\(\(id\) => id > cursor\)/);
+    expect(TIQUE).toMatch(/fila\[\(inicio \+ k\) % fila\.length\]/);
+    expect(TIQUE).toMatch(/await gravarCursor\(db, ultimoAvaliado, agoraMs\)/);
+    // O processamento percorre a FILA — não o Map de donos, que era o corte.
+    expect(TIQUE).toMatch(/for \(let k = 0; k < fila\.length; k\+\+\)/);
   });
 
-  it("⚠️ existe orçamento POR DONO — senão a rotação só troca quem é atropelado", () => {
-    expect(TIQUE).toMatch(/const tetoDesteDono = Math\.max\(1, Math\.ceil\(TRABALHO_POR_TICK \/ donosDaVez\.length\)\)/);
-    expect(TIQUE).toMatch(/processadas - processadasAntes >= tetoDesteDono/);
+  it("⚠️ nenhum dono passa do que o plano cobre — o teto olha todas as mesas dele", () => {
+    expect(TIQUE).toMatch(/const \{ tickam, cortadas \} = mesasQuePodemTickar\(comoMesa, tier\)/);
+    expect(TIQUE).toMatch(/resumo\.cortadasPorPlano \+= cortadas\.length/);
   });
 
   it("⚠️⚠️ nada sai do teto sem carimbo, e o resumo conta", () => {
@@ -155,8 +175,8 @@ describe("④ o teto do tique gira, pesa e carimba", () => {
     expect(TIQUE).toMatch(/marcarTiqueAdiado\(db, \[\.\.\.new Set\(cortadasPeloTeto\)\], agoraMs\)/);
   });
 
-  it("⚠️ o trabalho é pesado por espécie, não contado como símbolo", () => {
-    expect(TIQUE).toMatch(/processadas \+= custoDoTrabalho\(mesa\)/);
-    expect(TIQUE).not.toMatch(/processadas \+= Math\.max\(1, mesa\.simbolos\.length\)/);
+  it("⚠️ a mesma série é lida UMA vez por tique e serve a todas as mesas", () => {
+    expect(TIQUE).toMatch(/const chave = `\$\{simbolo\}\|\$\{intervalo\}\|\$\{desde\}`/);
+    expect(TIQUE).toMatch(/preparos\.get\(simbolo\)/);
   });
 });

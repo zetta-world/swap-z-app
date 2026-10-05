@@ -110,19 +110,56 @@ export function decidirAberturaDoAgente(
   simbolo: string,
   velas: VelasDoAgente,
   agoraMs: number,
+  /**
+   * ⚠️ CE-09: o tique passa o MESMO preparo para todas as instâncias que olham
+   * este símbolo nesta passagem — a análise (indicadores + seletor) sai uma vez
+   * por símbolo, não uma vez por instância. Sem ele, prepara aqui, como antes.
+   */
+  preparo: PreparoDoAgente = prepararAgente(simbolo, velas, agoraMs),
 ): DecisaoDoAgente {
   if (estado.temPosicaoAberta) return { abre: false, porque: "ja_tem_posicao", regime: null };
-
-  const fim = ultimaVelaFechada(INTERVALO_DO_AGENTE, agoraMs);
-  if (fim == null) return { abre: false, porque: "sem_velas", regime: null };
-
-  const h1 = ateOInstante(velas.h1, fim);
-  if (h1.length < BARRAS_DE_AQUECIMENTO) return { abre: false, porque: "aquecendo", regime: null };
-
-  const ultima = h1[h1.length - 1];
-  if (estado.ultimaAberturaMs != null && ultima.t <= estado.ultimaAberturaMs) {
+  if (!preparo.pronto) return { ...preparo.decisao };
+  if (estado.ultimaAberturaMs != null && preparo.ultimaT <= estado.ultimaAberturaMs) {
     return { abre: false, porque: "vela_ja_avaliada", regime: null };
   }
+  return { ...preparo.analisar() };
+}
+
+/**
+ * ⚠️⚠️ A PARTE DA DECISÃO QUE É DO SÍMBOLO, NÃO DA INSTÂNCIA (CE-09).
+ *
+ * A ordem de antes era: posição aberta → vela fechada → aquecimento → vela já
+ * avaliada → preço → indicadores e seletor. Só o 1º e o 4º dependem da
+ * instância; o resto depende das velas do símbolo, que são as mesmas para todas
+ * as instâncias no mesmo tique. `prepararAgente` faz os passos do símbolo na
+ * MESMA ordem, e `decidirAberturaDoAgente` intercala os da instância nos mesmos
+ * lugares — a decisão de cada uma é idêntica à de antes (prova:
+ * `agente.equivalencia.test.ts`, contra a cópia congelada da base).
+ */
+export type PreparoDoAgente =
+  | { pronto: false; decisao: DecisaoDoAgente }
+  | { pronto: true; ultimaT: number; analisar: () => DecisaoDoAgente };
+
+export function prepararAgente(simbolo: string, velas: VelasDoAgente, agoraMs: number): PreparoDoAgente {
+  const fim = ultimaVelaFechada(INTERVALO_DO_AGENTE, agoraMs);
+  if (fim == null) return { pronto: false, decisao: { abre: false, porque: "sem_velas", regime: null } };
+
+  const h1 = ateOInstante(velas.h1, fim);
+  if (h1.length < BARRAS_DE_AQUECIMENTO) return { pronto: false, decisao: { abre: false, porque: "aquecendo", regime: null } };
+
+  const ultima = h1[h1.length - 1];
+  let analise: DecisaoDoAgente | null = null;
+  return {
+    pronto: true,
+    ultimaT: ultima.t,
+    // Preguiçoso: instância com a vela já avaliada não paga a análise.
+    analisar: () => (analise ??= analisarSimbolo(simbolo, velas, h1, ultima)),
+  };
+}
+
+function analisarSimbolo(
+  simbolo: string, velas: VelasDoAgente, h1: VelaComTempo[], ultima: VelaComTempo,
+): DecisaoDoAgente {
   if (!(ultima.close > 0)) return { abre: false, porque: "sem_velas", regime: null };
 
   /**
