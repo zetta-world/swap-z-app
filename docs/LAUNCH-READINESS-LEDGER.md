@@ -634,3 +634,31 @@
   PASS. Evidência: `zswap-local/evidence/cost-engineering-20261005T*/`.
 - Proibido neste round: push, merge, deploy, Vercel, escrita/migration hospedada, Lane A, preço/supply/política
   comercial, treasury, referral/reserve definitivos, dinheiro real.
+
+### L-041 · 2026-10-05 · COST ENGINEERING ROUND entregue para auditoria independente (lane B, NÃO release)
+
+- **Base:** `0afa8414636ec6eb73bf9e1d600272aff9367228` (L-040). **HEAD de código validado:** `037d3a66efef48ee73121e9555779be86a6d4114`;
+  o commit desta entrada é só docs. Branch `cost-engineering-round-20261005`, worktree `worktrees/cost-engineering-20261005`, sem upstream.
+- **Defeitos confirmados e corrigidos (medidos contra PostgREST + Postgres reais descartáveis):** RSI O(N²) do Workbench (HEAVY 64,6 s →
+  28 ms, idêntico); modo mesa O(N²) (19,1 s → 1,24 s, idêntico barra a barra); velas sem paginação (1 ano em 1h = 1.000 de 8.761);
+  cota do Workbench contada no app e sem trava (Pilot sem teto; corrida) → reserva atômica no banco (0073); tique dos desks com corte
+  nas 200 mesas mais antigas e `.in()` estourado acima de ~450 ids (3.250 desks: 3.050 nunca vistos; posições não fechavam) → fila
+  justa, leituras por par, rota dedicada (3.250 avaliados/tique); receita/crescimento/resumo do admin truncados em 1.000 linhas;
+  tokens cacheados contados em dobro no provedor OpenAI-compatível.
+- **Migrations locais (NÃO aplicadas em nenhum banco hospedado):** 0073 (reserva atômica + `custo_unidades`), 0074 (último tique em
+  lote), 0075 (métricas de custo na linha da rodada). Aditivas; T20/T20b/T21/T22 PASS; guardas de lista de migrations e de ACL
+  atualizadas. ⚠️ A rota da bancada exige a 0073 (falha fechada 503 sem ela).
+- **Validação (IMPLEMENTER-REPORTED, NÃO certificação; container 2g/5g, heap 1792, `npm ci --offline`):** type-check 0 · lint 0 erros /
+  145 avisos (= baseline) · **suíte completa 304 arquivos / 4.547 testes PASS** (baseline 296 / 4.490) · SQL em cadeia nova 0001→0075:
+  18/18 `.sql` rc=0, 20b PASS, 16b PASS, 13-stable 20/20 PASS (13 não estável: FAIL de temporização preexistente; 04/05/06 não rodados
+  — exigem o socket/`runuser` de outra campanha) · integração PostgREST real 5/5 · build PASS (2ª execução com rede para `next/font`;
+  1ª FAIL ambiental sem rede).
+- **Modelo de 36 meses:** `docs/COST-ENGINEERING-36M-MODEL.md` (gerado; premissas MEASURED/ESTIMATED/DECISAO). Depois da engenharia, o
+  custo econômico é dominado pela premissa de suporte humano; HEAVY/STRESS negativos — **só matemática, nenhuma decisão comercial**.
+- **Decisões que ficam com o dono (nada foi decidido aqui):** fração do orçamento do Pilot (1/16, engenharia) e redação "até X";
+  política de retenção (§19 do relatório); premissas de suporte humano/preços do modelo; agendar `/api/bancada/tique`; bloco de fatos
+  da plataforma no ZION `ask` + arnês ao vivo (credencial).
+- **Relatório:** `docs/COST-ENGINEERING-ROUND-REPORT.md`. **Evidência:** `zswap-local/evidence/cost-engineering-20261005T174907Z/`
+  (MANIFEST.sha256).
+- **Estado:** `COMMITTED_FEATURE_CHECKPOINT` · não CERTIFIED · não RC · lane A intocada (`d896ce2`) · `CERTIFIED_FEATURE_SHA=53cd85a…` ·
+  nenhum push, merge, deploy, Vercel, escrita/migration hospedada, Lane A, preço/supply/política comercial, treasury ou dinheiro real.
