@@ -616,3 +616,21 @@
   · Drive `01_ZETTA_WORLD/01_Z-SWAP/Auditorias_e_Rounds/Founders_NFT/` (rclone check 0 diferenças; download idêntico).
 - **Estado:** `FOUNDERS_CAPITAL_AND_LOCAL_DECISIONS_CLOSED` · `CURRENT_RELEASE_CANDIDATE=NONE` · lane A intocada
   (`d896ce2`) · nenhum push, merge, deploy, escrita hospedada, e-mail real, tx, mainnet ou dinheiro real.
+
+### L-040 · 2026-10-05 · COST ENGINEERING ROUND aberto (lane B, desenvolvimento local, NÃO release)
+
+- **Base registrada antes de qualquer código:** `PHASE_BASE_SHA=0afa8414636ec6eb73bf9e1d600272aff9367228` · tree
+  `26198edd6896a767bc6bbea09a1874c5593eb1b3` (commit da L-039, HEAD de `pre-vercel-forward-20261003T234200Z`), base
+  autorizada pelo dono para forward development.
+- **Divergência medida e preservada:** `/home/zetta/swap-z-app` está em `kimi/round2-audit-fixes` = `d7741bb`, ancestral
+  da base (127 commits atrás) — não é o estado atual (START-HERE §4); nada foi alterado ali, sem reset/checkout.
+- **Worktree/branch:** `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/cost-engineering-20261005` ·
+  `cost-engineering-round-20261005` (só local, sem upstream), criada a partir de `0afa841`; a branch
+  `pre-vercel-forward-20261003T234200Z` não foi movida.
+- **Plano:** `docs/PLANO-COST-ENGINEERING-ROUND.md`. Relatório: `docs/COST-ENGINEERING-ROUND-REPORT.md`.
+- **Baseline (IMPLEMENTER-REPORTED, container capado 2g/5g, heap 1792, `npm ci --offline`, sem rede):** suíte completa
+  **296 arquivos / 4.490 testes PASS** na base. A 1ª execução teve 1 FAIL ambiental (`git: not found` na imagem slim,
+  `conexoes-0063.test.ts`); repetida na imagem com git (`zswap-autoclose-testrunner:node24-git-20261001t003707z`):
+  PASS. Evidência: `zswap-local/evidence/cost-engineering-20261005T*/`.
+- Proibido neste round: push, merge, deploy, Vercel, escrita/migration hospedada, Lane A, preço/supply/política
+  comercial, treasury, referral/reserve definitivos, dinheiro real.
