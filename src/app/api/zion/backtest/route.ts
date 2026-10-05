@@ -306,7 +306,21 @@ export async function POST(req: NextRequest) {
     if (!gates.pause_bancada) {
       try {
         const db = getSupabaseAdmin();
+        /**
+         * ⚠️ CE-09: quando a rota DEDICADA (`/api/bancada/tique`) estiver
+         * agendada, ela grava `bancada:tique:dedicado_em` a cada passagem e o
+         * tique sai daqui — onde ele só tinha o que sobrava dos 60 s depois do
+         * flywheel e do LLM. Enquanto ela não rodar, nada muda.
+         */
+        let dedicadoRecente = false;
         if (db) {
+          try {
+            const { data } = await db.from("admin_kv").select("value").eq("key", "bancada:tique:dedicado_em").maybeSingle();
+            const em = data?.value ? Date.parse(data.value) : NaN;
+            dedicadoRecente = Number.isFinite(em) && Date.now() - em < 40 * 60_000;
+          } catch { /* sem a leitura, roda aqui como sempre */ }
+        }
+        if (db && !dedicadoRecente) {
           const r = await tiqueDoPapelAdiante(db);
           if (r.mesas > 0) {
             await recordEvent("bancada_papel_tique", {
