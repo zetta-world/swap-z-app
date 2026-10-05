@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { lerTodasAsPaginas } from "@/lib/supabase/paginar";
+import { lerTodasPorChave } from "@/lib/supabase/paginar";
 import { notifyTelegram } from "@/lib/admin/track";
 import { getCronHeartbeats, pingAiProviders } from "@/lib/admin/health";
 import { checkExternalDeps } from "@/lib/admin/deps";
@@ -377,35 +377,67 @@ async function sendDailyDigest(): Promise<void> {
    * primeiras 1.000 linhas (`db-max-rows`). Ordem por `id` (única). Se uma das
    * leituras falhar ou for truncada, o resumo DIZ isso em vez de somar menos.
    */
-  const [{ count: users }, { count: active24h }, opsL, sessL, posL, flywheel, paper] = await Promise.all([
+  const [{ count: users, error: eUsers }, { count: active24h, error: eActive }, opsL, sessL, posL, flywheel, paper] = await Promise.all([
     db.from("users").select("*", { count: "exact", head: true }),
     db.from("users").select("*", { count: "exact", head: true }).gte("last_seen_at", ago24h),
-    lerTodasAsPaginas<{ volume_usd: number | string | null; pnl_usd: number | string | null; created_at: string }>(
-      (de, ate) => db.from("operations").select("id, volume_usd, pnl_usd, created_at").order("id", { ascending: true }).range(de, ate)),
-    lerTodasAsPaginas<{ pnl_today: number | string | null; is_active: boolean | null }>(
-      (de, ate) => db.from("autopilot_sessions").select("id, pnl_today, is_active").order("id", { ascending: true }).range(de, ate)),
-    lerTodasAsPaginas<{ cost_usd: number | string | null }>(
-      (de, ate) => db.from("autopilot_positions").select("id, cost_usd").neq("status", "closed").order("id", { ascending: true }).range(de, ate)),
+    // RM-12: por CHAVE (`id > último`), não por offset — inserção concorrente não repete nem pula linha.
+    lerTodasPorChave<{ id: string; volume_usd: number | string | null; pnl_usd: number | string | null; created_at: string }>((depois, n) => {
+      let q = db.from("operations").select("id, volume_usd, pnl_usd, created_at");
+      if (depois) q = q.gt("id", depois);
+      return q.order("id", { ascending: true }).limit(n);
+    }, "id"),
+    lerTodasPorChave<{ id: string; pnl_today: number | string | null; is_active: boolean | null }>((depois, n) => {
+      let q = db.from("autopilot_sessions").select("id, pnl_today, is_active");
+      if (depois) q = q.gt("id", depois);
+      return q.order("id", { ascending: true }).limit(n);
+    }, "id"),
+    lerTodasPorChave<{ id: string; cost_usd: number | string | null }>((depois, n) => {
+      let q = db.from("autopilot_positions").select("id, cost_usd").neq("status", "closed");
+      if (depois) q = q.gt("id", depois);
+      return q.order("id", { ascending: true }).limit(n);
+    }, "id"),
     flywheelDigestBlock(db),
     paperDigestBlock(db),
   ]);
-  const incompleto = [opsL, sessL, posL].some((l) => l.erro != null || l.truncado);
+  notifyTelegram(textoDoDigest({ users, eUsers, active24h, eActive, opsL, sessL, posL, ago24h }) + flywheel + paper);
+}
 
+type Leitura<T> = { linhas: T[]; erro: string | null; truncado: boolean };
+
+/**
+ * O topo do resumo diário — puro, para ser testado sem Telegram nem banco.
+ *
+ * ⚠️ RM-07 (audit remediation): leitura que FALHOU não vira $0. O aviso de
+ * "incompleta" no rodapé não bastava — um "P&L +$0" com rodapé ainda é um
+ * número falso no topo. Cada bloco cuja fonte falhou ou foi cortada mostra
+ * "indisponível".
+ */
+export function textoDoDigest(e: {
+  users: number | null | undefined; eUsers: unknown; active24h: number | null | undefined; eActive: unknown;
+  opsL: Leitura<{ volume_usd: number | string | null; pnl_usd: number | string | null; created_at: string }>;
+  sessL: Leitura<{ pnl_today: number | string | null; is_active: boolean | null }>;
+  posL: Leitura<{ cost_usd: number | string | null }>;
+  ago24h: string;
+}): string {
+  const { opsL, sessL, posL } = e;
+  const incompleto = [opsL, sessL, posL].some((l) => l.erro != null || l.truncado);
   let vol24 = 0, pnlAll = 0;
-  for (const o of opsL.linhas) { pnlAll += Number(o.pnl_usd) || 0; if (o.created_at >= ago24h) vol24 += Number(o.volume_usd) || 0; }
+  for (const o of opsL.linhas) { pnlAll += Number(o.pnl_usd) || 0; if (o.created_at >= e.ago24h) vol24 += Number(o.volume_usd) || 0; }
   let apPnl = 0, apActive = 0;
   for (const s of sessL.linhas) { apPnl += Number(s.pnl_today) || 0; if (s.is_active) apActive++; }
   let exposure = 0;
   for (const p of posL.linhas) exposure += Number(p.cost_usd) || 0;
   const m = (n: number) => `$${Math.round(n).toLocaleString()}`;
-
-  notifyTelegram(
+  const IND = "indisponível";
+  const ruim = (l: { erro: string | null; truncado: boolean }) => l.erro != null || l.truncado;
+  const contagem = (n: number | null | undefined, err: unknown) => (err || typeof n !== "number" ? IND : String(n));
+  const sinal = (n: number) => `${n >= 0 ? "+" : ""}${m(n)}`;
+  return (
     `☀️ <b>Z-SWAP daily digest</b>\n` +
-    `👥 Users: ${users ?? 0} (${active24h ?? 0} active 24h)\n` +
-    `📊 Volume 24h: ${m(vol24)}\n` +
-    `💰 Realized P&L (all): ${pnlAll >= 0 ? "+" : ""}${m(pnlAll)}\n` +
-    `🤖 Autopilot: ${apActive} active · today ${apPnl >= 0 ? "+" : ""}${m(apPnl)} · exposure ${m(exposure)}` +
-    (incompleto ? `\n⚠️ <i>leitura incompleta — os totais acima não cobrem tudo</i>` : "") +
-    flywheel + paper,
+    `👥 Users: ${contagem(e.users, e.eUsers)} (${contagem(e.active24h, e.eActive)} active 24h)\n` +
+    `📊 Volume 24h: ${ruim(opsL) ? IND : m(vol24)}\n` +
+    `💰 Realized P&L (all): ${ruim(opsL) ? IND : sinal(pnlAll)}\n` +
+    `🤖 Autopilot: ${ruim(sessL) ? IND : `${apActive} active · today ${sinal(apPnl)}`} · exposure ${ruim(posL) ? IND : m(exposure)}` +
+    (incompleto ? `\n⚠️ <i>leitura incompleta — os itens "indisponível" não foram medidos</i>` : "")
   );
 }

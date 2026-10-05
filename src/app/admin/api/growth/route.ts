@@ -1,15 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { lerTodasAsPaginas } from "@/lib/supabase/paginar";
+import { lerTodasPorChave } from "@/lib/supabase/paginar";
+import { montarGrowth } from "@/lib/admin/growth";
 
 export const dynamic = "force-dynamic";
 
-const PAID = new Set(["pro", "trader", "pilot"]);
-
-/** GROWTH KPIs: active-user cohorts (DAU/WAU/MAU + stickiness) and the
- *  value-ladder funnel (signed up → traded → autopilot → paid). All derived
- *  from existing data — no synthetic metrics. */
 export async function GET(): Promise<NextResponse> {
   await requireAdmin();
   const db = getSupabaseAdmin();
@@ -20,51 +16,43 @@ export async function GET(): Promise<NextResponse> {
   const ago7d  = new Date(now -  7 * 86_400_000).toISOString();
   const ago30d = new Date(now - 30 * 86_400_000).toISOString();
 
-  const [
-    { count: total },
-    { count: dau },
-    { count: wau },
-    { count: mau },
-    { count: new1d },
-    { count: new7d },
-    opsWallets,
-    apWallets,
-    tiers,
-  ] = await Promise.all([
+  const [total, dau, wau, mau, new1d, new7d, operacoes, autopilot, tiers] = await Promise.all([
     db.from("users").select("*", { count: "exact", head: true }),
     db.from("users").select("*", { count: "exact", head: true }).gte("last_seen_at", ago1d),
     db.from("users").select("*", { count: "exact", head: true }).gte("last_seen_at", ago7d),
     db.from("users").select("*", { count: "exact", head: true }).gte("last_seen_at", ago30d),
     db.from("users").select("*", { count: "exact", head: true }).gte("created_at", ago1d),
     db.from("users").select("*", { count: "exact", head: true }).gte("created_at", ago7d),
-    // ⚠️ PAGINADO (CE-14): eram as primeiras 1.000 linhas (`db-max-rows`).
-    lerTodasAsPaginas<{ wallet_address: string }>((de, ate) => db.from("operations").select("id, wallet_address")
-      .not("wallet_address", "is", null).order("id", { ascending: true }).range(de, ate)),
-    lerTodasAsPaginas<{ wallet_address: string }>((de, ate) => db.from("autopilot_sessions").select("id, wallet_address")
-      .order("id", { ascending: true }).range(de, ate)),
-    lerTodasAsPaginas<{ tier: string }>((de, ate) => db.from("tier_cache").select("wallet_address, tier")
-      .order("wallet_address", { ascending: true }).range(de, ate)),
+    // ⚠️ PAGINADO (CE-14): eram as primeiras 1.000 linhas (`db-max-rows`). RM-12: por CHAVE, não offset.
+    lerTodasPorChave<{ id: string; wallet_address: string }>((depois, n) => {
+      let q = db.from("operations").select("id, wallet_address").not("wallet_address", "is", null);
+      if (depois) q = q.gt("id", depois);
+      return q.order("id", { ascending: true }).limit(n);
+    }, "id"),
+    lerTodasPorChave<{ id: string; wallet_address: string }>((depois, n) => {
+      let q = db.from("autopilot_sessions").select("id, wallet_address");
+      if (depois) q = q.gt("id", depois);
+      return q.order("id", { ascending: true }).limit(n);
+    }, "id"),
+    lerTodasPorChave<{ wallet_address: string; tier: string }>((depois, n) => {
+      let q = db.from("tier_cache").select("wallet_address, tier");
+      if (depois) q = q.gt("wallet_address", depois);
+      return q.order("wallet_address", { ascending: true }).limit(n);
+    }, "wallet_address"),
   ]);
 
-  const traded    = new Set(opsWallets.linhas.map((r) => r.wallet_address)).size;
-  const autopilot = new Set(apWallets.linhas.map((r) => r.wallet_address)).size;
-  const paid      = tiers.linhas.filter((t) => PAID.has(t.tier)).length;
-
-  const signedUp = total ?? 0;
-  const pct = (n: number, base: number) => (base > 0 ? n / base : null);
+  /**
+   * ⚠️⚠️ RM-07: ERRO OU CORTE NÃO VIRA ZERO. Antes: `count ?? 0` e só `.linhas`
+   * (vazio quando a leitura falha) — uma queda do banco aparecia como
+   * "traded 0 · paid 0". `montarGrowth` devolve `null` + `estado` + o motivo.
+   */
+  const g = montarGrowth({ total, dau, wau, mau, new1d, new7d, operacoes, autopilot, tiers });
+  // Nenhuma métrica medida: não há painel a mostrar — 503 com o motivo, não um quadro de zeros.
+  const status = g.estado === "indisponivel" ? 503 : 200;
 
   return NextResponse.json({
-    active: {
-      dau: dau ?? 0, wau: wau ?? 0, mau: mau ?? 0,
-      stickiness: (mau ?? 0) > 0 ? (dau ?? 0) / (mau ?? 1) : null,
-    },
-    signups: { new1d: new1d ?? 0, new7d: new7d ?? 0 },
-    funnel: [
-      { step: "signed up", count: signedUp, conv: 1 },
-      { step: "traded",    count: traded,    conv: pct(traded, signedUp) },
-      { step: "autopilot", count: autopilot, conv: pct(autopilot, signedUp) },
-      { step: "paid",      count: paid,      conv: pct(paid, signedUp) },
-    ],
+    ...g,
+    ...(g.estado === "indisponivel" ? { error: "growth_indisponivel" } : {}),
     fetchedAt: new Date().toISOString(),
-  });
+  }, { status });
 }

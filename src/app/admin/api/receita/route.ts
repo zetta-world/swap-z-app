@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { lerTodasAsPaginas } from "@/lib/supabase/paginar";
+import { lerTodasPorChave } from "@/lib/supabase/paginar";
 import { TIER_FEE_BPS, receitaUsd, MOTIVOS_SOLANA_SEM_TAXA } from "@/lib/tier/fees";
 import { separarPorAtribuicao, temIdentidadeAssinada } from "@/lib/admin/atribuicao";
 import type { Tier } from "@/lib/tier/types";
@@ -87,15 +87,24 @@ export async function GET(): Promise<NextResponse> {
        * quebra por origem desta tela passavam a ser os das 1.000 primeiras —
        * sem aviso. Ordem por `id` (única) para a paginação não pular linha.
        */
-      const leitura = await lerTodasAsPaginas<{
-        volume_usd: number | string | null; created_at: string; status: string; kind: string | null;
+      /**
+       * ⚠️ RM-12 (audit remediation): POR CHAVE, não por offset. "Arrecadado" é
+       * apresentado como caixa medido, e offset sobre `id` (UUID) com o livro
+       * recebendo operações durante a leitura podia contar uma linha duas vezes
+       * ou pular outra. Ainda não é ledger-grade (não é retrato num instante) —
+       * declarado na resposta (`natureza`).
+       */
+      const leitura = await lerTodasPorChave<{
+        id: string; volume_usd: number | string | null; created_at: string; status: string; kind: string | null;
         platform_fee_usd: number | string | null; wallet_address: string | null;
-      }>((de, ate) => db
-        .from("operations")
-        .select("id, volume_usd, created_at, status, kind, platform_fee_usd, wallet_address")
-        .eq("status", "confirmed")
-        .order("id", { ascending: true })
-        .range(de, ate));
+      }>((depoisDe, limite) => {
+        let q = db
+          .from("operations")
+          .select("id, volume_usd, created_at, status, kind, platform_fee_usd, wallet_address")
+          .eq("status", "confirmed");
+        if (depoisDe) q = q.gt("id", depoisDe);
+        return q.order("id", { ascending: true }).limit(limite);
+      }, "id");
       if (leitura.erro) throw new Error(leitura.erro);
       if (leitura.truncado) throw new Error("operações demais para somar nesta tela — use a agregação no banco");
       const linhas = leitura.linhas;
@@ -202,6 +211,8 @@ export async function GET(): Promise<NextResponse> {
     receitaRealTetoUsd,
     taxaPorPlano: TIER_FEE_BPS,
     projecao,
+    // ⚠️ RM-12: leitura por chave (sem repetir nem pular linha), mas NÃO é retrato num instante.
+    natureza: "painel_nao_ledger",
     solanaSemTaxa: MOTIVOS_SOLANA_SEM_TAXA,
     naoMedido: [
       "⚠️ o livro NÃO guarda o plano de quem operou, então a receita real é o "
@@ -214,6 +225,8 @@ export async function GET(): Promise<NextResponse> {
         + "no volume (a troca aconteceu na cadeia) mas NÃO na arrecadação — "
         + "sai em NÃO ATRIBUÍDO, porque não há a quem perguntar",
       "só EVM cobra — a Solana está sem taxa por decisão registrada",
+      "⚠️ NÃO é número contábil: soma de leituras paginadas (por chave), não um retrato do livro num "
+        + "instante só. Conciliação/tesouraria tem de vir de uma agregação SQL única",
       "a taxa é retida no token de saída, então o valor em dólar depende do "
         + "preço daquele token na hora, não do preço de hoje",
     ],
