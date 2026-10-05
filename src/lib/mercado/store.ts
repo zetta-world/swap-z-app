@@ -49,26 +49,69 @@ export interface LeituraDeVelas {
 }
 
 /** As velas já gravadas para (símbolo, intervalo) dentro de uma faixa. */
+/**
+ * Tamanho da página de leitura. ⚠️ NÃO é um limite de quantas velas a leitura
+ * devolve — é quantas ela pede por requisição. Igual ao `db-max-rows` do
+ * PostgREST hospedado (1000) para não pedir mais do que o servidor entrega.
+ */
+export const PAGINA_DE_VELAS = 1000;
+/** Freio contra laço infinito: 1.000 páginas = 1 milhão de velas, muito acima do teto de uma rodada. */
+const MAX_PAGINAS = 1000;
+
+/**
+ * ⚠️⚠️ A LEITURA É PAGINADA (CE-11) — e não ser era um defeito de RESULTADO.
+ *
+ * O PostgREST corta toda resposta em `db-max-rows` (1000 no Supabase hospedado
+ * e no laboratório: `infra/compose.yml`). Esta função fazia UMA leitura
+ * ordenada do começo da janela: um pedido de 8.760 velas de 1h (um ano)
+ * recebia as 1.000 PRIMEIRAS, e o backtest rodava sobre ~11% da janela que
+ * dizia ter medido. O aviso de cobertura (< 90%) aparecia, mas o veredito saía
+ * assim mesmo.
+ *
+ * Paginação por CHAVE (`abriu_em > último`), não por OFFSET: `abriu_em` é parte
+ * da chave primária `(simbolo, intervalo, abriu_em)`, então a página seguinte
+ * começa exatamente onde a anterior terminou, sem varrer as linhas puladas.
+ *
+ * ⚠️ PARA SÓ NA PÁGINA VAZIA. Parar quando a página vem "menor que o pedido"
+ * pareceria economizar uma requisição, mas um servidor com `max-rows` MENOR que
+ * a página devolveria uma página curta no meio da série — e a leitura
+ * terminaria cedo, em silêncio, que é o defeito que esta mudança corrige.
+ */
 async function lerDoBanco(
   db: SupabaseClient, simbolo: string, intervalo: string, de: number, ate: number,
-): Promise<{ velas: VelaComTempo[]; erro: string | null }> {
-  const { data, error } = await db
-    .from("mercado_vela")
-    .select("abriu_em, high, low, close, volume")
-    .eq("simbolo", simbolo).eq("intervalo", intervalo)
-    .gte("abriu_em", de).lte("abriu_em", ate)
-    .order("abriu_em", { ascending: true });
+): Promise<{ velas: VelaComTempo[]; erro: string | null; paginas: number }> {
+  const velas: VelaComTempo[] = [];
+  let depoisDe: number | null = null;
+  for (let paginas = 1; paginas <= MAX_PAGINAS; paginas++) {
+    let q = db
+      .from("mercado_vela")
+      .select("abriu_em, high, low, close, volume")
+      .eq("simbolo", simbolo).eq("intervalo", intervalo)
+      .gte("abriu_em", de).lte("abriu_em", ate);
+    if (depoisDe != null) q = q.gt("abriu_em", depoisDe);
+    const { data, error } = await q.order("abriu_em", { ascending: true }).limit(PAGINA_DE_VELAS);
 
-  // ⚠️ `supabase-js` resolve com `{ data: null, error }` — não lança.
-  if (error) return { velas: [], erro: error.message.slice(0, 160) };
-  return {
-    velas: (data ?? []).map((r) => ({
-      t: Number(r.abriu_em),
-      high: Number(r.high), low: Number(r.low),
-      close: Number(r.close), volume: Number(r.volume),
-    })),
-    erro: null,
-  };
+    // ⚠️ `supabase-js` resolve com `{ data: null, error }` — não lança.
+    // Erro no meio da paginação devolve o erro: meia série com cara de série
+    // inteira é pior que série nenhuma.
+    if (error) return { velas: [], erro: error.message.slice(0, 160), paginas };
+    const linhas = data ?? [];
+    if (linhas.length === 0) return { velas, erro: null, paginas };
+    for (const r of linhas) {
+      velas.push({
+        t: Number(r.abriu_em),
+        high: Number(r.high), low: Number(r.low),
+        close: Number(r.close), volume: Number(r.volume),
+      });
+    }
+    const ultimo = velas[velas.length - 1].t;
+    // Servidor que ignorasse o filtro `gt` repetiria a mesma página para sempre.
+    if (depoisDe != null && !(ultimo > depoisDe)) {
+      return { velas: [], erro: "paginação não avançou (abriu_em repetido)", paginas };
+    }
+    depoisDe = ultimo;
+  }
+  return { velas: [], erro: `leitura passou de ${MAX_PAGINAS} páginas`, paginas: MAX_PAGINAS };
 }
 
 async function lerCobertura(

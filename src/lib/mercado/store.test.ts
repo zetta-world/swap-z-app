@@ -25,23 +25,42 @@ vi.mock("@/lib/api/market-indicators", () => ({
 
 const { velasDoIntervalo } = await import("@/lib/mercado/store");
 
-/** Banco falso: guarda as velas gravadas e devolve as da faixa pedida. */
-function bancoFalso() {
+/**
+ * Banco falso: guarda as velas gravadas e devolve as da faixa pedida.
+ *
+ * ⚠️ CE-11: ele CORTA a resposta em `maxRows` (1000, o `db-max-rows` do
+ * PostgREST hospedado e do laboratório), ordena e respeita `gt`/`limit`. O falso
+ * antigo devolvia tudo de uma vez — e foi por isso que nenhum teste viu a
+ * leitura de um ano chegar com 1.000 velas.
+ */
+function bancoFalso(opts: { maxRows?: number } = {}) {
+  const maxRows = opts.maxRows ?? 1000;
   const velas: Array<Record<string, unknown>> = [];
   let cobertura: Record<string, unknown> | null = null;
+  let leiturasDeVela = 0;
 
   function consulta(tabela: string) {
     const filtros: Array<(r: Record<string, unknown>) => boolean> = [];
     let um = false;
+    let ordem: { col: string; asc: boolean } | null = null;
+    let limite = Infinity;
     const api = {
       eq(c: string, v: unknown) { filtros.push((r) => r[c] === v); return api; },
+      gt(c: string, v: unknown) { filtros.push((r) => Number(r[c]) > Number(v)); return api; },
       gte(c: string, v: unknown) { filtros.push((r) => Number(r[c]) >= Number(v)); return api; },
       lte(c: string, v: unknown) { filtros.push((r) => Number(r[c]) <= Number(v)); return api; },
-      order() { return api; },
+      order(col: string, o?: { ascending?: boolean }) { ordem = { col, asc: o?.ascending !== false }; return api; },
+      limit(n: number) { limite = n; return api; },
       maybeSingle() { um = true; return api; },
       then<R>(ok: (x: { data: unknown; error: null }) => R) {
+        if (tabela === "mercado_vela") leiturasDeVela++;
         const fonte = tabela === "mercado_vela" ? velas : (cobertura ? [cobertura] : []);
-        const rs = fonte.filter((r) => filtros.every((f) => f(r)));
+        let rs = fonte.filter((r) => filtros.every((f) => f(r)));
+        if (ordem) {
+          const { col, asc } = ordem;
+          rs = [...rs].sort((a, b) => (Number(a[col]) - Number(b[col])) * (asc ? 1 : -1));
+        }
+        rs = rs.slice(0, Math.min(limite, maxRows));
         return Promise.resolve(ok({ data: um ? (rs[0] ?? null) : rs, error: null }));
       },
     };
@@ -65,7 +84,7 @@ function bancoFalso() {
     },
   } as unknown as SupabaseClient;
 
-  return { db, velas };
+  return { db, velas, leituras: () => leiturasDeVela };
 }
 
 beforeEach(() => { daFonte = []; });
@@ -128,5 +147,43 @@ describe("⚠️⚠️ a cobertura real é comparada com a pedida", () => {
       expect(r.velas).toEqual([]);
       expect(r.porqueIncompleta).toMatch(/intervalo desconhecido/);
     });
+  });
+});
+
+describe("⚠️⚠️ CE-11 — a leitura atravessa o max_rows do PostgREST", () => {
+  const agora = 20_000 * H;
+
+  it("um ano de 1h (8.760 velas) volta INTEIRO com max_rows 1000 — e em ordem", async () => {
+    // Antes: UMA leitura, cortada nas 1.000 primeiras. O backtest rodava sobre
+    // ~11% da janela que dizia ter medido.
+    const horas = 365 * 24;
+    const desde = agora - horas * H;
+    daFonte = serie(horas + 1, agora);
+    const { db, leituras } = bancoFalso({ maxRows: 1000 });
+    const r = await velasDoIntervalo(db, "BTC", "1h", desde, agora, agora + H);
+    expect(r.velas).toHaveLength(horas + 1);
+    expect(r.porqueIncompleta).toBeNull();
+    for (let i = 1; i < r.velas.length; i++) expect(r.velas[i].t).toBeGreaterThan(r.velas[i - 1].t);
+    // 9 páginas cheias + a vazia que encerra.
+    expect(leituras()).toBe(Math.ceil((horas + 1) / 1000) + 1);
+  });
+
+  it("⚠️ max_rows MENOR que a página (300) não encerra a leitura cedo", async () => {
+    // Parar quando a página vem curta pareceria economizar uma ida — e cortaria
+    // a série em silêncio num servidor configurado com limite menor.
+    const desde = agora - 2500 * H;
+    daFonte = serie(2501, agora);
+    const { db } = bancoFalso({ maxRows: 300 });
+    const r = await velasDoIntervalo(db, "BTC", "1h", desde, agora, agora + H);
+    expect(r.velas).toHaveLength(2501);
+  });
+
+  it("janela pequena custa uma página e a vazia — sem leitura a mais por causa da paginação", async () => {
+    const desde = agora - 100 * H;
+    daFonte = serie(101, agora);
+    const { db, leituras } = bancoFalso({ maxRows: 1000 });
+    const r = await velasDoIntervalo(db, "BTC", "1h", desde, agora, agora + H);
+    expect(r.velas).toHaveLength(101);
+    expect(leituras()).toBe(2);
   });
 });
