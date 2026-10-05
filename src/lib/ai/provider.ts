@@ -144,6 +144,37 @@ export async function anthropicStream(
   };
 }
 
+/** O `usage` de entrada de um endpoint OpenAI-compatível, nas duas grafias conhecidas. */
+export interface UsoOpenAICompat {
+  prompt_tokens?: number;
+  /** Padrão OpenAI: os cacheados vêm DENTRO de `prompt_tokens`, detalhados aqui. */
+  prompt_tokens_details?: { cached_tokens?: number };
+  /** Moonshot/Kimi: o mesmo número, no nível de cima do `usage`. */
+  cached_tokens?: number;
+}
+
+/**
+ * ⚠️⚠️ ENTRADA NÃO CACHEADA = `prompt_tokens − cacheados` (CE-07).
+ *
+ * `NormalizedUsage.inTokens` é a entrada NÃO cacheada — é assim que
+ * `estimateCost` a precifica (`inTokens × input + cachedTokens × cacheRead`).
+ * Nos endpoints OpenAI-compatíveis `prompt_tokens` é o TOTAL e já CONTÉM os
+ * cacheados. Os dois caminhos daqui gravavam `inTokens = prompt_tokens`: o
+ * streaming somava os cacheados de novo a preço de cache (contagem dupla) e o
+ * não-streaming zerava `cachedTokens` (todo prompt a preço cheio). Com a
+ * fundação estável do ZION em cache, a entrada saía superestimada até ~3× — e é
+ * desse número que a conta de custo do produto parte.
+ *
+ * ⚠️ Os cacheados nunca passam do total (resposta inconsistente não vira entrada
+ * negativa), e a ausência dos dois campos continua significando "sem cache".
+ */
+export function entradaOpenAICompat(u: UsoOpenAICompat | undefined): { inTokens: number; cachedTokens: number } {
+  const total = Math.max(0, Number(u?.prompt_tokens) || 0);
+  const cacheados = Math.max(0, Number(u?.prompt_tokens_details?.cached_tokens ?? u?.cached_tokens) || 0);
+  const cached = Math.min(total, cacheados);
+  return { inTokens: total - cached, cachedTokens: cached };
+}
+
 /** Any OpenAI-compatible /chat/completions endpoint. No SDK — plain fetch. */
 export async function openaiCompatChat(
   req: ChatRequest,
@@ -182,22 +213,23 @@ export async function openaiCompatChat(
       // July invoice showed 359.2K reasoning tokens ($0.90) against 140K
       // completion tokens ($0.35) — 72% of Grok's output cost was invisible
       // to our own accounting because we only read completion_tokens.
-      usage?: {
-        prompt_tokens?: number; completion_tokens?: number;
+      usage?: UsoOpenAICompat & {
+        completion_tokens?: number;
         completion_tokens_details?: { reasoning_tokens?: number };
       };
     };
+    const entrada = entradaOpenAICompat(data.usage);
     return {
       text:  data.choices?.[0]?.message?.content ?? "",
       model: req.model,
       usage: {
-        inTokens:  data.usage?.prompt_tokens ?? 0,
+        inTokens:  entrada.inTokens,
         // Some providers report completion_tokens EXCLUDING the reasoning
         // trace they bill for; when the detail is present and not already
         // included, add it so FINANCE stops under-reporting the real bill.
         outTokens: (data.usage?.completion_tokens ?? 0)
           + (data.usage?.completion_tokens_details?.reasoning_tokens ?? 0),
-        cachedTokens:     0,
+        cachedTokens:     entrada.cachedTokens,
         cacheWriteTokens: 0,
       },
     };
@@ -311,15 +343,15 @@ export async function openaiCompatStream(
       try {
         const j = JSON.parse(corpo) as {
           choices?: Array<{ delta?: { content?: string } }>;
-          usage?: { prompt_tokens?: number; completion_tokens?: number;
-                    prompt_tokens_details?: { cached_tokens?: number } };
+          usage?: UsoOpenAICompat & { completion_tokens?: number };
         };
         const texto = j.choices?.[0]?.delta?.content;
         if (texto) onDelta(texto);
         if (j.usage) {
-          usage.inTokens = j.usage.prompt_tokens ?? 0;
+          const entrada = entradaOpenAICompat(j.usage);
+          usage.inTokens = entrada.inTokens;
           usage.outTokens = j.usage.completion_tokens ?? 0;
-          usage.cachedTokens = j.usage.prompt_tokens_details?.cached_tokens ?? 0;
+          usage.cachedTokens = entrada.cachedTokens;
         }
       } catch {
         // ⚠️ Um evento ilegível não derruba o resto: o texto já entregue vale, e
