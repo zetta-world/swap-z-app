@@ -55,12 +55,20 @@ describe("⚠️⚠️ nenhuma decisão enxerga o futuro", () => {
     // Trava direta na chamada: nenhuma fatia pode conter vela posterior à barra
     // que está decidindo. Um `slice` trocado por engano passa despercebido no
     // resultado e é pego aqui.
+    //
+    // ⚠️ CE-02: o retrato de cada barra vem de `RetratoPorPrefixo.at(n1h, …)`,
+    // que recebe COMPRIMENTOS de prefixo em vez de fatias copiadas. A trava
+    // espiona `at` e exige o mesmo prefixo de antes. Que `at(n)` devolve
+    // exatamente `computeIndicators(prefixo de n)` é provado barra a barra em
+    // `indicadores-por-prefixo.equivalencia.test.ts`.
     const mod = await import("@/lib/api/market-indicators");
-    const original = mod.computeIndicators;
+    const original = mod.RetratoPorPrefixo.prototype.at;
     const chamadas: Array<{ ultimo: number }> = [];
-    const espiao = vi.spyOn(mod, "computeIndicators").mockImplementation((sim, c1h, c4h, c1d, c1w) => {
-      chamadas.push({ ultimo: c1h.length });
-      return original(sim, c1h, c4h, c1d, c1w);
+    const espiao = vi.spyOn(mod.RetratoPorPrefixo.prototype, "at").mockImplementation(function (
+      this: InstanceType<typeof mod.RetratoPorPrefixo>, n1h: number, n4h: number, n1d: number, n1w: number,
+    ) {
+      chamadas.push({ ultimo: n1h });
+      return original.call(this, n1h, n4h, n1d, n1w);
     });
 
     const v = velas(420, (i) => 100 + i * 0.05);
@@ -93,16 +101,18 @@ describe("equivalência da preparação otimizada", () => {
   it.each(casosDeBorda)("preserva a referência em %i barras (%s), inclusive nos múltiplos timeframes", async (n) => {
     const mod = await import("@/lib/api/market-indicators");
     const playbooks = await import("@/lib/zion/playbooks");
-    const original = mod.computeIndicators;
-    const chamadas: Array<[Candle[], Candle[], Candle[], Candle[]]> = [];
-    const espiao = vi.spyOn(mod, "computeIndicators").mockImplementation((sim, c1h, c4h, c1d, c1w) => {
-      chamadas.push([
-        c1h.map((c) => ({ ...c })),
-        c4h.map((c) => ({ ...c })),
-        c1d.map((c) => ({ ...c })),
-        c1w.map((c) => ({ ...c })),
-      ]);
-      return original(sim, c1h, c4h, c1d, c1w);
+    // ⚠️ CE-02: o retrato de cada barra vem de `RetratoPorPrefixo.at`. O espião
+    // guarda os COMPRIMENTOS de prefixo e o RETRATO devolvido; abaixo, cada um
+    // é comparado com `computeIndicators` sobre as fatias da referência
+    // independente de 691bfdc — mais forte que antes, que conferia só as fatias.
+    const original = mod.RetratoPorPrefixo.prototype.at;
+    const chamadas: Array<{ n: [number, number, number, number]; retrato: ReturnType<typeof original> }> = [];
+    const espiao = vi.spyOn(mod.RetratoPorPrefixo.prototype, "at").mockImplementation(function (
+      this: InstanceType<typeof mod.RetratoPorPrefixo>, n1h: number, n4h: number, n1d: number, n1w: number,
+    ) {
+      const retrato = original.call(this, n1h, n4h, n1d, n1w);
+      chamadas.push({ n: [n1h, n4h, n1d, n1w], retrato });
+      return retrato;
     });
     // Este teste mede somente a preparação dos prefixos. Fixar "sem plano"
     // impede que uma saída pule barras e esconda chamadas da comparação.
@@ -129,10 +139,11 @@ describe("equivalência da preparação otimizada", () => {
           paraCandle(ateOInstante(entrada.d1, t)),
           paraCandle(ateOInstante(entrada.w1, t)),
         ];
-        expect(recebida).toEqual(referencia);
+        expect(recebida.n).toEqual(referencia.map((r) => r.length));
+        expect(recebida.retrato).toEqual(mod.computeIndicators("BTC", ...referencia));
         if ((n === 401 || n === 512) && i === n - 1) {
-          expect(recebida[0].length).toBe(n);
-          expect(recebida[0].length).toBeGreaterThan(400);
+          expect(recebida.n[0]).toBe(n);
+          expect(recebida.n[0]).toBeGreaterThan(400);
         }
       });
     } finally {

@@ -359,6 +359,13 @@ function detectRSIDivergence(
   closes: number[],
   rsiArray: number[],  // rsiArray[j] corresponds to closes[j + period]
   period = 14,
+  /**
+   * ⚠️ Comprimentos LÓGICOS (CE-02): `RetratoPorPrefixo` passa a série inteira
+   * e diz até onde ela "existe" naquela barra, em vez de copiar o prefixo. O
+   * padrão é o comprimento do próprio array — chamada antiga, resultado antigo.
+   */
+  len = closes.length,
+  rsiLen = rsiArray.length,
 ): "bullish_rsi" | "bearish_rsi" | null {
   const left = 4, right = 4;
   const minSwingPct = 1.5; // minimum % between two consecutive pivots
@@ -367,8 +374,8 @@ function detectRSIDivergence(
   const priceLows:  Array<{ price: number; rsi: number }> = [];
 
   // Scan last 60 candles, leave right-side buffer
-  const scanStart = Math.max(period + left, closes.length - 60);
-  const scanEnd   = closes.length - right;
+  const scanStart = Math.max(period + left, len - 60);
+  const scanEnd   = len - right;
 
   for (let i = scanStart; i < scanEnd; i++) {
     let isHigh = true, isLow = true;
@@ -378,7 +385,7 @@ function detectRSIDivergence(
       if (closes[i + k] <= closes[i]) isLow  = false;
     }
     const rsiIdx = i - period;
-    if (rsiIdx < 0 || rsiIdx >= rsiArray.length) continue;
+    if (rsiIdx < 0 || rsiIdx >= rsiLen) continue;
     if (isHigh) priceHighs.push({ price: closes[i], rsi: rsiArray[rsiIdx] });
     if (isLow)  priceLows.push( { price: closes[i], rsi: rsiArray[rsiIdx] });
   }
@@ -415,16 +422,35 @@ function calcSupportResistance(
   const swingLows:  number[] = [];
 
   for (let i = leftRight; i < candles.length - leftRight; i++) {
-    let isHigh = true, isLow = true;
-    for (let k = -leftRight; k <= leftRight; k++) {
-      if (k === 0) continue;
-      if (candles[i + k].high >= candles[i].high) isHigh = false;
-      if (candles[i + k].low  <= candles[i].low)  isLow  = false;
-    }
-    if (isHigh) swingHighs.push(candles[i].high);
-    if (isLow)  swingLows.push(candles[i].low);
+    const s = swingEm(candles, i, leftRight);
+    if (s.isHigh) swingHighs.push(candles[i].high);
+    if (s.isLow)  swingLows.push(candles[i].low);
   }
 
+  return niveisDosSwings(swingHighs, swingLows, price);
+}
+
+/**
+ * A vela `i` é topo/fundo de swing? Olha só `i ± leftRight` — por isso o
+ * resultado de `i` não muda quando a série cresce depois de `i + leftRight`,
+ * e `RetratoPorPrefixo` pode calculá-lo uma vez só (CE-02).
+ */
+function swingEm(candles: Candle[], i: number, leftRight: number): { isHigh: boolean; isLow: boolean } {
+  let isHigh = true, isLow = true;
+  for (let k = -leftRight; k <= leftRight; k++) {
+    if (k === 0) continue;
+    if (candles[i + k].high >= candles[i].high) isHigh = false;
+    if (candles[i + k].low  <= candles[i].low)  isLow  = false;
+  }
+  return { isHigh, isLow };
+}
+
+/** Agrupa os swings e escolhe até 3 suportes e 3 resistências em torno de `price`. */
+function niveisDosSwings(
+  swingHighs: number[],
+  swingLows: number[],
+  price: number,
+): { supports: number[]; resistances: number[] } {
   // Cluster levels within 0.5% of each other
   const cluster = (levels: number[]): number[] => {
     if (!levels.length) return [];
@@ -454,10 +480,12 @@ function calcSupportResistance(
 
 function calcDailyPivots(
   dailyCandles: Candle[],
+  /** ⚠️ Comprimento lógico (CE-02); padrão = o array inteiro. */
+  len = dailyCandles.length,
 ): { pp: number; r1: number; r2: number; s1: number; s2: number } | null {
   // Use the second-to-last candle (last FULLY closed day)
-  if (dailyCandles.length < 2) return null;
-  const prev = dailyCandles[dailyCandles.length - 2];
+  if (len < 2) return null;
+  const prev = dailyCandles[len - 2];
   const pp = (prev.high + prev.low + prev.close) / 3;
   return {
     pp,
@@ -650,6 +678,11 @@ function timeframeTrend(closes: number[]): TimeframeTrend | null {
   const ema20 = ema20Arr.length ? ema20Arr[ema20Arr.length - 1] : null;
   const ema50 = ema50Arr.length ? ema50Arr[ema50Arr.length - 1] : null;
   const last = closes[closes.length - 1];
+  return tendenciaDoPrazo(rsi, ema20, ema50, last);
+}
+
+/** A regra da tendência de um prazo maior — UMA só, para `timeframeTrend` e `RetratoPorPrefixo`. */
+function tendenciaDoPrazo(rsi: number | null, ema20: number | null, ema50: number | null, last: number): TimeframeTrend {
   let trend: TimeframeTrend["trend"] = "neutral";
   if (ema20 && ema50 && last > ema20 && ema20 > ema50) trend = "bullish";
   else if (ema20 && ema50 && last < ema20 && ema20 < ema50) trend = "bearish";
@@ -682,7 +715,42 @@ async function getSymbolIndicators(symbol: string): Promise<SymbolIndicators> {
  * implementações do mesmo indicador divergem em silêncio.
  */
 export function computeIndicators(symbol: string, c1h: Candle[], c4h: Candle[], c1d: Candle[], c1w: Candle[]): SymbolIndicators {
-  const empty: SymbolIndicators = {
+  if (c1h.length < 52) return retratoVazio(symbol);
+
+  const closes = c1h.map((c) => c.close);
+  const rsiArray = calcRSIArray(closes, 14);
+  const ema20Arr = calcEMA(closes, 20);
+  const ema50Arr = calcEMA(closes, 50);
+  const price   = closes[closes.length - 1];
+
+  return montarRetrato(symbol, {
+    price,
+    rsi14: rsiArray.length > 0 ? rsiArray[rsiArray.length - 1] : null,
+    ema20: ema20Arr.length > 0 ? ema20Arr[ema20Arr.length - 1] : null,
+    ema50: ema50Arr.length > 0 ? ema50Arr[ema50Arr.length - 1] : null,
+    macd: calcMACD(closes),
+    atr14: calcATR(c1h, 14),
+    adxRes: calcADX(c1h, 14),
+    // Higher-timeframe trends (now including the weekly for cycle context).
+    htf4h: timeframeTrend(c4h.map((c) => c.close)),
+    htf1d: timeframeTrend(c1d.map((c) => c.close)),
+    htf1w: timeframeTrend(c1w.map((c) => c.close)),
+    ano: c1d.length >= 30
+      ? { high: Math.max(...c1d.map((c) => c.high)), low: Math.min(...c1d.map((c) => c.low)) }
+      : null,
+    // Recent RSI path (oldest→newest) so ZION sees momentum DIRECTION, not just
+    // the current value frozen in time.
+    rsiTrajectory: rsiArray.slice(-4).map((v) => Math.round(v * 10) / 10),
+    obvResult: calcOBV(c1h),
+    relVol: calcRelativeVolume(c1h, 20),
+    divergence: detectRSIDivergence(closes, rsiArray),
+    srLevels: price !== null ? calcSupportResistance(c1h, price, 5) : { supports: [], resistances: [] },
+    pivotLevels: calcDailyPivots(c1d),
+  });
+}
+
+function retratoVazio(symbol: string): SymbolIndicators {
+  return {
     symbol, price: null, rsi14: null, ema20: null, ema50: null, macd: null,
     atr14: null, atrPct: null, adx: null, regime: "TRANSITIONING",
     trend: "neutral", htf4h: null, htf1d: null, htf1w: null, alignment: "mixed",
@@ -690,19 +758,41 @@ export function computeIndicators(symbol: string, c1h: Candle[], c4h: Candle[], 
     relVol: null, divergence: null, supports: [], resistances: [], pivotLevels: null,
     rsiTrajectory: [], yearHigh: null, yearLow: null, rangePct: null, distFromYearHighPct: null,
   };
-  if (c1h.length < 52) return empty;
+}
 
-  const closes = c1h.map((c) => c.close);
-  const rsiArray = calcRSIArray(closes, 14);
-  const rsi14   = rsiArray.length > 0 ? rsiArray[rsiArray.length - 1] : null;
-  const ema20Arr = calcEMA(closes, 20);
-  const ema50Arr = calcEMA(closes, 50);
-  const macd    = calcMACD(closes);
-  const atr14   = calcATR(c1h, 14);
-  const adxRes  = calcADX(c1h, 14);
-  const ema20   = ema20Arr.length > 0 ? ema20Arr[ema20Arr.length - 1] : null;
-  const ema50   = ema50Arr.length > 0 ? ema50Arr[ema50Arr.length - 1] : null;
-  const price   = closes[closes.length - 1];
+/** As peças que dependem das séries. O resto do retrato é derivado delas em `montarRetrato`. */
+interface PecasDoRetrato {
+  price: number;
+  rsi14: number | null;
+  ema20: number | null;
+  ema50: number | null;
+  macd: MACDResult | null;
+  atr14: number | null;
+  adxRes: ADXResult | null;
+  htf4h: TimeframeTrend | null;
+  htf1d: TimeframeTrend | null;
+  htf1w: TimeframeTrend | null;
+  /** Máxima/mínima das diárias — só com 30 ou mais (`null` abaixo disso). */
+  ano: { high: number; low: number } | null;
+  rsiTrajectory: number[];
+  obvResult: { obv: number; trend: "rising" | "falling" | "flat" } | null;
+  relVol: number | null;
+  divergence: "bullish_rsi" | "bearish_rsi" | null;
+  srLevels: { supports: number[]; resistances: number[] };
+  pivotLevels: { pp: number; r1: number; r2: number; s1: number; s2: number } | null;
+}
+
+/**
+ * ⚠️⚠️ A DERIVAÇÃO DO RETRATO, NUM LUGAR SÓ (CE-02).
+ *
+ * Tendência, regime, alinhamento e posição no ano são REGRAS sobre as peças.
+ * `computeIndicators` e `RetratoPorPrefixo` obtêm as peças por caminhos
+ * diferentes (prefixo copiado × série pré-calculada) e passam por AQUI — duas
+ * cópias destas regras divergiriam em silêncio, e a mesa do backtest leria o
+ * mercado diferente da mesa ao vivo.
+ */
+function montarRetrato(symbol: string, p: PecasDoRetrato): SymbolIndicators {
+  const { price, rsi14, ema20, ema50, macd, atr14, adxRes, htf4h, htf1d, htf1w } = p;
   const atrPct  = atr14 !== null && price > 0 ? (atr14 / price) * 100 : null;
 
   // 1h composite trend label
@@ -722,11 +812,6 @@ export function computeIndicators(symbol: string, c1h: Candle[], c4h: Candle[], 
     }
   }
 
-  // Higher-timeframe trends (now including the weekly for cycle context).
-  const htf4h = timeframeTrend(c4h.map((c) => c.close));
-  const htf1d = timeframeTrend(c1d.map((c) => c.close));
-  const htf1w = timeframeTrend(c1w.map((c) => c.close));
-
   // ── Long-range position + trajectory (Z1/Z2) ──
   // Where does price sit inside its 1-year range, and is it near the cycle
   // top/bottom? This is the "look back months/years" context ZION lacked.
@@ -734,17 +819,14 @@ export function computeIndicators(symbol: string, c1h: Candle[], c4h: Candle[], 
   let yearLow:  number | null = null;
   let rangePct: number | null = null;
   let distFromYearHighPct: number | null = null;
-  if (c1d.length >= 30) {
-    yearHigh = Math.max(...c1d.map((c) => c.high));
-    yearLow  = Math.min(...c1d.map((c) => c.low));
+  if (p.ano) {
+    yearHigh = p.ano.high;
+    yearLow  = p.ano.low;
     if (yearHigh > yearLow) {
       rangePct = ((price - yearLow) / (yearHigh - yearLow)) * 100;
       distFromYearHighPct = ((price - yearHigh) / yearHigh) * 100;
     }
   }
-  // Recent RSI path (oldest→newest) so ZION sees momentum DIRECTION, not just
-  // the current value frozen in time.
-  const rsiTrajectory = rsiArray.slice(-4).map((v) => Math.round(v * 10) / 10);
 
   // Alignment of the 1h directional bias with the higher timeframes.
   const dirOf = (t: SymbolIndicators["trend"] | TimeframeTrend["trend"]): 1 | -1 | 0 =>
@@ -758,25 +840,260 @@ export function computeIndicators(symbol: string, c1h: Candle[], c4h: Candle[], 
   else if (bears >= 2 && bulls === 0) alignment = "aligned_bear";
   else if (bulls > 0 && bears > 0) alignment = "conflict";
 
-  const obvResult = calcOBV(c1h);
-  const relVol = calcRelativeVolume(c1h, 20);
-  const divergence = detectRSIDivergence(closes, rsiArray);
-  const srLevels = price !== null ? calcSupportResistance(c1h, price, 5) : { supports: [], resistances: [] };
-  const pivotLevels = calcDailyPivots(c1d);
-
   return {
     symbol, price, rsi14, ema20, ema50, macd, atr14, atrPct,
     adx: adxRes?.adx ?? null, regime, trend, htf4h, htf1d, htf1w, alignment,
-    obv:      obvResult?.obv      ?? null,
-    obvTrend: obvResult?.trend    ?? null,
+    obv:      p.obvResult?.obv      ?? null,
+    obvTrend: p.obvResult?.trend    ?? null,
     confidenceScore: null, // filled by getMarketIndicators after ob + f&g are available
-    relVol,
-    divergence,
-    supports:    srLevels.supports,
-    resistances: srLevels.resistances,
-    pivotLevels,
-    rsiTrajectory, yearHigh, yearLow, rangePct, distFromYearHighPct,
+    relVol: p.relVol,
+    divergence: p.divergence,
+    supports:    p.srLevels.supports,
+    resistances: p.srLevels.resistances,
+    pivotLevels: p.pivotLevels,
+    rsiTrajectory: p.rsiTrajectory, yearHigh, yearLow, rangePct, distFromYearHighPct,
   };
+}
+
+/**
+ * ⚠️⚠️ O RETRATO DE CADA BARRA SEM RECALCULAR O PASSADO (CE-02).
+ *
+ * O backtest da MESA (`bancada/mesa-real.ts`) precisa, em cada barra `i`, do
+ * retrato que `computeIndicators` daria com as séries CORTADAS em `i` — é o que
+ * impede o lookahead. Chamar `computeIndicators(prefixo)` a cada barra recalcula
+ * EMA, RSI, MACD, ATR, ADX, OBV e os swings desde a primeira vela: N barras ×
+ * séries de N = O(N²), alguns segundos por símbolo em 4.000 barras.
+ *
+ * Todos esses cálculos são CAUSAIS: o valor no índice `k` só depende das velas
+ * até `k`, e a recursão (Wilder, EMA) faz as MESMAS operações na mesma ordem
+ * quer a série termine em `k` quer continue. Então calcular a série inteira uma
+ * vez e LER o índice da barra dá o mesmo número, bit a bit. O que olha uma
+ * janela (OBV 10+10, volume relativo 20, divergência 60, swings ±5) é refeito
+ * só sobre essa janela, com a mesma ordem de soma.
+ *
+ * A prova não é este comentário: é `indicadores-por-prefixo.equivalencia.test.ts`,
+ * que compara `at(...)` com a cópia congelada de `computeIndicators` em TODAS as
+ * barras, campo a campo, por `Object.is`.
+ */
+export class RetratoPorPrefixo {
+  private readonly closes: number[];
+  private readonly volumes: number[];
+  private readonly rsi: number[];
+  private readonly ema20: number[];
+  private readonly ema50: number[];
+  private readonly macdLinha: number[];
+  private readonly macdSinal: number[];
+  private readonly atr: Array<number | null>;
+  private readonly adx: Array<ADXResult | null>;
+  private readonly obvSerie: number[];
+  private readonly topos: number[];   // índices de swing high, em ordem
+  private readonly fundos: number[];  // índices de swing low, em ordem
+  private readonly tendencias: Array<Array<TimeframeTrend | null>>;
+  private readonly maxAno: number[];
+  private readonly minAno: number[];
+
+  constructor(
+    private readonly symbol: string,
+    private readonly c1h: Candle[],
+    c4h: Candle[],
+    private readonly c1d: Candle[],
+    c1w: Candle[],
+  ) {
+    this.closes = c1h.map((c) => c.close);
+    this.volumes = c1h.map((c) => c.volume);
+    this.rsi = calcRSIArray(this.closes, 14);
+    this.ema20 = calcEMA(this.closes, 20);
+    this.ema50 = calcEMA(this.closes, 50);
+    const rapida = calcEMA(this.closes, 12);
+    const lenta = calcEMA(this.closes, 26);
+    const offset = rapida.length - lenta.length;
+    this.macdLinha = lenta.map((v, i) => rapida[i + offset] - v);
+    this.macdSinal = calcEMA(this.macdLinha, 9);
+    this.atr = calcATRSerie(c1h, 14);
+    this.adx = serieADX(c1h, 14);
+    this.obvSerie = [0];
+    for (let i = 1; i < c1h.length; i++) {
+      const prev = this.obvSerie[i - 1];
+      if      (c1h[i].close > c1h[i - 1].close) this.obvSerie.push(prev + c1h[i].volume);
+      else if (c1h[i].close < c1h[i - 1].close) this.obvSerie.push(prev - c1h[i].volume);
+      else                                       this.obvSerie.push(prev);
+    }
+    this.topos = [];
+    this.fundos = [];
+    for (let i = 5; i < c1h.length - 5; i++) {
+      const s = swingEm(c1h, i, 5);
+      if (s.isHigh) this.topos.push(i);
+      if (s.isLow)  this.fundos.push(i);
+    }
+    this.tendencias = [c4h, c1d, c1w].map((serie) => serieDeTendencia(serie.map((c) => c.close)));
+    this.maxAno = [];
+    this.minAno = [];
+    let mx = -Infinity, mn = Infinity;
+    for (const c of c1d) {
+      // ⚠️ Math.max/min cumulativo ≡ Math.max(...prefixo): mesmo NaN, mesmo ±0.
+      mx = Math.max(mx, c.high);
+      mn = Math.min(mn, c.low);
+      this.maxAno.push(mx);
+      this.minAno.push(mn);
+    }
+  }
+
+  /**
+   * ≡ `computeIndicators(symbol, c1h[0..n1h), c4h[0..n4h), c1d[0..n1d), c1w[0..n1w))`.
+   * Os `n` são COMPRIMENTOS de prefixo (não índices).
+   */
+  at(n1h: number, n4h: number, n1d: number, n1w: number): SymbolIndicators {
+    const L = n1h;
+    if (L < 52) return retratoVazio(this.symbol);
+    const closes = this.closes;
+    const price = closes[L - 1];
+    // calcRSIArray(prefixo) devolve L−14 valores a partir de L ≥ 16.
+    const rsiLen = L >= 16 ? L - 14 : 0;
+
+    let macd: MACDResult | null = null;
+    // calcMACD(prefixo): null abaixo de 26+9+2; sinal com L−33 valores (≥ 2).
+    if (L >= 37) {
+      const ultimo = L - 34;
+      const m = this.macdLinha[L - 26];
+      const s = this.macdSinal[ultimo];
+      const histogram = m - s;
+      const prevMacd = this.macdLinha[L - 27];
+      const prevSignal = this.macdSinal[ultimo - 1];
+      macd = { macd: m, signal: s, histogram, histPrev: prevMacd - prevSignal };
+    }
+
+    // calcATR(prefixo): null abaixo de 16 velas; senão o Wilder depois de tr[L−2].
+    const atr14 = L >= 16 ? this.atr[L - 1] : null;
+    // calcADX(prefixo): null abaixo de 30 velas; o estado depois do DX de índice L−15.
+    const adxRes = L >= 30 ? this.adx[L - 15] : null;
+
+    return montarRetrato(this.symbol, {
+      price,
+      rsi14: rsiLen > 0 ? this.rsi[rsiLen - 1] : null,
+      ema20: this.ema20[L - 20],
+      ema50: this.ema50[L - 50],
+      macd,
+      atr14,
+      adxRes,
+      htf4h: n4h >= 52 ? this.tendencias[0][n4h - 1] : null,
+      htf1d: n1d >= 52 ? this.tendencias[1][n1d - 1] : null,
+      htf1w: n1w >= 52 ? this.tendencias[2][n1w - 1] : null,
+      ano: n1d >= 30 ? { high: this.maxAno[n1d - 1], low: this.minAno[n1d - 1] } : null,
+      rsiTrajectory: this.rsi.slice(Math.max(0, rsiLen - 4), rsiLen).map((v) => Math.round(v * 10) / 10),
+      obvResult: this.obvAte(L),
+      relVol: this.volumeRelativoAte(L),
+      divergence: detectRSIDivergence(closes, this.rsi, 14, L, rsiLen),
+      srLevels: this.niveisAte(L, price),
+      pivotLevels: calcDailyPivots(this.c1d, n1d),
+    });
+  }
+
+  /** ≡ calcOBV(c1h[0..L)) — mesma janela, mesma ordem de soma. */
+  private obvAte(L: number): { obv: number; trend: "rising" | "falling" | "flat" } | null {
+    if (L < 20) return null;
+    const s = this.obvSerie;
+    const last = s[L - 1];
+    const w = Math.min(10, Math.floor(L / 3));
+    let recente = 0;
+    for (let j = L - w; j < L; j++) recente += s[j];
+    let anterior = 0;
+    for (let j = L - 2 * w; j < L - w; j++) anterior += s[j];
+    const recentAvg = recente / w;
+    const priorAvg = anterior / w;
+    const range = Math.max(Math.abs(last), Math.abs(priorAvg), 1);
+    const ratio = (recentAvg - priorAvg) / range;
+    const trend: "rising" | "falling" | "flat" =
+      ratio >  0.01 ? "rising" :
+      ratio < -0.01 ? "falling" : "flat";
+    return { obv: last, trend };
+  }
+
+  /** ≡ calcRelativeVolume(c1h[0..L), 20). */
+  private volumeRelativoAte(L: number): number | null {
+    const period = 20;
+    if (L < period + 1) return null;
+    const current = this.volumes[L - 1];
+    let soma = 0;
+    for (let j = L - period - 1; j < L - 1; j++) soma += this.volumes[j];
+    const avgVol = soma / period;
+    if (avgVol <= 0) return null;
+    return current / avgVol;
+  }
+
+  /** ≡ calcSupportResistance(c1h[0..L), price, 5): swings de índice < L−5, na mesma ordem. */
+  private niveisAte(L: number, price: number): { supports: number[]; resistances: number[] } {
+    if (L < 5 * 2 + 5) return { supports: [], resistances: [] };
+    const limite = L - 5;
+    const altos: number[] = [];
+    for (const i of this.topos) { if (i >= limite) break; altos.push(this.c1h[i].high); }
+    const baixos: number[] = [];
+    for (const i of this.fundos) { if (i >= limite) break; baixos.push(this.c1h[i].low); }
+    return niveisDosSwings(altos, baixos, price);
+  }
+}
+
+/**
+ * O estado do `calcADX` depois de CADA DX — `out[k]` ≡ `calcADX(candles[0..k+15))`
+ * quando há DX suficiente. Mesmas operações, mesma ordem, do `calcADX`.
+ */
+function serieADX(candles: Candle[], period = 14): Array<ADXResult | null> {
+  const len = candles.length;
+  const tr: number[] = [];
+  const plusDM: number[] = [];
+  const minusDM: number[] = [];
+  for (let i = 1; i < len; i++) {
+    const h = candles[i].high, l = candles[i].low;
+    const ph = candles[i - 1].high, pl = candles[i - 1].low, pc = candles[i - 1].close;
+    const up = h - ph;
+    const down = pl - l;
+    plusDM.push(up > down && up > 0 ? up : 0);
+    minusDM.push(down > up && down > 0 ? down : 0);
+    tr.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+  }
+  const out: Array<ADXResult | null> = [];
+  if (tr.length < period) return out;
+
+  let trN    = tr.slice(0, period).reduce((a, b) => a + b, 0);
+  let plusN  = plusDM.slice(0, period).reduce((a, b) => a + b, 0);
+  let minusN = minusDM.slice(0, period).reduce((a, b) => a + b, 0);
+
+  const dxs: number[] = [];
+  const dis: Array<{ pDI: number; mDI: number }> = [];
+  const pushDX = () => {
+    const pDI = trN === 0 ? 0 : (plusN / trN) * 100;
+    const mDI = trN === 0 ? 0 : (minusN / trN) * 100;
+    const denom = pDI + mDI;
+    dxs.push(denom === 0 ? 0 : (Math.abs(pDI - mDI) / denom) * 100);
+    dis.push({ pDI, mDI });
+  };
+  pushDX();
+  for (let i = period; i < tr.length; i++) {
+    trN    = trN    - trN    / period + tr[i];
+    plusN  = plusN  - plusN  / period + plusDM[i];
+    minusN = minusN - minusN / period + minusDM[i];
+    pushDX();
+  }
+  for (let k = 0; k < dxs.length; k++) out.push(null);
+  if (dxs.length < period) return out;
+  let adx = dxs.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  out[period - 1] = { adx, plusDI: dis[period - 1].pDI, minusDI: dis[period - 1].mDI };
+  for (let k = period; k < dxs.length; k++) {
+    adx = (adx * (period - 1) + dxs[k]) / period;
+    out[k] = { adx, plusDI: dis[k].pDI, minusDI: dis[k].mDI };
+  }
+  return out;
+}
+
+/** `out[n−1]` ≡ `timeframeTrend(closes[0..n))` para n ≥ 52. */
+function serieDeTendencia(closes: number[]): Array<TimeframeTrend | null> {
+  const out: Array<TimeframeTrend | null> = new Array(closes.length).fill(null);
+  const rsi = calcRSIArray(closes, 14);
+  const e20 = calcEMA(closes, 20);
+  const e50 = calcEMA(closes, 50);
+  for (let n = 52; n <= closes.length; n++) {
+    out[n - 1] = tendenciaDoPrazo(rsi[n - 15], e20[n - 20], e50[n - 50], closes[n - 1]);
+  }
+  return out;
 }
 
 /**

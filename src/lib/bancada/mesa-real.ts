@@ -21,7 +21,7 @@
  * backtest do cliente.
  */
 
-import { computeIndicators, type Candle } from "@/lib/api/market-indicators";
+import { RetratoPorPrefixo, type Candle } from "@/lib/api/market-indicators";
 import { candidateAttempts } from "@/lib/zion/playbooks";
 import { computeExitPath } from "@/lib/paper/saida";
 import type { VelaComTempo } from "@/lib/mercado/velas";
@@ -167,19 +167,21 @@ export function rodarMesa(
   const cortadaPeloTeto = total > MAX_BARRAS_AVALIADAS;
   const ultima = cortadaPeloTeto ? primeira + MAX_BARRAS_AVALIADAS : h1.length;
 
-  // Converta cada série uma única vez. A versão anterior remapeava todo o
-  // histórico já visto em cada barra e voltava a filtrar integralmente os três
-  // prazos maiores. Isso não mudava o retrato, mas acrescentava trabalho
-  // quadrático antes mesmo de os indicadores começarem a calcular.
-  const h1Candles = paraCandle(h1);
-  const h4Candles = paraCandle(velas.h4);
-  const d1Candles = paraCandle(velas.d1);
-  const w1Candles = paraCandle(velas.w1);
+  /**
+   * ⚠️⚠️ O RETRATO DE CADA BARRA VEM PRÉ-CALCULADO (CE-02).
+   *
+   * Antes: `computeIndicators(prefixo)` em cada barra, refazendo EMA, RSI,
+   * MACD, ATR, ADX, OBV e swings desde a primeira vela — O(N²) por símbolo, o
+   * maior custo de CPU da bancada. `RetratoPorPrefixo` calcula cada série uma
+   * vez e devolve, para os comprimentos de prefixo de cada barra, EXATAMENTE o
+   * mesmo retrato (prova: `indicadores-por-prefixo.equivalencia.test.ts`, barra
+   * a barra, contra a cópia congelada de `computeIndicators`). O lookahead
+   * continua impossível: a barra `i` lê prefixos que terminam nela.
+   */
+  const retrato = new RetratoPorPrefixo(
+    simbolo, paraCandle(h1), paraCandle(velas.h4), paraCandle(velas.d1), paraCandle(velas.w1),
+  );
   const h1Saida = h1.map((x) => ({ t: x.t, high: x.high, low: x.low, close: x.close }));
-  const h1Ate: Candle[] = h1Candles.slice(0, primeira);
-  const h4AteCandles: Candle[] = [];
-  const d1AteCandles: Candle[] = [];
-  const w1AteCandles: Candle[] = [];
   let h4Ate = 0;
   let d1Ate = 0;
   let w1Ate = 0;
@@ -189,20 +191,13 @@ export function rodarMesa(
 
   for (let i = primeira; i < ultima; i++) {
     barrasAvaliadas++;
-    h1Ate.push(h1Candles[i]);
     if (i < livreApartirDe) continue;
 
     const t = h1[i].t;
-    while (h4Ate < velas.h4.length && velas.h4[h4Ate].t <= t) h4AteCandles.push(h4Candles[h4Ate++]);
-    while (d1Ate < velas.d1.length && velas.d1[d1Ate].t <= t) d1AteCandles.push(d1Candles[d1Ate++]);
-    while (w1Ate < velas.w1.length && velas.w1[w1Ate].t <= t) w1AteCandles.push(w1Candles[w1Ate++]);
-    const ind = computeIndicators(
-      simbolo,
-      h1Ate,
-      h4AteCandles,
-      d1AteCandles,
-      w1AteCandles,
-    );
+    while (h4Ate < velas.h4.length && velas.h4[h4Ate].t <= t) h4Ate++;
+    while (d1Ate < velas.d1.length && velas.d1[d1Ate].t <= t) d1Ate++;
+    while (w1Ate < velas.w1.length && velas.w1[w1Ate].t <= t) w1Ate++;
+    const ind = retrato.at(i + 1, h4Ate, d1Ate, w1Ate);
 
     const tentativas = candidateAttempts(ind);
     const comPlano = tentativas.find((a) => a.plan !== null);
@@ -219,6 +214,17 @@ export function rodarMesa(
     const abertaEm = t + 1;
     const expiraEm = abertaEm + plano.horizonHours * 3_600_000;
     const ate = Math.min(h1[h1.length - 1].t, expiraEm);
+    /**
+     * ⚠️ A FATIA PARA A SAÍDA TERMINA EM `ate` (CE-02). Antes era o resto da
+     * série inteira, que `computeExitPath` filtrava de novo por `c.t <= ate` —
+     * O(N) por operação. Com a série em ordem (`exigirOrdemCronologica`, lá em
+     * cima), toda vela depois de `fimDaFatia` tem `t > ate` e o filtro a
+     * descartaria; cortá-la antes não muda a janela que ele enxerga. O filtro
+     * continua rodando sobre a fatia curta, então tempo repetido segue tratado
+     * igual.
+     */
+    let fimDaFatia = i + 1;
+    while (fimDaFatia < h1.length && h1[fimDaFatia].t <= ate) fimDaFatia++;
 
     const v = computeExitPath(
       {
@@ -230,7 +236,7 @@ export function rodarMesa(
         opened_at: new Date(abertaEm).toISOString(),
         horizon_hours: plano.horizonHours,
       },
-      h1Saida.slice(i + 1),
+      h1Saida.slice(i + 1, fimDaFatia),
       undefined,
       ate,
       custoIdaEVoltaPct,
@@ -257,7 +263,11 @@ export function rodarMesa(
     });
 
     // A próxima entrada só nasce depois desta fechar.
-    const iFechou = h1.findIndex((x) => x.t > ate);
+    // ⚠️ `fimDaFatia` É o primeiro índice com `t > ate` — o mesmo que o
+    // `findIndex` antigo achava varrendo a série desde o começo (todo índice
+    // ≤ i tem `t ≤ ate`, porque `ate ≥ t`). Nenhuma regra mudou: ver CE-02-F1
+    // no relatório sobre a barreira usar `ate` e não a vela do fechamento.
+    const iFechou = fimDaFatia < h1.length ? fimDaFatia : -1;
     livreApartirDe = iFechou < 0 ? h1.length : Math.max(i + 1, iFechou);
   }
 
