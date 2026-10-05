@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { openaiCompatStream, anthropicStream } from "@/lib/ai/provider";
 import { aiAtivo, faltaChave } from "@/lib/ai/ativo";
 import { ZION_FOUNDATION } from "@/lib/zion/foundation";
+import { cacheDeRespostaDoZion, chaveDeResposta, podeUsarCache } from "@/lib/zion/cache-de-resposta";
 import { getModeInstructions, type ZionOp } from "@/lib/zion/mode-prompts";
 import { getTokenSecurity, isGoPlusSupported, type GoPlusTokenSecurity } from "@/lib/api/goplus";
 import { getHoneypot, isHoneypotSupported, type HoneypotResponse } from "@/lib/api/honeypot";
@@ -453,7 +454,11 @@ async function runZion(args: RunArgs, signal?: AbortSignal) {
          * que é o que qualquer cache de prefixo aproveita.
          */
         const blocos = [ZION_FOUNDATION, modeInstructions, LANG_INSTRUCTION[args.lang]];
-        const entregar = (delta: string) => { if (!closed) controller.enqueue(encoder.encode(delta)); };
+        let texto = "";
+        const entregar = (delta: string) => {
+          texto += delta;
+          if (!closed) controller.enqueue(encoder.encode(delta));
+        };
         const pedido = {
           model, system: blocos.join("\n\n"),
           user: `${LANG_INSTRUCTION[args.lang]}\n\n${userText}`,
@@ -470,9 +475,32 @@ async function runZion(args: RunArgs, signal?: AbortSignal) {
           extraBody: ativo.extraBody,
         };
 
+        /**
+         * ⚠️ CE-07: varredura PÚBLICA idêntica nos últimos 60 s → a mesma
+         * resposta, sem pagar tokens de novo. Só entra o que não tem nada do
+         * usuário (`podeUsarCache`), e a chave é o prompt inteiro. Ver
+         * `lib/zion/cache-de-resposta.ts`.
+         */
+        const cacheavel = podeUsarCache(args);
+        const chave = cacheavel ? chaveDeResposta(model, pedido.system, pedido.user) : "";
+        const doCache = cacheavel ? cacheDeRespostaDoZion.ler(chave, Date.now()) : null;
+        if (doCache != null) {
+          entregar(doCache);
+          await recordEvent("zion_analysis", { meta: {
+            op: args.op, chain: args.chain, model, source: "user", cacheHit: true,
+            inTokens: 0, outTokens: 0, cachedTokens: 0, cacheWriteTokens: 0,
+          } });
+          return;
+        }
+
         const { usage } = ativo.provedor === "anthropic"
           ? await anthropicStream({ ...pedido, systemBlocks: blocos }, chaveAtiva, entregar, combinedSignal)
           : await openaiCompatStream(pedido, { apiKey: chaveAtiva, baseUrl: ativo.baseUrl }, entregar, combinedSignal);
+
+        // Só resposta COMPLETA entra: sem timeout, sem cliente que saiu no meio.
+        if (cacheavel && !timedOut && !closed && texto.length > 0) {
+          cacheDeRespostaDoZion.gravar(chave, texto, Date.now());
+        }
 
         console.log(JSON.stringify({
           tag: "zion-usage", ts: new Date().toISOString(),
@@ -486,7 +514,7 @@ async function runZion(args: RunArgs, signal?: AbortSignal) {
         // a resposta termina, e um insert solto se perderia — foi por isso que
         // as análises manuais nunca apareciam no painel de gasto de IA.
         await recordEvent("zion_analysis", { meta: {
-          op: args.op, chain: args.chain, model, source: "user",
+          op: args.op, chain: args.chain, model, source: "user", cacheHit: false,
           inTokens: usage.inTokens,
           outTokens: usage.outTokens,
           cachedTokens: usage.cachedTokens,
