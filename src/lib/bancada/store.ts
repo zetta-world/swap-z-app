@@ -447,6 +447,71 @@ export async function abrirRodada(
   return { ok: true, valor: String((data as { id: string }).id) };
 }
 
+/** O desfecho da RESERVA atômica (migration 0073). */
+export type Reserva =
+  | { ok: true; id: string; rodadas: number; unidades: number }
+  | { ok: false; motivo: "cota_esgotada" | "orcamento_esgotado"; rodadas: number; unidades: number }
+  /** ⚠️ "Não consegui contar" — quem chama RECUSA (503), nunca libera. */
+  | { ok: false; motivo: "desconhecido"; porque: string };
+
+/**
+ * ⚠️⚠️ CONTA, DECIDE E ABRE A RODADA NUMA TRANSAÇÃO SÓ, NO BANCO (CE-04/CE-05).
+ *
+ * Substitui, para quem consome cota, o par `consumoDaJanela` + `abrirRodada`,
+ * que tinha dois defeitos medidos:
+ *   1. contava no app as linhas que o PostgREST devolvia — cortadas em
+ *      `db-max-rows` (1000). A cota do Pilot (5.000) nunca era alcançada;
+ *   2. lia, decidia em memória e só depois inseria: requisições simultâneas
+ *      liam o mesmo consumo e passavam juntas.
+ * A função `bancada_reservar_rodada` conta com `count(*)`, serializa por dono
+ * (advisory lock de transação), usa o relógio do banco e só insere se couber.
+ * Prova: `supabase/tests/20_*.sql` (limites, 1.000, 5.000, janela, orçamento,
+ * ACL) e `20b_*.sh` (30 sessões simultâneas → exatamente o limite).
+ *
+ * ⚠️ FALHA FECHADA: qualquer erro ou resposta fora do formato vira
+ * `desconhecido`, e a rota recusa. Migration ausente = bancada parada com
+ * motivo honesto, nunca cota infinita.
+ */
+export async function reservarRodada(
+  dono: Dono, chain: WalletChain, db: SupabaseClient,
+  nova: RodadaNova & { custoUnidades: number },
+  limites: { rodadas: number; unidades: number; janelaMs?: number },
+): Promise<Reserva> {
+  const { data, error } = await db.rpc("bancada_reservar_rodada", {
+    p_dono: dono,
+    p_chain: chain,
+    p_estrategia_id: nova.estrategiaId,
+    p_origem: nova.origem,
+    p_capital_usd: nova.capitalUsd,
+    p_simbolos: nova.simbolos,
+    p_intervalo: nova.intervalo,
+    p_janela_de: nova.janelaDe,
+    p_janela_ate: nova.janelaAte,
+    p_praca: nova.praca,
+    p_papel: nova.papel,
+    p_params: nova.params,
+    p_custo_velas: Math.max(0, Math.floor(nova.custoVelas)),
+    p_custo_unidades: Math.max(0, Math.ceil(nova.custoUnidades)),
+    p_limite_rodadas: Math.max(0, Math.floor(limites.rodadas)),
+    p_orcamento_unidades: Math.max(0, Math.floor(limites.unidades)),
+    p_janela_ms: limites.janelaMs ?? JANELA_DA_COTA_MS,
+  });
+  if (error) return { ok: false, motivo: "desconhecido", porque: error.message.slice(0, 160) };
+  const r = data as { ok?: unknown; id?: unknown; motivo?: unknown; rodadas?: unknown; unidades?: unknown } | null;
+  const rodadas = Number(r?.rodadas);
+  const unidades = Number(r?.unidades);
+  if (!r || !Number.isFinite(rodadas) || !Number.isFinite(unidades)) {
+    return { ok: false, motivo: "desconhecido", porque: "resposta da reserva fora do formato" };
+  }
+  if (r.ok === true && typeof r.id === "string" && r.id.length > 0) {
+    return { ok: true, id: r.id, rodadas, unidades };
+  }
+  if (r.ok === false && (r.motivo === "cota_esgotada" || r.motivo === "orcamento_esgotado")) {
+    return { ok: false, motivo: r.motivo, rodadas, unidades };
+  }
+  return { ok: false, motivo: "desconhecido", porque: "resposta da reserva fora do formato" };
+}
+
 /**
  * Fecha a rodada com um desfecho.
  *
@@ -576,20 +641,43 @@ export async function consumoDaJanela(
   dono: Dono, db: SupabaseClient, agoraMs: number = Date.now(),
 ): Promise<ConsumoDoDia | null> {
   const desde = new Date(agoraMs - JANELA_DA_COTA_MS).toISOString();
-  const { data, error } = await doDono(db, "bancada_rodada", dono, "custo_velas, status")
-    .gte("criada_em", desde);
-  if (error || !data) return null;
-  const linhas = data as unknown as Array<{ custo_velas: number | string; status: string }>;
   /**
+   * ⚠️⚠️ CONTADO NO BANCO, PAGINADO NA SOMA (CE-04).
+   *
+   * A versão antiga lia as linhas e contava `length` — e o PostgREST corta toda
+   * leitura em `db-max-rows` (1000). Acima de 1.000 rodadas a contagem ficava
+   * em 1.000 para sempre. Agora `rodadas` é `count=exact` (o cabeçalho de
+   * contagem do PostgREST não é cortado) e a soma de velas atravessa as páginas.
+   *
+   * ⚠️ A ROTA NÃO DECIDE MAIS COM ISTO: a decisão é a reserva atômica
+   * (`reservarRodada`). Isto fica para leitura (tela, admin) — e certo.
+   *
    * ⚠️ RODADA RECUSADA NÃO CONSOME COTA. Ela é recusada pelo PORTÃO, antes de
    * qualquer vela ser lida — cobrar por ela puniria o cliente justamente pela
    * mensagem que o impediu de perder dinheiro, e ensinaria a não testar.
    */
-  const contam = linhas.filter((l) => l.status !== "recusada");
-  return {
-    rodadas: contam.length,
-    velas: contam.reduce((s, l) => s + (Number(l.custo_velas) || 0), 0),
-  };
+  const contagem = await db.from("bancada_rodada")
+    .select("id", { count: "exact", head: true })
+    .eq("dono", dono).gte("criada_em", desde).neq("status", "recusada");
+  if (contagem.error || typeof contagem.count !== "number") return null;
+
+  // ⚠️ O offset avança pelo que VOLTOU, não pelo tamanho pedido: um servidor
+  // com `max-rows` menor que a página devolveria páginas curtas, e pular 1.000
+  // perderia linhas. Para na página vazia.
+  let velas = 0;
+  const PAGINA = 1000;
+  for (let de = 0, voltas = 0; voltas < 1000; voltas++) {
+    const { data, error } = await doDono(db, "bancada_rodada", dono, "id, custo_velas")
+      .gte("criada_em", desde).neq("status", "recusada")
+      .order("id", { ascending: true })
+      .range(de, de + PAGINA - 1);
+    if (error || !data) return null;
+    const linhas = data as unknown as Array<{ custo_velas: number | string }>;
+    if (linhas.length === 0) return { rodadas: contagem.count, velas };
+    for (const l of linhas) velas += Number(l.custo_velas) || 0;
+    de += linhas.length;
+  }
+  return null;
 }
 
 // ── RESULTADOS ──────────────────────────────────────────────────────

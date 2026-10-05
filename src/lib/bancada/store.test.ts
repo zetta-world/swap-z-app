@@ -25,7 +25,7 @@ import { donoDaSessao, donoDeLinhaDoBanco, type Dono } from "@/lib/bancada/dono"
 import {
   salvarEstrategia, listarEstrategias, estrategia, arquivarEstrategia,
   contarEstrategiasVivas, abrirRodada, fecharRodada, listarRodadas, rodada,
-  consumoDaJanela, gravarResultado, resultado,
+  consumoDaJanela, gravarResultado, resultado, reservarRodada,
   abrirPosicao, posicoesAbertas, posicoesAbertasParaOCron, fecharPosicao,
   mesasLigadasParaOCron, mesasDasPosicoesParaOCron,
   gravarOperacoes, operacoesDaRodada,
@@ -42,6 +42,13 @@ function comparavel(v: unknown): number | string {
   return String(v);
 }
 
+/**
+ * ⚠️ CE-04: o falso corta a resposta em `MAX_ROWS` (1000), como o PostgREST
+ * hospedado — mas NÃO corta o `count` do `head`, que lá vem do cabeçalho de
+ * contagem. Foi esse corte que deixava a cota do Pilot sem teto.
+ */
+const MAX_ROWS = 1000;
+
 function consulta(
   linhas: () => Linha[],
   opts: { head?: boolean; falha?: string | null } = {},
@@ -49,6 +56,7 @@ function consulta(
   const filtros: Array<(r: Linha) => boolean> = [];
   let ordem: { col: string; asc: boolean } | null = null;
   let limite = Infinity;
+  let faixa: [number, number] | null = null;
   let um = false;
 
   function resolver() {
@@ -62,14 +70,18 @@ function consulta(
         return asc ? d : -d;
       });
     }
-    if (Number.isFinite(limite)) rs = rs.slice(0, limite);
     if (opts.head) return { data: null, error: null, count: rs.length };
+    if (faixa) rs = rs.slice(faixa[0], faixa[1] + 1);
+    if (Number.isFinite(limite)) rs = rs.slice(0, limite);
+    rs = rs.slice(0, MAX_ROWS);
     if (um) return { data: rs[0] ?? null, error: null, count: rs.length };
     return { data: rs, error: null, count: rs.length };
   }
 
   const api = {
     eq(col: string, val: unknown) { filtros.push((r) => r[col] === val); return api; },
+    neq(col: string, val: unknown) { filtros.push((r) => r[col] !== val); return api; },
+    range(de: number, ate: number) { faixa = [de, ate]; return api; },
     gte(col: string, val: unknown) { filtros.push((r) => comparavel(r[col]) >= comparavel(val)); return api; },
     lte(col: string, val: unknown) { filtros.push((r) => comparavel(r[col]) <= comparavel(val)); return api; },
     is(col: string, val: unknown) { filtros.push((r) => (r[col] ?? null) === val); return api; },
@@ -131,10 +143,20 @@ function bancoFalso(inicial: Record<string, Linha[]> = {}, falhas: Record<string
         },
       };
     },
+    // ⚠️ CE-04: a RPC da reserva. A semântica SQL é provada em supabase/tests/20*;
+    // aqui o falso devolve a resposta escolhida pelo teste, para provar o
+    // MAPEAMENTO do wrapper (e que ele falha fechado).
+    rpc(nome: string, args: Record<string, unknown>) {
+      chamadasRpc.push({ nome, args });
+      return Promise.resolve(respostaRpc);
+    },
   } as unknown as SupabaseClient;
 
   return { db, tabelas };
 }
+
+let respostaRpc: { data: unknown; error: { message: string } | null } = { data: null, error: null };
+const chamadasRpc: Array<{ nome: string; args: Record<string, unknown> }> = [];
 
 // ── DUAS CARTEIRAS ──────────────────────────────────────────────────
 
@@ -512,5 +534,66 @@ describe("mesasDasPosicoesParaOCron — a leitura que NÃO filtra por ligada", (
   it("lista vazia não vira varredura da tabela inteira", () => {
     const { db } = bancoFalso({ bancada_estrategia: LINHAS });
     return mesasDasPosicoesParaOCron(db as unknown as SupabaseClient, []).then((ms) => expect(ms).toEqual([]));
+  });
+});
+
+
+describe("⚠️⚠️ CE-04 — a cota contada no banco, não no app", () => {
+  it("5.000 rodadas na janela contam 5.000 — o PostgREST corta a LEITURA em 1.000, não a contagem", async () => {
+    // Com a contagem antiga (`data.length`), isto dava 1.000: a cota do Pilot
+    // (5.000) nunca era alcançada.
+    const agora = Date.now();
+    const linhas = Array.from({ length: 5000 }, (_, i) => ({
+      id: `r-${String(i).padStart(5, "0")}`, dono: A as string, status: "concluida", custo_velas: 2,
+      criada_em: new Date(agora - 3_600_000 - i).toISOString(),
+    }));
+    const { db } = bancoFalso({ bancada_rodada: linhas });
+    expect(await consumoDaJanela(A, db, agora)).toEqual({ rodadas: 5000, velas: 10000 });
+  });
+
+  const NOVA = {
+    estrategiaId: null, origem: "propria" as const, capitalUsd: 100, simbolos: ["BTC"], intervalo: "1d",
+    janelaDe: 1, janelaAte: 2, praca: "spot_gate" as const, papel: "taker" as const, params: {}, custoVelas: 365,
+    custoUnidades: 365,
+  };
+
+  it("reserva aceita devolve o id e repassa os limites ao banco", async () => {
+    const { db } = bancoFalso();
+    chamadasRpc.length = 0;
+    respostaRpc = { data: { ok: true, id: "uuid-1", rodadas: 7, unidades: 900 }, error: null };
+    const r = await reservarRodada(A, "evm", db, NOVA, { rodadas: 100, unidades: 50_000 });
+    expect(r).toEqual({ ok: true, id: "uuid-1", rodadas: 7, unidades: 900 });
+    expect(chamadasRpc[0].nome).toBe("bancada_reservar_rodada");
+    expect(chamadasRpc[0].args).toMatchObject({
+      p_dono: A, p_chain: "evm", p_limite_rodadas: 100, p_orcamento_unidades: 50_000,
+      p_custo_velas: 365, p_custo_unidades: 365, p_janela_ms: 86_400_000,
+    });
+  });
+
+  it("recusa do banco vira recusa com o número que o BANCO contou", async () => {
+    const { db } = bancoFalso();
+    respostaRpc = { data: { ok: false, motivo: "cota_esgotada", rodadas: 5000, unidades: 1 }, error: null };
+    expect(await reservarRodada(A, "evm", db, NOVA, { rodadas: 5000, unidades: 9 }))
+      .toEqual({ ok: false, motivo: "cota_esgotada", rodadas: 5000, unidades: 1 });
+    respostaRpc = { data: { ok: false, motivo: "orcamento_esgotado", rodadas: 3, unidades: 999 }, error: null };
+    expect(await reservarRodada(A, "evm", db, NOVA, { rodadas: 5000, unidades: 9 }))
+      .toMatchObject({ ok: false, motivo: "orcamento_esgotado" });
+  });
+
+  it("⚠️ erro, resposta vazia ou fora do formato = DESCONHECIDO, nunca cota livre", async () => {
+    const { db } = bancoFalso();
+    for (const resposta of [
+      { data: null, error: { message: "function bancada_reservar_rodada does not exist" } },
+      { data: null, error: null },
+      { data: { ok: true, rodadas: 1, unidades: 1 }, error: null },              // ok sem id
+      { data: { ok: true, id: "x" }, error: null },                               // sem contagem
+      { data: { ok: false, motivo: "outra_coisa", rodadas: 1, unidades: 1 }, error: null },
+      { data: "ok", error: null },
+    ]) {
+      respostaRpc = resposta;
+      const r = await reservarRodada(A, "evm", db, NOVA, { rodadas: 10, unidades: 10 });
+      expect(r.ok, JSON.stringify(resposta)).toBe(false);
+      expect(r).toMatchObject({ motivo: "desconhecido" });
+    }
   });
 });

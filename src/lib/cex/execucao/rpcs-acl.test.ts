@@ -88,6 +88,9 @@ const CATALOGO: Record<string, string> = {
   early_access_recusar_email:          "0069_early_access_email_optin.sql",
   early_access_purgar_nao_verificados: "0069_early_access_email_optin.sql",
   early_access_registrar_webhook:      "0069_early_access_email_optin.sql",
+  // CE-04 (cost engineering round): a reserva atômica da cota da bancada nasce
+  // fechada na 0073 (REVOKE de public/anon/authenticated + GRANT só ao service_role).
+  bancada_reservar_rodada: "0073_bancada_reserva_atomica.sql",
 };
 
 const ARQUIVOS = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();

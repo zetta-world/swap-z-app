@@ -16,10 +16,12 @@ import { rateLimitDurable } from "@/lib/rate-limit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { donoDaSessao } from "@/lib/bancada/dono";
 import {
-  abrirRodada, fecharRodada, gravarResultado, consumoDaJanela, gravarOperacoes,
+  abrirRodada, fecharRodada, gravarResultado, gravarOperacoes, reservarRodada,
 } from "@/lib/bancada/store";
 import { lerEstrategia, oPortaoDoPedagio, taxaDaBancadaPct } from "@/lib/bancada/vocabulario";
-import { decidir, type PedidoDeRodada } from "@/lib/bancada/cotas";
+import {
+  validarPedido, orcamentoDiarioDeUnidades, porqueDaReservaRecusada, type PedidoDeRodada,
+} from "@/lib/bancada/cotas";
 import { rodar } from "@/lib/bancada/motor";
 import { resumir, julgar } from "@/lib/bancada/veredito";
 import { velasDoIntervalo } from "@/lib/mercado/store";
@@ -192,16 +194,25 @@ export async function POST(req: NextRequest) {
   }
 
   // ── 3. A cota ─────────────────────────────────────────────────────────
+  /**
+   * ⚠️⚠️ DUAS ETAPAS, E SÓ A SEGUNDA CONTA (CE-04/CE-05).
+   *
+   *   · `validarPedido` — o que NÃO depende de consumo (formato, capital,
+   *     símbolos, janela, trabalho por rodada). Recusa aqui não toca o banco.
+   *   · `reservarRodada` — conta a janela de 24h NO BANCO, confere rodadas E
+   *     orçamento de unidades, e abre a rodada na MESMA transação, serializada
+   *     por dono. Antes, a rota lia o consumo (cortado em 1.000 linhas pelo
+   *     PostgREST), decidia em memória e só depois inseria — o Pilot ficava sem
+   *     teto e requisições simultâneas passavam juntas.
+   */
   const { tier } = await getTierForWallet(session.sub, session.chain);
-  const consumo = await consumoDaJanela(dono, db);
-  const d = decidir(tier, pedido, consumo);
+  const d = validarPedido(tier, pedido);
   if (!d.ok) {
-    return json({ ok: false, error: d.motivo, porque: d.porque, tier, cota: d.cota, upgradeUrl: "/pricing" },
-      d.motivo === "consumo_desconhecido" ? 503 : 429);
+    return json({ ok: false, error: d.motivo, porque: d.porque, tier, cota: d.cota, upgradeUrl: "/pricing" }, 429);
   }
 
-  // ── 4. A rodada nasce ANTES de haver resultado ────────────────────────
-  const aberta = await abrirRodada(dono, chain, db, {
+  // ── 4. A rodada nasce ANTES de haver resultado — reservada atomicamente ──
+  const reserva = await reservarRodada(dono, chain, db, {
     estrategiaId: typeof o.estrategiaId === "string" ? o.estrategiaId : null,
     /**
      * ⚠️ `casa` QUANDO É MESA — o registro tem de dizer o que foi rodado.
@@ -219,9 +230,30 @@ export async function POST(req: NextRequest) {
     // O `mesa` entra nos params congelados: sem ele, ninguém sabe QUAL mesa foi.
     params: paramsCongelados,
     custoVelas: d.custoVelas,
-  });
-  if (!aberta.ok) return json({ ok: false, error: "nao_consegui_abrir", porque: aberta.porque }, 500);
-  const rodadaId = aberta.valor;
+    custoUnidades: d.unidades,
+  }, { rodadas: d.cota.backtestsPorDia, unidades: orcamentoDiarioDeUnidades(d.cota) });
+
+  if (!reserva.ok) {
+    /**
+     * ⚠️ AQUI A BANCADA FALHA FECHADO (ver `cotas.ts`): sem conseguir contar,
+     * não roda — e diz isso, em vez de um "cota esgotada" que mentiria.
+     */
+    if (reserva.motivo === "desconhecido") {
+      return json({
+        ok: false, error: "consumo_desconhecido",
+        porque: "não consegui ler quantos testes você já rodou hoje, então não vou rodar mais um "
+          + "às cegas. Sem essa leitura o resultado sairia com buracos de dado. Tente de novo em instantes.",
+        tier, cota: d.cota, upgradeUrl: "/pricing",
+      }, 503);
+    }
+    return json({
+      ok: false, error: reserva.motivo,
+      porque: porqueDaReservaRecusada(reserva.motivo, d.cota, reserva.rodadas),
+      tier, cota: d.cota, upgradeUrl: "/pricing",
+    }, 429);
+  }
+  const rodadaId = reserva.id;
+  const restamHoje = d.cota.backtestsPorDia - reserva.rodadas;
 
   // ── 5. As velas e o motor ─────────────────────────────────────────────
   const operacoes: Operacao[] = [];
@@ -399,7 +431,7 @@ export async function POST(req: NextRequest) {
   return json({
     ok: true, rodadaId, tier,
     quando: new Date().toISOString(),
-    restamHoje: d.restamHoje - 1,
+    restamHoje,
     /**
      * ⚠️⚠️ A RESPOSTA DIZ QUEM RODOU — e pela MESMA função que o histórico usa
      * ao reler o banco (`identidadeDaRodada`). Duas montagens de rótulo

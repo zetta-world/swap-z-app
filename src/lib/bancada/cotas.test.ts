@@ -195,3 +195,85 @@ describe("⚠️⚠️ o modo mesa lê QUATRO prazos, e a cota tem de cobrar pel
     if (!d.ok) expect(d.motivo).toBe("trabalho_demais");
   });
 });
+
+describe("⚠️⚠️ CE-05 — orçamento sensível a computação", () => {
+  // Imports locais para não mexer no cabeçalho do arquivo existente.
+  const cotas = () => import("@/lib/bancada/cotas");
+  const tipos = () => import("@/lib/tier/types");
+  const DIA = 86_400_000;
+  const fim = 1_790_000_000_000;
+
+  it("a fórmula, escrita: X rodadas × ¼ do teto por rodada — por plano", async () => {
+    const { orcamentoDiarioDeUnidades, tetoDeVelasPorRodada } = await cotas();
+    const { BANCADA_COTAS } = await tipos();
+    for (const t of ["free", "pro", "trader", "pilot"] as const) {
+      const c = BANCADA_COTAS[t];
+      expect(orcamentoDiarioDeUnidades(c)).toBe(Math.floor(c.backtestsPorDia * tetoDeVelasPorRodada(c) / 4));
+    }
+    // Os números que o relatório publica.
+    expect(orcamentoDiarioDeUnidades(BANCADA_COTAS.free)).toBe(65_700);
+    expect(orcamentoDiarioDeUnidades(BANCADA_COTAS.pro)).toBe(4_380_000);
+    expect(orcamentoDiarioDeUnidades(BANCADA_COTAS.trader)).toBe(21_900_000);
+    expect(orcamentoDiarioDeUnidades(BANCADA_COTAS.pilot)).toBe(219_000_000);
+  });
+
+  it("uso comum NUNCA esbarra no orçamento: X rodadas de 3 símbolos × 1 ano em diárias cabem com sobra", async () => {
+    const { validarPedido, orcamentoDiarioDeUnidades } = await cotas();
+    const { BANCADA_COTAS } = await tipos();
+    for (const t of ["free", "pro", "trader", "pilot"] as const) {
+      const v = validarPedido(t, { simbolos: ["BTC", "ETH", "SOL"], intervalo: "1d", janelaDe: fim - 365 * DIA, janelaAte: fim, capitalUsd: 100 });
+      expect(v.ok).toBe(true);
+      if (!v.ok) continue;
+      expect(v.unidades * BANCADA_COTAS[t].backtestsPorDia).toBeLessThan(orcamentoDiarioDeUnidades(BANCADA_COTAS[t]));
+    }
+  });
+
+  it("rodadas no TETO por rodada: cabem X/4 por dia (e X/8 no modo mesa) — é o freio de abuso", async () => {
+    const { validarPedido, orcamentoDiarioDeUnidades, tetoDeVelasPorRodada } = await cotas();
+    const { BANCADA_COTAS } = await tipos();
+    const c = BANCADA_COTAS.pilot;
+    const teto = tetoDeVelasPorRodada(c);
+    // 10 símbolos × 730 dias em 1h = exatamente o teto.
+    const v = validarPedido("pilot", {
+      simbolos: ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "B1"], intervalo: "1h",
+      janelaDe: fim - 730 * DIA, janelaAte: fim, capitalUsd: 100,
+    });
+    expect(v.ok).toBe(true);
+    if (!v.ok) return;
+    expect(v.custoVelas).toBe(teto);
+    expect(Math.floor(orcamentoDiarioDeUnidades(c) / v.unidades)).toBe(c.backtestsPorDia / 4);
+  });
+
+  it("modo mesa pesa 2: lê os três prazos E roda o seletor da casa em cada barra", async () => {
+    const { validarPedido, PESO_DO_MODO_MESA } = await cotas();
+    const base = { simbolos: ["BTC"], intervalo: "1h", janelaDe: fim - 30 * DIA, janelaAte: fim, capitalUsd: 100 };
+    const propria = validarPedido("pro", base);
+    const mesa = validarPedido("pro", { ...base, mesa: true });
+    expect(propria.ok && mesa.ok).toBe(true);
+    if (!propria.ok || !mesa.ok) return;
+    expect(mesa.unidades).toBe(mesa.custoVelas * PESO_DO_MODO_MESA);
+    expect(propria.unidades).toBe(propria.custoVelas);
+  });
+
+  it("validarPedido recusa o mesmo que decidir recusava (exceto a contagem, que é do banco)", async () => {
+    const { validarPedido, decidir } = await cotas();
+    const consumoZero = { rodadas: 0, velas: 0 };
+    const casos = [
+      { simbolos: [], intervalo: "1d", janelaDe: fim - DIA, janelaAte: fim, capitalUsd: 100 },
+      { simbolos: ["BTC"], intervalo: "1d", janelaDe: fim - DIA, janelaAte: fim, capitalUsd: 0 },
+      { simbolos: ["BTC"], intervalo: "9x", janelaDe: fim - DIA, janelaAte: fim, capitalUsd: 100 },
+      { simbolos: ["BTC"], intervalo: "1d", janelaDe: fim - DIA, janelaAte: fim, capitalUsd: 1e12 },
+      { simbolos: ["A", "B", "C", "D"], intervalo: "1d", janelaDe: fim - DIA, janelaAte: fim, capitalUsd: 100 },
+      { simbolos: ["BTC"], intervalo: "1d", janelaDe: fim - 9999 * DIA, janelaAte: fim, capitalUsd: 100 },
+      { simbolos: ["BTC", "ETH", "SOL"], intervalo: "1m", janelaDe: fim - 300 * DIA, janelaAte: fim, capitalUsd: 100 },
+      { simbolos: ["BTC"], intervalo: "1d", janelaDe: fim - 30 * DIA, janelaAte: fim, capitalUsd: 100 },
+    ];
+    for (const p of casos) {
+      const a = validarPedido("free", p);
+      const b = decidir("free", p, consumoZero);
+      expect(a.ok, JSON.stringify(p)).toBe(b.ok);
+      if (!a.ok && !b.ok) expect(a.motivo).toBe(b.motivo);
+      if (a.ok && b.ok) expect(a.custoVelas).toBe(b.custoVelas);
+    }
+  });
+});

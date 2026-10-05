@@ -22,6 +22,8 @@ export interface PedidoDeRodada {
 
 export type MotivoDaRecusa =
   | "cota_esgotada"
+  /** CE-05: o volume de dados das últimas 24h passou do orçamento do plano. */
+  | "orcamento_esgotado"
   | "capital_acima_do_teto"
   | "simbolos_demais"
   | "janela_longa_demais"
@@ -93,6 +95,127 @@ export function custoDoPedido(p: PedidoDeRodada): number | null {
 
 const DIA_MS = 86_400_000;
 
+/**
+ * ⚠️⚠️ O ORÇAMENTO SENSÍVEL A COMPUTAÇÃO (CE-05) — "até X backtests/24h" sem
+ * fingir que todo backtest custa igual.
+ *
+ * UNIDADE = UMA VELA LIDA. Depois do CE-01/CE-02 a CPU do motor é linear e o
+ * que custa numa rodada é a LEITURA (banco/fonte, paginada de 1.000 em 1.000) —
+ * e é exatamente o que `custoDoPedido` já conta (o modo mesa conta os três
+ * prazos que lê). O modo mesa ainda roda o seletor da casa em cada barra de 1h:
+ * medido no CE-03, ~29 µs de CPU por barra, da mesma ordem do custo de ler a
+ * própria vela. Por isso ele pesa 2 (leitura + CPU), não 1.
+ *
+ *     unidades(rodada) = custoVelas × (mesa ? 2 : 1)
+ *
+ * ORÇAMENTO DIÁRIO = backtestsPorDia × ¼ do teto de uma rodada.
+ *
+ *     orcamento(tier) = backtestsPorDia × tetoDeVelasPorRodada(cota) / 4
+ *
+ * Leitura em português: o cliente roda as X rodadas do plano enquanto a rodada
+ * MÉDIA usar até um quarto do teto por rodada (o teto continua o mesmo). Uso
+ * comum fica muito abaixo disso — 3 símbolos × 1 ano em diárias = 1.095 velas,
+ * 0,6% do teto do Pro. Quem só roda rodadas no teto máximo faz X/4 delas por
+ * dia (X/8 no modo mesa). É isso que impede 5.000 rodadas de 175 mil velas em
+ * 24h — 876 milhões de leituras — sem mexer em quem usa o produto normalmente.
+ *
+ * ⚠️ RISCO COMERCIAL DECLARADO, não escondido: o texto "até X backtests/24h"
+ * continua verdadeiro ("até"), mas para rodadas pesadas X deixa de ser
+ * alcançável. Mudar a redação da oferta é decisão do dono (relatório, CE-05).
+ * Nada aqui muda preço, plano ou o número X.
+ */
+export const PESO_DO_MODO_MESA = 2;
+export const FRACAO_DO_TETO_NO_ORCAMENTO = 0.25;
+
+export function unidadesDoPedido(p: PedidoDeRodada, custoVelas: number): number {
+  return Math.max(0, Math.ceil(custoVelas * (p.mesa ? PESO_DO_MODO_MESA : 1)));
+}
+
+export function orcamentoDiarioDeUnidades(cota: CotaDaBancada): number {
+  return Math.floor(cota.backtestsPorDia * tetoDeVelasPorRodada(cota) * FRACAO_DO_TETO_NO_ORCAMENTO);
+}
+
+export type ValidacaoDoPedido =
+  | { ok: true; custoVelas: number; unidades: number; cota: CotaDaBancada }
+  | { ok: false; motivo: MotivoDaRecusa; porque: string; cota: CotaDaBancada };
+
+/**
+ * As recusas que NÃO dependem do consumo — formato, capital, símbolos, janela,
+ * trabalho por rodada. A contagem da janela é do banco (`reservarRodada`,
+ * migration 0073): contar aqui, com o que o app leu, é o que deixava o Pilot
+ * sem teto (max_rows) e deixava requisições simultâneas passarem juntas.
+ */
+export function validarPedido(tier: Tier, pedido: PedidoDeRodada): ValidacaoDoPedido {
+  const cota = BANCADA_COTAS[tier];
+
+  if (!Array.isArray(pedido.simbolos) || pedido.simbolos.length === 0) {
+    return { ok: false, motivo: "pedido_incoerente", porque: "escolha pelo menos um símbolo", cota };
+  }
+  if (!Number.isFinite(pedido.capitalUsd) || pedido.capitalUsd <= 0) {
+    return { ok: false, motivo: "pedido_incoerente", porque: "o capital simulado precisa ser positivo", cota };
+  }
+
+  const custoVelas = custoDoPedido(pedido);
+  if (custoVelas == null) {
+    return { ok: false, motivo: "pedido_incoerente", porque: `intervalo ou janela inválidos: ${pedido.intervalo}`, cota };
+  }
+
+  if (pedido.capitalUsd > cota.capitalMaxUsd) {
+    return {
+      ok: false, motivo: "capital_acima_do_teto",
+      porque: `o capital simulado do seu plano vai até $${cota.capitalMaxUsd.toLocaleString("pt-BR")}.`,
+      cota,
+    };
+  }
+
+  if (pedido.simbolos.length > cota.simbolosPorTeste) {
+    return {
+      ok: false, motivo: "simbolos_demais",
+      porque: `seu plano testa até ${cota.simbolosPorTeste} símbolo(s) por rodada.`,
+      cota,
+    };
+  }
+
+  const dias = (pedido.janelaAte - pedido.janelaDe) / DIA_MS;
+  if (dias > cota.janelaMaxDias) {
+    return {
+      ok: false, motivo: "janela_longa_demais",
+      porque: `seu plano olha até ${cota.janelaMaxDias} dias de histórico — você pediu ${Math.round(dias)}.`,
+      cota,
+    };
+  }
+
+  const teto = tetoDeVelasPorRodada(cota);
+  if (custoVelas > teto) {
+    return {
+      ok: false, motivo: "trabalho_demais",
+      porque: `${pedido.simbolos.length} símbolo(s) em velas de ${pedido.intervalo} sobre essa janela dão `
+        + `${custoVelas.toLocaleString("pt-BR")} velas, e o teto por rodada é ${teto.toLocaleString("pt-BR")}. `
+        + "Use um intervalo maior (1h, 4h, 1d) ou uma janela mais curta — a leitura fica igual de boa e sai na hora.",
+      cota,
+    };
+  }
+
+  return { ok: true, custoVelas, unidades: unidadesDoPedido(pedido, custoVelas), cota };
+}
+
+/** As frases de recusa da RESERVA (banco), com o número que o banco contou. */
+export function porqueDaReservaRecusada(
+  motivo: "cota_esgotada" | "orcamento_esgotado", cota: CotaDaBancada, rodadas: number,
+): string {
+  if (motivo === "cota_esgotada") {
+    return `você já rodou ${rodadas} testes nas últimas 24 horas, que é o limite do seu plano. `
+      + "A cota é uma janela móvel: ela reabre aos poucos, conforme os testes antigos completam 24h.";
+  }
+  return `os testes das últimas 24 horas já leram o volume de dados do seu plano `
+    + `(${orcamentoDiarioDeUnidades(cota).toLocaleString("pt-BR")} unidades). Rodadas menores — intervalo maior `
+    + "ou janela mais curta — continuam cabendo; a janela é móvel e reabre conforme os testes antigos completam 24h.";
+}
+
+/**
+ * ⚠️ MANTIDA para as telas e os testes que conferem a régua em memória. A ROTA
+ * não decide mais por aqui: ela usa `validarPedido` e a reserva atômica.
+ */
 export function decidir(
   tier: Tier,
   pedido: PedidoDeRodada,
