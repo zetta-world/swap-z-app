@@ -189,8 +189,17 @@ export async function POST(req: NextRequest) {
       simbolos, intervalo, janelaDe, janelaAte,
       praca: estrategia.praca, papel: estrategia.papel, params: { ...estrategia }, custoVelas: 0,
     });
-    if (r.ok) await fecharRodada(dono, db, r.valor, "recusada", pedagio.porque);
-    return json({ ok: false, error: "pedagio", porque: pedagio.porque, rodadaId: r.ok ? r.valor : null }, 422);
+    /**
+     * ⚠️ RM-04: o fechamento é LIDO. Uma recusada que não fecha fica `rodando`
+     * — e `rodando` CONTA na cota de 24h: o cliente pagaria cota pela
+     * mensagem que o protegeu. A resposta continua 422 (a recusa é verdadeira),
+     * mas diz que o registro não persistiu.
+     */
+    const f = r.ok ? await fecharRodada(dono, db, r.valor, "recusada", pedagio.porque) : null;
+    return json({
+      ok: false, error: "pedagio", porque: pedagio.porque, rodadaId: r.ok ? r.valor : null,
+      registrada: r.ok && f?.ok === true,
+    }, 422);
   }
 
   // ── 3. A cota ─────────────────────────────────────────────────────────
@@ -255,213 +264,254 @@ export async function POST(req: NextRequest) {
   const rodadaId = reserva.id;
   const restamHoje = d.cota.backtestsPorDia - reserva.rodadas;
 
-  // ── 5. As velas e o motor ─────────────────────────────────────────────
   /**
-   * ⚠️ CE-14: o custo REAL desta rodada vai para a linha dela (0075) — tempo,
-   * velas da FONTE (requisição paga/limitada por IP) e do cache. É o dado que a
-   * auditoria econômica precisa e que nenhum benchmark local substitui.
+   * ⚠️⚠️ DAQUI ATÉ O FIM, A RODADA ESTÁ RESERVADA COMO `rodando` (RM-04). Uma
+   * exceção no meio (leitura, motor, gravação) deixava a linha presa para
+   * sempre — contando na cota de 24h e sem desfecho no histórico. Agora ela é
+   * fechada como `falhou` com o motivo, e a resposta diz se isso persistiu.
    */
-  const t0 = performance.now();
-  let velasDaFonte = 0;
-  let velasDoCache = 0;
-  const contar = (l: { daFonte: number; doCache: number }) => { velasDaFonte += l.daFonte; velasDoCache += l.doCache; };
-  const operacoes: Operacao[] = [];
-  const problemas: string[] = [];
-  const retornosDeSegurar: number[] = [];
+  try {
+    // ── 5. As velas e o motor ─────────────────────────────────────────────
+    /**
+     * ⚠️ CE-14: o custo REAL desta rodada vai para a linha dela (0075) — tempo,
+     * velas da FONTE (requisição paga/limitada por IP) e do cache. É o dado que a
+     * auditoria econômica precisa e que nenhum benchmark local substitui.
+     */
+    const t0 = performance.now();
+    let velasDaFonte = 0;
+    let velasDoCache = 0;
+    const contar = (l: { daFonte: number; doCache: number }) => { velasDaFonte += l.daFonte; velasDoCache += l.doCache; };
+    const operacoes: Operacao[] = [];
+    const problemas: string[] = [];
+    const retornosDeSegurar: number[] = [];
 
-  let cortadaPeloTeto = false;
-  for (const simbolo of simbolos) {
-    if (mesa) {
-      /**
-       * ⚠️⚠️ O SELETOR DA CASA PRECISA DE QUATRO PRAZOS. `computeIndicators` lê
-       * 1h, 4h, 1d e 1w — o regime e o alinhamento saem da comparação entre
-       * eles. Buscar só 1h daria um regime sempre "TRANSITIONING", e a mesa
-       * ficaria parada por falta de dado em vez de por falta de setup: uma mesa
-       * quieta e uma mesa cega têm exatamente a mesma aparência.
-       *
-       * ⚠️ São quatro leituras por símbolo, e é por isso que a `mercado_vela`
-       * existe: na segunda rodada do mesmo par elas não custam requisição.
-       */
-      const [h1, h4, d1] = await Promise.all([
-        velasFechadasDoIntervalo(db, simbolo, "1h", janelaDe, janelaAte),
-        velasFechadasDoIntervalo(db, simbolo, "4h", janelaDe, janelaAte),
-        velasFechadasDoIntervalo(db, simbolo, "1d", janelaDe, janelaAte),
-      ]);
-      // ⚠️ A SEMANAL É AGREGADA DAS DIÁRIAS, não substituída por elas. O
-      // `DURACAO_MS` não tem "1w", e passar diárias no lugar faria o `htf1w` do
-      // seletor ler outra coisa do que lê ao vivo — em silêncio.
-      const w1 = agregar(d1.velas, 7);
-      for (const l of [h1, h4, d1]) contar(l);
-      for (const [nome, l] of [["1h", h1], ["4h", h4], ["1d", d1]] as const) {
-        if (l.porqueIncompleta) problemas.push(`${simbolo} ${nome}: ${l.porqueIncompleta}`);
+    let cortadaPeloTeto = false;
+    for (const simbolo of simbolos) {
+      if (mesa) {
+        /**
+         * ⚠️⚠️ O SELETOR DA CASA PRECISA DE QUATRO PRAZOS. `computeIndicators` lê
+         * 1h, 4h, 1d e 1w — o regime e o alinhamento saem da comparação entre
+         * eles. Buscar só 1h daria um regime sempre "TRANSITIONING", e a mesa
+         * ficaria parada por falta de dado em vez de por falta de setup: uma mesa
+         * quieta e uma mesa cega têm exatamente a mesma aparência.
+         *
+         * ⚠️ São quatro leituras por símbolo, e é por isso que a `mercado_vela`
+         * existe: na segunda rodada do mesmo par elas não custam requisição.
+         */
+        const [h1, h4, d1] = await Promise.all([
+          velasFechadasDoIntervalo(db, simbolo, "1h", janelaDe, janelaAte),
+          velasFechadasDoIntervalo(db, simbolo, "4h", janelaDe, janelaAte),
+          velasFechadasDoIntervalo(db, simbolo, "1d", janelaDe, janelaAte),
+        ]);
+        // ⚠️ A SEMANAL É AGREGADA DAS DIÁRIAS, não substituída por elas. O
+        // `DURACAO_MS` não tem "1w", e passar diárias no lugar faria o `htf1w` do
+        // seletor ler outra coisa do que lê ao vivo — em silêncio.
+        const w1 = agregar(d1.velas, 7);
+        for (const l of [h1, h4, d1]) contar(l);
+        for (const [nome, l] of [["1h", h1], ["4h", h4], ["1d", d1]] as const) {
+          if (l.porqueIncompleta) problemas.push(`${simbolo} ${nome}: ${l.porqueIncompleta}`);
+        }
+        if (h1.velas.length < 2) continue;
+
+        /**
+         * ⚠️⚠️ A TAXA VEM DA TABELA DA CASA, NUNCA DE UM TERNÁRIO AQUI (12/09).
+         *
+         * Esta linha tinha a PRÓPRIA tabela, e ela colapsava a praça em "dex ou
+         * não-dex" antes de olhar o papel. O 0,015 é a taxa de maker de FUTUROS e
+         * estava sendo aplicada a qualquer maker não-DEX:
+         *
+         *     spot_gate + maker    → cobrava 0,03% ida-e-volta · real 0,40%  (13× barato)
+         *     futuros_gate + taker → cobrava 0,40% · real 0,10%              (4× caro)
+         *
+         * E é o número com que o investidor decide contratar o agente: uma mesa
+         * que a taxa real aposenta aparecia lucrativa. É a mesma cicatriz que
+         * aposentou o Maker de Faixa por engano — taxa única aplicada a todo
+         * mundo —, desta vez virada para o cliente pagante.
+         *
+         * ⚠️ `taxaDaBancadaPct` é a MESMA função que `resumir()` usa para montar
+         * o `taxaPct` desta rodada. Duas tabelas para o mesmo pedágio divergem em
+         * silêncio, e divergiram.
+         *
+         * ⚠️ E a praça segue vindo do CLIENTE de propósito — ver a nota lá em
+         * cima: *"a mesma regra paga na DEX como na CEX?"* é a pergunta que a
+         * mesa existe para responder. Trocar por `custoIdaEVoltaDaMesa(venue)`
+         * consertaria a taxa e mataria o recurso.
+         */
+        const custo = 2 * taxaDaBancadaPct(estrategia.praca, estrategia.papel);
+        const r = rodarMesa({ h1: h1.velas, h4: h4.velas, d1: d1.velas, w1 }, simbolo, custo);
+        if (r.cortadaPeloTeto) cortadaPeloTeto = true;
+        operacoes.push(...r.operacoes);
+
+        const p0 = h1.velas[0].close;
+        const pN = h1.velas[h1.velas.length - 1].close;
+        if (p0 > 0) retornosDeSegurar.push(((pN - p0) / p0) * 100);
+        continue;
       }
-      if (h1.velas.length < 2) continue;
+
+      const leitura = await velasFechadasDoIntervalo(db, simbolo, intervalo, janelaDe, janelaAte);
+      contar(leitura);
+      if (leitura.porqueIncompleta) problemas.push(`${simbolo}: ${leitura.porqueIncompleta}`);
+      if (leitura.velas.length < 2) continue;
+
+      // ⚠️ O símbolo viaja na operação: sem ele a tela não sabe de qual série
+      // veio a entrada quando o cliente roda vários pares.
+      operacoes.push(...rodar(leitura.velas, estrategia).operacoes.map((op) => ({ ...op, simbolo })));
 
       /**
-       * ⚠️⚠️ A TAXA VEM DA TABELA DA CASA, NUNCA DE UM TERNÁRIO AQUI (12/09).
+       * ⚠️ O COMPETIDOR É "SEGURAR", medido na MESMA janela e SEM custo.
        *
-       * Esta linha tinha a PRÓPRIA tabela, e ela colapsava a praça em "dex ou
-       * não-dex" antes de olhar o papel. O 0,015 é a taxa de maker de FUTUROS e
-       * estava sendo aplicada a qualquer maker não-DEX:
-       *
-       *     spot_gate + maker    → cobrava 0,03% ida-e-volta · real 0,40%  (13× barato)
-       *     futuros_gate + taker → cobrava 0,40% · real 0,10%              (4× caro)
-       *
-       * E é o número com que o investidor decide contratar o agente: uma mesa
-       * que a taxa real aposenta aparecia lucrativa. É a mesma cicatriz que
-       * aposentou o Maker de Faixa por engano — taxa única aplicada a todo
-       * mundo —, desta vez virada para o cliente pagante.
-       *
-       * ⚠️ `taxaDaBancadaPct` é a MESMA função que `resumir()` usa para montar
-       * o `taxaPct` desta rodada. Duas tabelas para o mesmo pedágio divergem em
-       * silêncio, e divergiram.
-       *
-       * ⚠️ E a praça segue vindo do CLIENTE de propósito — ver a nota lá em
-       * cima: *"a mesma regra paga na DEX como na CEX?"* é a pergunta que a
-       * mesa existe para responder. Trocar por `custoIdaEVoltaDaMesa(venue)`
-       * consertaria a taxa e mataria o recurso.
+       * Sem custo de propósito: comprar e não mexer paga uma ida e volta só, e
+       * cobrar dele o mesmo pedágio da estratégia que operou quarenta vezes
+       * inventaria vantagem para o nosso lado. O competidor tem de ser difícil de
+       * bater — senão o veredito vira propaganda.
        */
-      const custo = 2 * taxaDaBancadaPct(estrategia.praca, estrategia.papel);
-      const r = rodarMesa({ h1: h1.velas, h4: h4.velas, d1: d1.velas, w1 }, simbolo, custo);
-      if (r.cortadaPeloTeto) cortadaPeloTeto = true;
-      operacoes.push(...r.operacoes);
-
-      const p0 = h1.velas[0].close;
-      const pN = h1.velas[h1.velas.length - 1].close;
+      const p0 = leitura.velas[0].close;
+      const pN = leitura.velas[leitura.velas.length - 1].close;
       if (p0 > 0) retornosDeSegurar.push(((pN - p0) / p0) * 100);
-      continue;
     }
 
-    const leitura = await velasFechadasDoIntervalo(db, simbolo, intervalo, janelaDe, janelaAte);
-    contar(leitura);
-    if (leitura.porqueIncompleta) problemas.push(`${simbolo}: ${leitura.porqueIncompleta}`);
-    if (leitura.velas.length < 2) continue;
+    const resumo = resumir({ operacoes, velasLidas: d.custoVelas, aindaAbertas: 0 }, estrategia);
+    const competidorPct = retornosDeSegurar.length > 0
+      ? retornosDeSegurar.reduce((s, x) => s + x, 0) / retornosDeSegurar.length
+      // ⚠️ `null`, nunca 0: zero afirmaria que o mercado ficou parado.
+      : null;
 
-    // ⚠️ O símbolo viaja na operação: sem ele a tela não sabe de qual série
-    // veio a entrada quando o cliente roda vários pares.
-    operacoes.push(...rodar(leitura.velas, estrategia).operacoes.map((op) => ({ ...op, simbolo })));
-
+    // ⚠️ No modo mesa, o alvo e o stop mudam a cada operação — não há um
+    // acerto-para-empatar único, e a ressalva diz isso em vez de a tela mostrar
+    // um número inventado.
+    const v = julgar(resumo, estrategia, competidorPct, mesa ? ["bracketVariavel"] : []);
     /**
-     * ⚠️ O COMPETIDOR É "SEGURAR", medido na MESMA janela e SEM custo.
+     * ⚠️⚠️ DUAS LISTAS, E A DIFERENÇA IMPORTA NA TELA.
      *
-     * Sem custo de propósito: comprar e não mexer paga uma ida e volta só, e
-     * cobrar dele o mesmo pedágio da estratégia que operou quarenta vezes
-     * inventaria vantagem para o nosso lado. O competidor tem de ser difícil de
-     * bater — senão o veredito vira propaganda.
+     *   · as CHAVES (`v.naoMedidoChaves`) — ressalvas estruturais, iguais em toda
+     *     rodada, e traduzidas pelo cliente nos quatro idiomas;
+     *   · os PROBLEMAS — o que deu errado NESTA leitura ("BTC 1h: chegaram 66% da
+     *     janela"), que só existe como frase e não tem chave.
+     *
+     * Misturá-las numa lista só obrigaria a tela a adivinhar qual item já foi
+     * traduzido — e a errar, mostrando a mesma ressalva duas vezes, uma em
+     * português. O banco continua guardando a soma das duas em `nao_medido`,
+     * porque quem abre o Postgres quer o texto legível.
      */
-    const p0 = leitura.velas[0].close;
-    const pN = leitura.velas[leitura.velas.length - 1].close;
-    if (p0 > 0) retornosDeSegurar.push(((pN - p0) / p0) * 100);
-  }
+    const problemasDaLeitura = [...problemas];
+    // ⚠️ Teto de barras é DECLARADO, nunca silencioso — regra da casa.
+    if (cortadaPeloTeto) {
+      problemasDaLeitura.push(`a janela foi cortada em ${MAX_BARRAS_AVALIADAS} barras de 1h — o resto do período não foi avaliado`);
+    }
+    const naoMedido = [...v.naoMedido, ...problemasDaLeitura];
 
-  const resumo = resumir({ operacoes, velasLidas: d.custoVelas, aindaAbertas: 0 }, estrategia);
-  const competidorPct = retornosDeSegurar.length > 0
-    ? retornosDeSegurar.reduce((s, x) => s + x, 0) / retornosDeSegurar.length
-    // ⚠️ `null`, nunca 0: zero afirmaria que o mercado ficou parado.
-    : null;
-
-  // ⚠️ No modo mesa, o alvo e o stop mudam a cada operação — não há um
-  // acerto-para-empatar único, e a ressalva diz isso em vez de a tela mostrar
-  // um número inventado.
-  const v = julgar(resumo, estrategia, competidorPct, mesa ? ["bracketVariavel"] : []);
-  /**
-   * ⚠️⚠️ DUAS LISTAS, E A DIFERENÇA IMPORTA NA TELA.
-   *
-   *   · as CHAVES (`v.naoMedidoChaves`) — ressalvas estruturais, iguais em toda
-   *     rodada, e traduzidas pelo cliente nos quatro idiomas;
-   *   · os PROBLEMAS — o que deu errado NESTA leitura ("BTC 1h: chegaram 66% da
-   *     janela"), que só existe como frase e não tem chave.
-   *
-   * Misturá-las numa lista só obrigaria a tela a adivinhar qual item já foi
-   * traduzido — e a errar, mostrando a mesma ressalva duas vezes, uma em
-   * português. O banco continua guardando a soma das duas em `nao_medido`,
-   * porque quem abre o Postgres quer o texto legível.
-   */
-  const problemasDaLeitura = [...problemas];
-  // ⚠️ Teto de barras é DECLARADO, nunca silencioso — regra da casa.
-  if (cortadaPeloTeto) {
-    problemasDaLeitura.push(`a janela foi cortada em ${MAX_BARRAS_AVALIADAS} barras de 1h — o resto do período não foi avaliado`);
-  }
-  const naoMedido = [...v.naoMedido, ...problemasDaLeitura];
-
-  /**
-   * ⚠️⚠️ O RETORNO DESTA ESCRITA É LIDO. Ele não era — e `supabase-js` RESOLVE
-   * com `{ data: null, error }` em vez de lançar, então uma coluna faltando (ou
-   * uma migration não aplicada) apagaria a rodada do histórico sem uma linha de
-   * log, sem erro na tela, e com a resposta parecendo perfeita. O cliente só
-   * descobriria ao recarregar a página e não achar mais o teste dele — que é
-   * exatamente a queixa que o histórico foi feito para resolver.
-   */
-  const gr = await gravarResultado(dono, db, rodadaId, {
-    brutoPct: resumo.brutoPct,
-    taxaPct: resumo.taxaPct,
-    derrapagemPct: resumo.derrapagemPct,
-    liquidoPct: resumo.liquidoCompostoPct,
-    n: resumo.n, acertos: resumo.acertos,
-    equilibrioExigidoPct: v.equilibrioPct,
-    veredito: v.veredito, naoMedido,
     /**
-     * ⚠️⚠️ AS CHAVES E O COMPETIDOR SÃO GRAVADOS (0042) — sem eles o histórico
-     * teria de escolher entre calar a comparação com ficar em caixa (metade do
-     * veredito) e inventá-la, e mostraria a ressalva em português para uma tela
-     * de quatro idiomas.
+     * ⚠️⚠️ O RETORNO DESTA ESCRITA É LIDO. Ele não era — e `supabase-js` RESOLVE
+     * com `{ data: null, error }` em vez de lançar, então uma coluna faltando (ou
+     * uma migration não aplicada) apagaria a rodada do histórico sem uma linha de
+     * log, sem erro na tela, e com a resposta parecendo perfeita. O cliente só
+     * descobriria ao recarregar a página e não achar mais o teste dele — que é
+     * exatamente a queixa que o histórico foi feito para resolver.
      */
-    naoMedidoChaves: v.naoMedidoChaves,
-    competidorPct,
-  });
-  /**
-   * ⚠️⚠️ AS OPERAÇÕES SÃO GRAVADAS — foi o que faltava (06/09). Sem elas o
-   * cliente lê um veredito e não tem como conferir: não vê quando entrou, a que
-   * preço, por que saiu, nem qual playbook abriu.
-   *
-   * ⚠️ Melhor-esforço, mas NÃO em silêncio: se a gravação falhar, o motivo
-   * entra em `nao_medido` em vez de a tela mostrar uma lista vazia como se não
-   * houvesse operação nenhuma.
-   */
-  const g = await gravarOperacoes(dono, db, rodadaId, operacoes.map((op) => ({
-    simbolo: op.simbolo ?? simbolos[0] ?? "?",
-    abriuEm: op.abriuEm, fechouEm: op.fechouEm,
-    entrada: op.entrada, saida: op.saida, desfecho: op.desfecho,
-    brutoPct: op.brutoPct, liquidoPct: op.liquidoPct,
-    playbook: op.playbook ?? null,
-  })));
-  if (!g.ok) {
-    const aviso = `o detalhe das operações não foi gravado: ${g.porque}`;
-    naoMedido.push(aviso);
-    problemasDaLeitura.push(aviso);
-  }
-  // ⚠️ Aqui só cabe avisar na RESPOSTA: a linha que guardaria o aviso é
-  // justamente a que não foi gravada.
-  if (!gr.ok) {
-    problemasDaLeitura.push(`este resultado NÃO entrou no seu histórico: ${gr.porque}`);
-  }
-
-  await fecharRodada(dono, db, rodadaId, gr.ok ? "concluida" : "falhou",
-    gr.ok ? undefined : gr.porque,
-    { duracaoMs: performance.now() - t0, velasDaFonte, velasDoCache });
-
-  return json({
-    ok: true, rodadaId, tier,
-    quando: new Date().toISOString(),
-    restamHoje,
+    const gr = await gravarResultado(dono, db, rodadaId, {
+      brutoPct: resumo.brutoPct,
+      taxaPct: resumo.taxaPct,
+      derrapagemPct: resumo.derrapagemPct,
+      liquidoPct: resumo.liquidoCompostoPct,
+      n: resumo.n, acertos: resumo.acertos,
+      equilibrioExigidoPct: v.equilibrioPct,
+      veredito: v.veredito, naoMedido,
+      /**
+       * ⚠️⚠️ AS CHAVES E O COMPETIDOR SÃO GRAVADOS (0042) — sem eles o histórico
+       * teria de escolher entre calar a comparação com ficar em caixa (metade do
+       * veredito) e inventá-la, e mostraria a ressalva em português para uma tela
+       * de quatro idiomas.
+       */
+      naoMedidoChaves: v.naoMedidoChaves,
+      competidorPct,
+    });
     /**
-     * ⚠️⚠️ A RESPOSTA DIZ QUEM RODOU — e pela MESMA função que o histórico usa
-     * ao reler o banco (`identidadeDaRodada`). Duas montagens de rótulo
-     * divergiriam sem ninguém perceber, e divergiriam justamente onde mais
-     * confunde: duas rodadas parecidas, lado a lado na tela.
+     * ⚠️⚠️ AS OPERAÇÕES SÃO GRAVADAS — foi o que faltava (06/09). Sem elas o
+     * cliente lê um veredito e não tem como conferir: não vê quando entrou, a que
+     * preço, por que saiu, nem qual playbook abriu.
+     *
+     * ⚠️ Melhor-esforço, mas NÃO em silêncio: se a gravação falhar, o motivo
+     * entra em `nao_medido` em vez de a tela mostrar uma lista vazia como se não
+     * houvesse operação nenhuma.
      */
-    identidade: identidadeDaRodada(mesa ? "casa" : "propria", paramsCongelados),
-    contexto: {
-      simbolos,
-      intervalo: mesa ? "1h" : intervalo,
-      janelaDias: janelaEmDias(janelaDe, janelaAte),
-      praca: estrategia.praca, papel: estrategia.papel, capitalUsd,
-    },
-    veredito: { ...v, naoMedido, naoMedidoTexto: problemasDaLeitura },
-    resumo,
-    competidorPct,
-    // ⚠️ Devolvidas na resposta para a tela não precisar de uma segunda volta —
-    // e ordenadas, porque uma lista de entradas fora de ordem não se lê.
-    operacoes: [...operacoes].sort((a, b) => a.abriuEm - b.abriuEm),
-  });
+    const g = await gravarOperacoes(dono, db, rodadaId, operacoes.map((op) => ({
+      simbolo: op.simbolo ?? simbolos[0] ?? "?",
+      abriuEm: op.abriuEm, fechouEm: op.fechouEm,
+      entrada: op.entrada, saida: op.saida, desfecho: op.desfecho,
+      brutoPct: op.brutoPct, liquidoPct: op.liquidoPct,
+      playbook: op.playbook ?? null,
+    })));
+    if (!g.ok) {
+      const aviso = `o detalhe das operações não foi gravado: ${g.porque}`;
+      naoMedido.push(aviso);
+      problemasDaLeitura.push(aviso);
+    }
+    // ⚠️ Aqui só cabe avisar na RESPOSTA: a linha que guardaria o aviso é
+    // justamente a que não foi gravada.
+    if (!gr.ok) {
+      problemasDaLeitura.push(`este resultado NÃO entrou no seu histórico: ${gr.porque}`);
+    }
+
+    /**
+     * ⚠️⚠️ RODADA SÓ É DECLARADA CONCLUÍDA SE O BANCO CONFIRMOU (RM-04).
+     *
+     * O retorno era ignorado: um UPDATE recusado deixava a rodada `rodando`
+     * (contando na cota) e a resposta saía `ok: true`. Agora, se o desfecho
+     * não persistir, a resposta é 503 `rodada_nao_persistida` com o id — o
+     * resultado calculado não é apresentado como registrado. A linha fica
+     * `rodando` (estado recuperável: o resultado, se gravado, está em
+     * `bancada_resultado` com o mesmo id).
+     */
+    const fechamento = await fecharRodada(dono, db, rodadaId, gr.ok ? "concluida" : "falhou",
+      gr.ok ? undefined : gr.porque,
+      { duracaoMs: performance.now() - t0, velasDaFonte, velasDoCache });
+    if (!fechamento.ok) {
+      return json({
+        ok: false, error: "rodada_nao_persistida", rodadaId,
+        porque: "o teste rodou, mas o fechamento dele não foi gravado no seu histórico. Não vou mostrar um "
+          + "resultado como registrado sem que esteja. Tente de novo em instantes.",
+        resultadoGravado: gr.ok,
+      }, 503);
+    }
+    // ⚠️ Schema sem a 0075: a rodada fechou, as métricas de custo não — declarado, não calado.
+    if (!fechamento.valor.metricasGravadas && fechamento.valor.fechou) {
+      problemasDaLeitura.push("as métricas de custo desta rodada não foram gravadas (schema sem a migration 0075)");
+    }
+
+    return json({
+      ok: true, rodadaId, tier,
+      // ⚠️ RM-04: `registrada` = resultado E desfecho persistidos. `false` só quando o resultado
+      // não entrou no histórico (a rodada foi fechada como `falhou`, e o motivo vai em `naoMedidoTexto`).
+      registrada: gr.ok,
+      quando: new Date().toISOString(),
+      restamHoje,
+      /**
+       * ⚠️⚠️ A RESPOSTA DIZ QUEM RODOU — e pela MESMA função que o histórico usa
+       * ao reler o banco (`identidadeDaRodada`). Duas montagens de rótulo
+       * divergiriam sem ninguém perceber, e divergiriam justamente onde mais
+       * confunde: duas rodadas parecidas, lado a lado na tela.
+       */
+      identidade: identidadeDaRodada(mesa ? "casa" : "propria", paramsCongelados),
+      contexto: {
+        simbolos,
+        intervalo: mesa ? "1h" : intervalo,
+        janelaDias: janelaEmDias(janelaDe, janelaAte),
+        praca: estrategia.praca, papel: estrategia.papel, capitalUsd,
+      },
+      veredito: { ...v, naoMedido, naoMedidoTexto: problemasDaLeitura },
+      resumo,
+      competidorPct,
+      // ⚠️ Devolvidas na resposta para a tela não precisar de uma segunda volta —
+      // e ordenadas, porque uma lista de entradas fora de ordem não se lê.
+      operacoes: [...operacoes].sort((a, b) => a.abriuEm - b.abriuEm),
+    });
+  } catch (e) {
+    const motivo = `erro interno durante a rodada: ${e instanceof Error ? e.message.slice(0, 120) : "exceção"}`;
+    const f = await fecharRodada(dono, db, rodadaId, "falhou", motivo);
+    return json({
+      ok: false, error: "erro_interno", rodadaId, registrada: f.ok,
+      porque: "o teste parou no meio por um erro nosso e foi registrado como falho — nenhum resultado parcial "
+        + "é mostrado. Tente de novo em instantes.",
+    }, 500);
+  }
 }

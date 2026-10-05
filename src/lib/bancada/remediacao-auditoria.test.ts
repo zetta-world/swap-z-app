@@ -14,7 +14,7 @@ import { describe, it, expect } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { donoDaSessao, type Dono } from "@/lib/bancada/dono";
 import {
-  fecharPosicao, abrirPosicao, gravarUltimoTique, gravarUltimosTiques, marcarTiqueAdiado,
+  fecharRodada, fecharPosicao, abrirPosicao, gravarUltimoTique, gravarUltimosTiques, marcarTiqueAdiado,
   posicoesAbertasParaOCron, mesasLigadasParaOCron, mesasDasPosicoesParaOCron, arrendarTique, liberarTique,
 } from "@/lib/bancada/store";
 import { tiqueDoPapelAdiante } from "@/lib/bancada/tique";
@@ -64,6 +64,79 @@ const A: Dono = donoDaSessao({ sub: "0xAAAA1111", chain: "evm" })!.dono;
 const ok = (data: unknown): Resposta => ({ data, error: null });
 const erro = (message: string, code?: string): Resposta => ({ data: null, error: { message, code } });
 const METRICAS = { duracaoMs: 1234.4, velasDaFonte: 10, velasDoCache: 90 };
+
+// ── RM-04 ────────────────────────────────────────────────────────────────
+describe("RM-04 · fecharRodada só declara fechada o que o banco confirmou", () => {
+  it("sucesso: uma linha mudou → fechou, com métricas, e o UPDATE exige status 'rodando'", async () => {
+    const { db, chamadas } = roteiro({ update: [ok([{ id: "r1" }])] });
+    const r = await fecharRodada(A, db, "r1", "concluida", undefined, METRICAS);
+    expect(r).toEqual({ ok: true, valor: { fechou: true, metricasGravadas: true, tentativas: 1 } });
+    expect(chamadas[0].filtros).toContainEqual(["eq:status", "rodando"]);
+    expect(chamadas[0].filtros).toContainEqual(["eq:dono", A]);
+    expect(chamadas[0].patch).toMatchObject({ status: "concluida", duracao_ms: 1234, velas_da_fonte: 10, velas_do_cache: 90 });
+  });
+
+  it("⚠️⚠️ `{ error }` persistente → ok:false (antes: ignorado, e a rota dizia ok:true)", async () => {
+    const { db, chamadas } = roteiro({ update: [erro("connection reset"), erro("connection reset")] });
+    const r = await fecharRodada(A, db, "r1", "concluida", undefined, METRICAS);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.porque).toMatch(/fechar rodada: connection reset/);
+    expect(chamadas.filter((c) => c.tipo === "update")).toHaveLength(2);   // 1 tentativa + 1 retry
+  });
+
+  it("erro transitório seguido de sucesso → fecha na segunda tentativa", async () => {
+    const { db } = roteiro({ update: [erro("upstream timeout"), ok([{ id: "r1" }])] });
+    expect(await fecharRodada(A, db, "r1", "concluida", undefined, METRICAS))
+      .toEqual({ ok: true, valor: { fechou: true, metricasGravadas: true, tentativas: 2 } });
+  });
+
+  it("timeout/exceção do cliente (a Promise REJEITA) → tratado, retry, e não vaza exceção", async () => {
+    const { db } = roteiro({ update: ["lanca", ok([{ id: "r1" }])] });
+    expect((await fecharRodada(A, db, "r1", "falhou", "x")).ok).toBe(true);
+    const { db: db2 } = roteiro({ update: ["lanca", "lanca"] });
+    const r = await fecharRodada(A, db2, "r1", "falhou", "x");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.porque).toMatch(/timeout/);
+  });
+
+  it("replay: zero linhas e a rodada JÁ tem este desfecho → sucesso idempotente (fechou:false)", async () => {
+    const { db } = roteiro({ update: [ok([])], select: [ok({ status: "concluida" })] });
+    expect(await fecharRodada(A, db, "r1", "concluida", undefined, METRICAS))
+      .toEqual({ ok: true, valor: { fechou: false, metricasGravadas: false, tentativas: 1 } });
+  });
+
+  it("zero linhas e OUTRO desfecho, ou rodada inexistente/de outro dono → ok:false", async () => {
+    const { db } = roteiro({ update: [ok([])], select: [ok({ status: "falhou" })] });
+    const r1 = await fecharRodada(A, db, "r1", "concluida");
+    expect(r1.ok).toBe(false);
+    const { db: db2 } = roteiro({ update: [ok([])], select: [ok(null)] });
+    const r2 = await fecharRodada(A, db2, "r1", "concluida");
+    expect(r2.ok).toBe(false);
+    if (!r2.ok) expect(r2.porque).toMatch(/não encontrada/);
+  });
+
+  it("⚠️ schema sem a 0075 (PGRST204): fecha SEM as métricas e DIZ que não gravou", async () => {
+    const { db, chamadas } = roteiro({
+      update: [erro("Could not find the 'duracao_ms' column of 'bancada_rodada' in the schema cache", "PGRST204"), ok([{ id: "r1" }])],
+    });
+    const r = await fecharRodada(A, db, "r1", "concluida", undefined, METRICAS);
+    expect(r).toEqual({ ok: true, valor: { fechou: true, metricasGravadas: false, tentativas: 2 } });
+    expect(chamadas[1].patch).not.toHaveProperty("duracao_ms");
+    expect(chamadas[1].patch).toMatchObject({ status: "concluida" });
+  });
+
+  it("coluna ausente + falha transitória + sucesso → ainda fecha (três tentativas no máximo)", async () => {
+    const { db } = roteiro({ update: [erro("column \"duracao_ms\" of relation \"bancada_rodada\" does not exist", "42703"), erro("timeout"), ok([{ id: "r1" }])] });
+    expect(await fecharRodada(A, db, "r1", "concluida", undefined, METRICAS))
+      .toEqual({ ok: true, valor: { fechou: true, metricasGravadas: false, tentativas: 3 } });
+  });
+
+  it("sem métricas pedidas, o patch não leva coluna de métrica nenhuma", async () => {
+    const { db, chamadas } = roteiro({ update: [ok([{ id: "r1" }])] });
+    await fecharRodada(A, db, "r1", "recusada", "pedágio");
+    expect(Object.keys(chamadas[0].patch as object).sort()).toEqual(["porque", "status", "terminada_em"]);
+  });
+});
 
 // ── RM-02: fechar posição é idempotente ─────────────────────────────────
 describe("RM-02 · fecharPosicao só move 'aberta → desfecho'", () => {

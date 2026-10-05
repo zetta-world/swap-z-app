@@ -675,23 +675,93 @@ export interface MetricasDaRodada {
   velasDoCache: number;
 }
 
+/** O desfecho de `fecharRodada`: persistiu, e com ou sem as métricas da 0075. */
+export interface Fechamento {
+  /** `false` quando a linha JÁ estava fechada com este mesmo desfecho (replay). */
+  fechou: boolean;
+  /** `false` quando as métricas não couberam no schema (0075 ausente) — declarado, nunca calado. */
+  metricasGravadas: boolean;
+  tentativas: number;
+}
+
+/** Erro do PostgREST/Postgres que diz "esta coluna não existe" — a 0075 não foi aplicada. */
+function colunaAusente(e: { message?: string; code?: string } | null): boolean {
+  if (!e) return false;
+  return e.code === "PGRST204" || e.code === "42703"
+    || /could not find the '(duracao_ms|velas_da_fonte|velas_do_cache)' column/i.test(e.message ?? "")
+    || /column "?(duracao_ms|velas_da_fonte|velas_do_cache)"? .*does not exist/i.test(e.message ?? "");
+}
+
+/**
+ * ⚠️⚠️ A RODADA SÓ É DECLARADA FECHADA SE O BANCO CONFIRMOU (RM-04).
+ *
+ * A auditoria do round de custo achou a rota chamando esta função e IGNORANDO
+ * o retorno: um UPDATE recusado deixava a rodada `rodando` para sempre — e
+ * contando na cota de 24h — enquanto a resposta dizia `ok: true`. Agora:
+ *
+ *   · o UPDATE só move `rodando → desfecho` (`.eq("status", "rodando")`) e a
+ *     linha devolvida é CONTADA — zero linhas não é sucesso;
+ *   · zero linhas porque a rodada JÁ tem este desfecho (replay, retry da rota)
+ *     = sucesso idempotente (`fechou: false`); outro desfecho = erro;
+ *   · erro transitório (rede, timeout, exceção do cliente) = UMA nova tentativa;
+ *   · coluna de métrica ausente (0075 não aplicada) = fecha SEM métricas e
+ *     devolve `metricasGravadas: false` — a rodada nunca fica presa por causa
+ *     de telemetria (estado SUPPORTED-DEGRADED da matriz de compatibilidade).
+ *
+ * Quem chama TEM de ler o `ok`: a rota responde 503 `rodada_nao_persistida`.
+ */
 export async function fecharRodada(
   dono: Dono, db: SupabaseClient, id: string, status: StatusRodada, porque?: string,
   /** ⚠️ CE-14 (0075): métricas de custo na própria linha. Ausentes = NULL (não medido). */
   metricas?: MetricasDaRodada,
-): Promise<Escrita<true>> {
+): Promise<Escrita<Fechamento>> {
   const m = metricas
     ? {
         duracao_ms: Math.max(0, Math.round(metricas.duracaoMs)),
         velas_da_fonte: Math.max(0, Math.round(metricas.velasDaFonte)),
         velas_do_cache: Math.max(0, Math.round(metricas.velasDoCache)),
       }
-    : {};
-  const { error } = await db.from("bancada_rodada")
-    .update({ status, porque: porque ?? null, terminada_em: new Date().toISOString(), ...m })
-    .eq("dono", dono).eq("id", id);
-  if (error) return falhou(error, "fechar rodada");
-  return { ok: true, valor: true };
+    : null;
+
+  const tentar = async (comMetricas: boolean) => {
+    try {
+      const r = await db.from("bancada_rodada")
+        .update({ status, porque: porque ?? null, terminada_em: new Date().toISOString(), ...(comMetricas && m ? m : {}) })
+        .eq("dono", dono).eq("id", id).eq("status", "rodando")
+        .select("id");
+      return { data: r.data as unknown[] | null, error: r.error as { message?: string; code?: string } | null };
+    } catch (e) {
+      return { data: null, error: { message: e instanceof Error ? e.message : "exceção sem mensagem" } };
+    }
+  };
+
+  let tentativas = 0;
+  let retries = 0;
+  let comMetricas = m != null;
+  let ultimo: { message?: string; code?: string } | null = null;
+  // No máximo: 1 tentativa + 1 sem métricas (0075 ausente) + 1 retry transitório.
+  while (tentativas < 3) {
+    tentativas++;
+    const { data, error } = await tentar(comMetricas);
+    if (!error) {
+      if (Array.isArray(data) && data.length > 0) {
+        return { ok: true, valor: { fechou: true, metricasGravadas: comMetricas, tentativas } };
+      }
+      // Zero linhas: já fechada (replay) ou não é deste dono / não existe.
+      const { data: atual, error: eLeitura } = await db.from("bancada_rodada")
+        .select("status").eq("dono", dono).eq("id", id).maybeSingle();
+      if (eLeitura) return falhou(eLeitura, "fechar rodada (conferência)");
+      const st = (atual as { status?: string } | null)?.status;
+      if (st === status) return { ok: true, valor: { fechou: false, metricasGravadas: false, tentativas } };
+      if (st == null) return { ok: false, porque: "fechar rodada: rodada não encontrada para este dono" };
+      return { ok: false, porque: `fechar rodada: já está como '${st}', não '${status}'` };
+    }
+    ultimo = error;
+    if (comMetricas && colunaAusente(error)) { comMetricas = false; continue; }
+    if (retries < 1) { retries++; continue; }
+    break;
+  }
+  return falhou(ultimo, "fechar rodada");
 }
 
 export interface Rodada {
