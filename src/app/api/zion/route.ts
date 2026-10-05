@@ -431,9 +431,10 @@ async function runZion(args: RunArgs, signal?: AbortSignal) {
          * ⚠️ O QUE A TROCA CUSTA, DECLARADO. Perdemos o cache de prompt: os
          * ~10K tokens de fundação + modo eram cobrados a 0,1× no reuso e agora
          * pagam cheio a cada chamada. Pela tabela de `ai-cost.ts`, Kimi custa
-         * $0,60/MTok de entrada contra $0,30 de um Sonnet EM CACHE — ou seja, a
-         * entrada fica ~2× mais cara. A saída compensa com folga: $2,50 contra
-         * $15/MTok, e com 4.000 tokens de teto a saída domina a conta.
+         * $0,95/MTok de entrada (lista do kimi-k2.6; $0,16 no cache hit) contra
+         * $0,30 de um Sonnet EM CACHE. A saída compensa: $4,00 contra $15/MTok,
+         * e com 4.000 tokens de teto a saída domina a conta. ⚠️ RM-08: esta nota
+         * dizia $0,60/$2,50 — o preço da tabela antiga, abaixo da lista oficial.
          *
          * Não meço isso em produção porque não há o que medir: `zion_analysis`
          * com `source: "user"` está ZERADO no banco — a gaveta do ZION nunca

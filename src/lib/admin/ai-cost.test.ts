@@ -11,7 +11,8 @@ describe("ai-cost — model-aware estimation", () => {
   it("matches models by substring regardless of version suffix", () => {
     expect(priceForModel("claude-sonnet-4-6").input).toBe(3);
     expect(priceForModel("claude-haiku-4-5-20251001").input).toBe(1);
-    expect(priceForModel("kimi-k2.6").input).toBe(0.6);
+    // RM-08: lista oficial do kimi-k2.6 (05/10/2026) — antes 0,6 (abaixo da lista).
+    expect(priceForModel("kimi-k2.6").input).toBe(0.95);
     expect(priceForModel("mistral-large-latest").input).toBe(2);
   });
 
@@ -31,5 +32,15 @@ describe("ai-cost — model-aware estimation", () => {
   it("falls back to Sonnet pricing for unknown/legacy events", () => {
     expect(priceForModel(undefined).input).toBe(3);
     expect(priceForModel("mystery-model").output).toBe(15);
+  });
+
+  it("⚠️ RM-08: provedores não-Anthropic usam o preço de LISTA de leitura/escrita, não os multiplicadores", () => {
+    const k = priceForModel("kimi-k2.6");
+    expect(k).toMatchObject({ input: 0.95, output: 4.0, cacheRead: 0.16, cacheWrite5m: 0.95 });
+    // DeepSeek: pico (conservador), flash e pro separados
+    expect(priceForModel("deepseek-v4-flash")).toMatchObject({ input: 0.3, output: 1.2, cacheRead: 0.006 });
+    expect(priceForModel("deepseek-v4-pro")).toMatchObject({ input: 1.32, output: 3.96, cacheRead: 0.044 });
+    // a Anthropic continua com os multiplicadores dela
+    expect(priceForModel("claude-sonnet-4-6").cacheWrite5m).toBeCloseTo(3.75);
   });
 });

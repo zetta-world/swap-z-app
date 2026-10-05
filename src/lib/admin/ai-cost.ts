@@ -22,6 +22,18 @@ function tier(input: number, output: number): ModelPrice {
   return { input, output, cacheWrite5m: input * 1.25, cacheWrite1h: input * 2, cacheRead: input * 0.1 };
 }
 
+/**
+ * ⚠️ PREÇO DE LISTA PUBLICADO, com leitura e escrita de cache EXPLÍCITAS (RM-08).
+ *
+ * `tier()` aplica os multiplicadores da Anthropic (leitura 0,1×, escrita 1,25×).
+ * Outros provedores NÃO seguem essa regra: o Kimi K2 cobra a leitura a 0,16 sobre
+ * 0,95 (≈0,17×) e não tem preço de escrita separado (a escrita sai a preço de
+ * entrada). Aplicar 0,1× nele subestimava a leitura em 1,7×.
+ */
+function lista(input: number, output: number, cacheRead: number, cacheWrite: number): ModelPrice {
+  return { input, output, cacheWrite5m: cacheWrite, cacheWrite1h: cacheWrite, cacheRead };
+}
+
 // Keyed by a substring of the model id so version suffixes still match.
 const PRICES: Array<[RegExp, ModelPrice]> = [
   // Opus 4.5+ is $5/$25 per MTok (official API pricing). The old tier(15, 75)
@@ -31,8 +43,22 @@ const PRICES: Array<[RegExp, ModelPrice]> = [
   [/haiku/i,           tier(1, 5)],
   // Open/hosted models in the A/B (approximate public rates — the authoritative
   // cost is each provider's own console balance).
-  [/kimi|moonshot/i,   tier(0.6, 2.5)],
-  [/deepseek/i,        tier(0.27, 1.1)],
+  /**
+   * ⚠️ RM-08 (05/10/2026): preço de LISTA da página oficial do Kimi para o
+   * `kimi-k2.6` — entrada (cache miss) 0,95, cache hit 0,16, saída 4,00 por
+   * 1M; a série K2 não publica preço de escrita, então a escrita sai a preço de
+   * entrada. A tabela antiga (0,60/2,50, leitura 0,06) estava abaixo da lista
+   * em ~1,6× — e o modelo de 36 meses partia dela. A página não tem data; a
+   * fonte autoritativa continua sendo a fatura do console.
+   */
+  [/kimi|moonshot/i,   lista(0.95, 4.0, 0.16, 0.95)],
+  /**
+   * ⚠️ RM-08 (05/10/2026): DeepSeek cobra por HORÁRIO (pico = 2× fora de pico).
+   * Aqui vai o preço de PICO (limite superior, conservador). v4-flash e v4-pro
+   * têm preços ~5× diferentes — a mais específica vem primeiro. Sem escrita.
+   */
+  [/deepseek.*flash/i, lista(0.3, 1.2, 0.006, 0.3)],
+  [/deepseek/i,        lista(1.32, 3.96, 0.044, 1.32)],
   // Mistral runs on the FREE tier here (console 27/07: plano Gratuito,
   // pay-as-you-go OFF) — cash cost is $0 and the real constraint is the
   // monthly quota, not dollars. This line stays as the rate that WOULD

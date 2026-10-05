@@ -147,32 +147,54 @@ export async function anthropicStream(
 /** O `usage` de entrada de um endpoint OpenAI-compatível, nas duas grafias conhecidas. */
 export interface UsoOpenAICompat {
   prompt_tokens?: number;
-  /** Padrão OpenAI: os cacheados vêm DENTRO de `prompt_tokens`, detalhados aqui. */
-  prompt_tokens_details?: { cached_tokens?: number };
-  /** Moonshot/Kimi: o mesmo número, no nível de cima do `usage`. */
+  /**
+   * Padrão OpenAI: os cacheados vêm DENTRO de `prompt_tokens`, detalhados aqui.
+   * ⚠️ RM-08: o Kimi (Moonshot) documenta TAMBÉM `cache_write_tokens` aqui —
+   * "tokens written to the cache by this request"; leitura, escrita e o resto
+   * são mutuamente exclusivos e somam `prompt_tokens` (docs oficiais, 05/10/2026).
+   */
+  prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
+  /** Moonshot/Kimi: o mesmo número de leitura, também no nível de cima do `usage`. */
   cached_tokens?: number;
+  /** DeepSeek: acerto e falta de cache, que somam `prompt_tokens` (docs oficiais, 05/10/2026). Sem escrita. */
+  prompt_cache_hit_tokens?: number;
+  prompt_cache_miss_tokens?: number;
 }
 
 /**
- * ⚠️⚠️ ENTRADA NÃO CACHEADA = `prompt_tokens − cacheados` (CE-07).
+ * ⚠️⚠️ ENTRADA NÃO CACHEADA = `prompt_tokens − lidos do cache − escritos no cache` (CE-07, RM-08).
  *
  * `NormalizedUsage.inTokens` é a entrada NÃO cacheada — é assim que
- * `estimateCost` a precifica (`inTokens × input + cachedTokens × cacheRead`).
- * Nos endpoints OpenAI-compatíveis `prompt_tokens` é o TOTAL e já CONTÉM os
- * cacheados. Os dois caminhos daqui gravavam `inTokens = prompt_tokens`: o
- * streaming somava os cacheados de novo a preço de cache (contagem dupla) e o
- * não-streaming zerava `cachedTokens` (todo prompt a preço cheio). Com a
- * fundação estável do ZION em cache, a entrada saía superestimada até ~3× — e é
- * desse número que a conta de custo do produto parte.
+ * `estimateCost` a precifica (`inTokens × input + cachedTokens × cacheRead +
+ * cacheWriteTokens × cacheWrite`). Nos endpoints OpenAI-compatíveis
+ * `prompt_tokens` é o TOTAL e já CONTÉM os cacheados.
  *
- * ⚠️ Os cacheados nunca passam do total (resposta inconsistente não vira entrada
- * negativa), e a ausência dos dois campos continua significando "sem cache".
+ *   · CE-07 (round de custo) tirou a contagem dupla dos cacheados;
+ *   · RM-08 (auditoria): a escrita no cache era gravada como 0 no caminho
+ *     OpenAI-compatível. O Kimi devolve `prompt_tokens_details.cache_write_tokens`;
+ *     ignorá-lo deixava esses tokens dentro de `inTokens` — certo por acaso na
+ *     série K2 (escrita cobrada como entrada), errado em qualquer provedor que
+ *     cobre a escrita à parte (a série K3 do mesmo Kimi cobra por TTL). Agora a
+ *     escrita é separada, e o PREÇO dela é decidido na tabela por modelo
+ *     (`admin/ai-cost.ts`), não aqui.
+ *   · DeepSeek usa outros nomes (`prompt_cache_hit_tokens`); antes eram
+ *     ignorados e todo o prompt saía a preço cheio.
+ *
+ * ⚠️ Nada passa do total (resposta inconsistente não vira entrada negativa), e a
+ * ausência dos campos continua significando "sem cache".
  */
-export function entradaOpenAICompat(u: UsoOpenAICompat | undefined): { inTokens: number; cachedTokens: number } {
-  const total = Math.max(0, Number(u?.prompt_tokens) || 0);
-  const cacheados = Math.max(0, Number(u?.prompt_tokens_details?.cached_tokens ?? u?.cached_tokens) || 0);
-  const cached = Math.min(total, cacheados);
-  return { inTokens: total - cached, cachedTokens: cached };
+export function entradaOpenAICompat(
+  u: UsoOpenAICompat | undefined,
+): { inTokens: number; cachedTokens: number; cacheWriteTokens: number } {
+  const n = (x: unknown) => Math.max(0, Number(x) || 0);
+  const temDeepSeek = u?.prompt_cache_hit_tokens != null || u?.prompt_cache_miss_tokens != null;
+  const total = u?.prompt_tokens != null
+    ? n(u.prompt_tokens)
+    : temDeepSeek ? n(u?.prompt_cache_hit_tokens) + n(u?.prompt_cache_miss_tokens) : 0;
+  const lidos = n(u?.prompt_tokens_details?.cached_tokens ?? u?.cached_tokens ?? u?.prompt_cache_hit_tokens);
+  const cachedTokens = Math.min(total, lidos);
+  const cacheWriteTokens = Math.min(total - cachedTokens, n(u?.prompt_tokens_details?.cache_write_tokens));
+  return { inTokens: total - cachedTokens - cacheWriteTokens, cachedTokens, cacheWriteTokens };
 }
 
 /** Any OpenAI-compatible /chat/completions endpoint. No SDK — plain fetch. */
@@ -230,7 +252,7 @@ export async function openaiCompatChat(
         outTokens: (data.usage?.completion_tokens ?? 0)
           + (data.usage?.completion_tokens_details?.reasoning_tokens ?? 0),
         cachedTokens:     entrada.cachedTokens,
-        cacheWriteTokens: 0,
+        cacheWriteTokens: entrada.cacheWriteTokens,
       },
     };
   } finally {
@@ -352,6 +374,7 @@ export async function openaiCompatStream(
           usage.inTokens = entrada.inTokens;
           usage.outTokens = j.usage.completion_tokens ?? 0;
           usage.cachedTokens = entrada.cachedTokens;
+          usage.cacheWriteTokens = entrada.cacheWriteTokens;
         }
       } catch {
         // ⚠️ Um evento ilegível não derruba o resto: o texto já entregue vale, e
