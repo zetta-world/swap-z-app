@@ -197,8 +197,19 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
      * provisório exibido na intenção e versão da regra de demanda) e um CHECK.
      * Não toca nada financeiro nem fora da venda Founders (teste 19).
      *
-     * ⚠️ NENHUMA DAS DEZ (0063–0072) FOI APLICADA EM PRODUÇÃO. 0070, 0071 e 0072
-     * existem só na lane B (`pre-vercel-forward-*`); o alvo de release (C1 `53cd85a`) vai até a 0069.
+     * E uma DÉCIMA vez, no COST ENGINEERING ROUND (lane B, L-040): a 0073 é
+     * ADITIVA e fora do domínio financeiro — a reserva ATÔMICA da cota da
+     * bancada (`bancada_reservar_rodada`: conta no banco, advisory lock por dono,
+     * relógio do banco; a contagem no app era cortada em 1.000 linhas pelo
+     * PostgREST e o Pilot ficava sem teto) e a coluna `custo_unidades` (default
+     * 0). RPC nasce fechada (testes 20/20b).
+     *
+     * E uma DÉCIMA PRIMEIRA vez, no mesmo round: a 0074 é ADITIVA — uma RPC que
+     * grava o `ultimo_tique` de muitas mesas numa escrita, com a posse conferida
+     * por linha (`id` + `dono`), no formato de sempre. Nasce fechada (teste 21).
+     *
+     * ⚠️ NENHUMA DAS DOZE (0063–0074) FOI APLICADA EM PRODUÇÃO. 0070–0074
+     * existem só na lane B; o alvo de release (C1 `53cd85a`) vai até a 0069.
      */
     const novas = readdirSync("supabase/migrations")
       .filter((f) => f.endsWith(".sql") && f.slice(0, 4) > "0062")
@@ -214,6 +225,8 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
       "0070_acl_tabelas_operacionais.sql",
       "0071_founders_sale.sql",
       "0072_founders_demand_price_rule.sql",
+      "0073_bancada_reserva_atomica.sql",
+      "0074_bancada_ultimos_tiques_em_lote.sql",
     ]);
   });
 });

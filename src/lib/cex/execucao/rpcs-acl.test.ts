@@ -91,6 +91,8 @@ const CATALOGO: Record<string, string> = {
   // CE-04 (cost engineering round): a reserva atômica da cota da bancada nasce
   // fechada na 0073 (REVOKE de public/anon/authenticated + GRANT só ao service_role).
   bancada_reservar_rodada: "0073_bancada_reserva_atomica.sql",
+  // CE-09: o último tique em lote (posse conferida por linha) nasce fechado na 0074.
+  bancada_gravar_ultimos_tiques: "0074_bancada_ultimos_tiques_em_lote.sql",
 };
 
 const ARQUIVOS = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();
