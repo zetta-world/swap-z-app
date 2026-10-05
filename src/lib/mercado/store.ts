@@ -289,3 +289,63 @@ export async function velasDoIntervalo(
     porqueIncompleta: problemas.length > 0 ? problemas.join(" · ") : null,
   };
 }
+
+/**
+ * ⚠️⚠️ SÉRIE FECHADA EM MEMÓRIA — para o backtest (CE-06).
+ *
+ * A janela de um backtest termina na ÚLTIMA VELA FECHADA (o servidor decide —
+ * ver a rota). Vela fechada não muda mais: duas rodadas que pedem o mesmo par,
+ * intervalo e janela leem exatamente a mesma série, e com a paginação (CE-11)
+ * uma série de um ano em 1h são 9 idas ao banco. Aqui ela é guardada na memória
+ * da instância e servida a quem pedir a MESMA janela — de qualquer cliente,
+ * porque é dado público de mercado, sem nada de quem pediu.
+ *
+ * ⚠️ SÓ LEITURA COMPLETA ENTRA (`porqueIncompleta === null`): uma série com
+ * buraco não pode ser reaproveitada como se fosse inteira. E ela só vale até a
+ * janela mudar (`ate` é a chave): quando a próxima vela fechar, a rota pede outro
+ * `ate` e a série nova é lida do banco. Teto por VELAS, não por entradas — uma
+ * série de 1m de dois anos não pode expulsar mil séries diárias sem conta.
+ *
+ * Cache vazio (instância nova) = leitura de sempre. A cópia devolvida é nova a
+ * cada acerto: quem a recebe pode mexer sem contaminar a próxima rodada.
+ */
+const TETO_DE_VELAS_EM_MEMORIA = Number(process.env.BANCADA_VELAS_EM_MEMORIA ?? 250_000);
+const seriesFechadas = new Map<string, VelaComTempo[]>();
+let velasEmMemoria = 0;
+export const metricasDoCacheDeSeries = { acertos: 0, faltas: 0 };
+
+export async function velasFechadasDoIntervalo(
+  db: SupabaseClient | null, simbolo: string, intervalo: string, desde: number, ate: number,
+  agoraMs: number = Date.now(),
+): Promise<LeituraDeVelas> {
+  const chave = `${simbolo}|${intervalo}|${desde}|${ate}`;
+  const guardada = seriesFechadas.get(chave);
+  if (guardada) {
+    metricasDoCacheDeSeries.acertos++;
+    seriesFechadas.delete(chave);
+    seriesFechadas.set(chave, guardada);           // LRU
+    return { velas: guardada.map((v) => ({ ...v })), doCache: guardada.length, daFonte: 0, porqueIncompleta: null };
+  }
+  metricasDoCacheDeSeries.faltas++;
+  const lida = await velasDoIntervalo(db, simbolo, intervalo, desde, ate, agoraMs);
+  // ⚠️ Só a série inteira e só se a janela já fechou: `ate` no futuro ainda muda.
+  const fim = ultimaVelaFechada(intervalo, agoraMs);
+  if (lida.porqueIncompleta == null && fim != null && ate <= fim && lida.velas.length <= TETO_DE_VELAS_EM_MEMORIA) {
+    seriesFechadas.set(chave, lida.velas.map((v) => ({ ...v })));
+    velasEmMemoria += lida.velas.length;
+    while (velasEmMemoria > TETO_DE_VELAS_EM_MEMORIA) {
+      const maisVelha = seriesFechadas.keys().next().value as string;
+      velasEmMemoria -= seriesFechadas.get(maisVelha)?.length ?? 0;
+      seriesFechadas.delete(maisVelha);
+    }
+  }
+  return lida;
+}
+
+/** Só para teste: esvazia o cache de séries. */
+export function _esvaziarCacheDeSeries(): void {
+  seriesFechadas.clear();
+  velasEmMemoria = 0;
+  metricasDoCacheDeSeries.acertos = 0;
+  metricasDoCacheDeSeries.faltas = 0;
+}

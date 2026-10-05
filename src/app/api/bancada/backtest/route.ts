@@ -24,7 +24,7 @@ import {
 } from "@/lib/bancada/cotas";
 import { rodar } from "@/lib/bancada/motor";
 import { resumir, julgar } from "@/lib/bancada/veredito";
-import { velasDoIntervalo } from "@/lib/mercado/store";
+import { velasFechadasDoIntervalo } from "@/lib/mercado/store";
 import { ultimaVelaFechada } from "@/lib/mercado/velas";
 import type { Operacao } from "@/lib/bancada/motor";
 import { rodarMesa, agregar, MAX_BARRAS_AVALIADAS } from "@/lib/bancada/mesa-real";
@@ -283,9 +283,9 @@ export async function POST(req: NextRequest) {
        * existe: na segunda rodada do mesmo par elas não custam requisição.
        */
       const [h1, h4, d1] = await Promise.all([
-        velasDoIntervalo(db, simbolo, "1h", janelaDe, janelaAte),
-        velasDoIntervalo(db, simbolo, "4h", janelaDe, janelaAte),
-        velasDoIntervalo(db, simbolo, "1d", janelaDe, janelaAte),
+        velasFechadasDoIntervalo(db, simbolo, "1h", janelaDe, janelaAte),
+        velasFechadasDoIntervalo(db, simbolo, "4h", janelaDe, janelaAte),
+        velasFechadasDoIntervalo(db, simbolo, "1d", janelaDe, janelaAte),
       ]);
       // ⚠️ A SEMANAL É AGREGADA DAS DIÁRIAS, não substituída por elas. O
       // `DURACAO_MS` não tem "1w", e passar diárias no lugar faria o `htf1w` do
@@ -332,7 +332,7 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    const leitura = await velasDoIntervalo(db, simbolo, intervalo, janelaDe, janelaAte);
+    const leitura = await velasFechadasDoIntervalo(db, simbolo, intervalo, janelaDe, janelaAte);
     contar(leitura);
     if (leitura.porqueIncompleta) problemas.push(`${simbolo}: ${leitura.porqueIncompleta}`);
     if (leitura.velas.length < 2) continue;

@@ -187,3 +187,49 @@ describe("⚠️⚠️ CE-11 — a leitura atravessa o max_rows do PostgREST", (
     expect(leituras()).toBe(2);
   });
 });
+
+describe("⚠️ CE-06 — série FECHADA servida da memória para a mesma janela", () => {
+  const agora = 30_000 * H;
+
+  it("a 2ª rodada com a mesma janela não vai ao banco — e recebe as mesmas velas", async () => {
+    const { velasFechadasDoIntervalo, _esvaziarCacheDeSeries, metricasDoCacheDeSeries } = await import("@/lib/mercado/store");
+    _esvaziarCacheDeSeries();
+    const desde = agora - 2000 * H, ate = agora - 2 * H;
+    daFonte = serie(2001, ate);
+    const { db, leituras } = bancoFalso();
+    const a = await velasFechadasDoIntervalo(db, "BTC", "1h", desde, ate, agora);
+    const lidasNa1a = leituras();
+    const b = await velasFechadasDoIntervalo(db, "BTC", "1h", desde, ate, agora);
+    expect(leituras()).toBe(lidasNa1a);                 // nenhuma leitura nova
+    expect(b.velas).toEqual(a.velas);
+    expect(metricasDoCacheDeSeries).toEqual({ acertos: 1, faltas: 1 });
+    // A cópia é nova: mexer numa não contamina a outra.
+    b.velas[0].close = -1;
+    const c = await velasFechadasDoIntervalo(db, "BTC", "1h", desde, ate, agora);
+    expect(c.velas[0].close).not.toBe(-1);
+  });
+
+  it("leitura INCOMPLETA não entra no cache — a próxima vai ao banco de novo", async () => {
+    const { velasFechadasDoIntervalo, _esvaziarCacheDeSeries } = await import("@/lib/mercado/store");
+    _esvaziarCacheDeSeries();
+    const desde = agora - 365 * 24 * H, ate = agora - 2 * H;
+    daFonte = serie(100, ate);                        // a fonte só tem 100 velas de um ano
+    const { db, leituras } = bancoFalso();
+    const a = await velasFechadasDoIntervalo(db, "ETH", "1h", desde, ate, agora);
+    expect(a.porqueIncompleta).not.toBeNull();
+    const antes = leituras();
+    await velasFechadasDoIntervalo(db, "ETH", "1h", desde, ate, agora);
+    expect(leituras()).toBeGreaterThan(antes);
+  });
+
+  it("janela que ainda não fechou (`ate` no futuro) não entra", async () => {
+    const { velasFechadasDoIntervalo, _esvaziarCacheDeSeries, metricasDoCacheDeSeries } = await import("@/lib/mercado/store");
+    _esvaziarCacheDeSeries();
+    const desde = agora - 100 * H, ate = agora + 5 * H;
+    daFonte = serie(101, agora - H);
+    const { db } = bancoFalso();
+    await velasFechadasDoIntervalo(db, "SOL", "1h", desde, ate, agora);
+    await velasFechadasDoIntervalo(db, "SOL", "1h", desde, ate, agora);
+    expect(metricasDoCacheDeSeries.acertos).toBe(0);
+  });
+});
