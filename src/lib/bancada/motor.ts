@@ -98,11 +98,11 @@ export function sinais(velas: ReadonlyArray<VelaComTempo>, e: EstrategiaDoClient
   const compra = e.direcao === "compra";
   const marca: boolean[] = new Array(velas.length).fill(false);
 
-  const dentro = (i: number): boolean | null => valorDoGatilho(velas, closes, e.entrada, i, compra);
+  const dentro = serieDoGatilho(velas, closes, e.entrada, compra);
 
   let anterior: boolean | null = null;
   for (let i = 0; i < velas.length; i++) {
-    const agora = dentro(i);
+    const agora = dentro[i];
     if (agora == null) { anterior = null; continue; }
     // Cruzou de fora para dentro nesta vela.
     if (anterior === false && agora === true) marca[i] = true;
@@ -111,35 +111,97 @@ export function sinais(velas: ReadonlyArray<VelaComTempo>, e: EstrategiaDoClient
   return marca;
 }
 
-/** `null` enquanto o indicador ainda não nasceu — ausência, não `false`. */
-function valorDoGatilho(
-  velas: ReadonlyArray<VelaComTempo>, closes: number[], entrada: Entrada, i: number, compra: boolean,
-): boolean | null {
+/**
+ * O gatilho em CADA vela, calculado uma vez para a janela inteira. `null`
+ * enquanto o indicador ainda não nasceu — ausência, não `false`.
+ *
+ * ⚠️⚠️ ANTES ISTO ERA UMA FUNÇÃO POR VELA (`valorDoGatilho(…, i)`), e o RSI
+ * recalculava a SÉRIE INTEIRA dentro dela: N velas × uma série de N = O(N²).
+ * Medido (CE-01): ~6,8 s contra ~0,45 ms para o mesmo resultado. A série do
+ * RSI só depende do passado (Wilder é recursivo desde a primeira vela), então
+ * calculá-la uma vez e ler o índice `i` é EXATAMENTE o que a versão antiga lia
+ * — mesma função, mesmas operações de ponto flutuante, mesma ordem. O teste
+ * diferencial contra `__referencia__/motor-legado.ts` exige igualdade exata.
+ *
+ * ⚠️ A MÉDIA CONTINUA SOMANDO AS `n` VELAS NA MESMA ORDEM, de propósito. Uma
+ * soma móvel seria O(N) em vez de O(N·n), mas arredonda diferente: num
+ * cruzamento exato (`close === média`) ela inverteria o sinal sem ninguém mexer
+ * na regra. Com `n ≤ 400` (`LIMITES.nMax`) o custo é linear com teto conhecido.
+ *
+ * ⚠️ O CANAL usa um deque monotônico — máximo e mínimo são COMPARAÇÕES, não
+ * somas, então não há arredondamento a mudar: o valor é idêntico ao da varredura.
+ */
+function serieDoGatilho(
+  velas: ReadonlyArray<VelaComTempo>, closes: number[], entrada: Entrada, compra: boolean,
+): Array<boolean | null> {
+  const N = velas.length;
+  const out: Array<boolean | null> = new Array(N).fill(null);
   switch (entrada.tipo) {
     case "media": {
-      const m = media(closes, i, entrada.n);
-      if (m == null) return null;
-      return compra ? closes[i] > m : closes[i] < m;
+      for (let i = 0; i < N; i++) {
+        const m = media(closes, i, entrada.n);
+        if (m == null) continue;
+        out[i] = compra ? closes[i] > m : closes[i] < m;
+      }
+      return out;
     }
     case "canal": {
       // ⚠️ O canal olha as `n` velas ANTERIORES, não incluindo a atual: comparar
       // a máxima da janela consigo mesma nunca romperia.
-      if (i < entrada.n) return null;
-      let maxima = -Infinity, minima = Infinity;
-      for (let k = i - entrada.n; k < i; k++) {
-        if (velas[k].high > maxima) maxima = velas[k].high;
-        if (velas[k].low < minima) minima = velas[k].low;
+      const n = entrada.n;
+      const maximas = extremosDaJanelaAnterior(velas, n, "high");
+      const minimas = extremosDaJanelaAnterior(velas, n, "low");
+      for (let i = n; i < N; i++) {
+        out[i] = compra ? closes[i] > maximas[i] : closes[i] < minimas[i];
       }
-      return compra ? closes[i] > maxima : closes[i] < minima;
+      return out;
     }
     case "rsi": {
       const serie = rsi(closes, entrada.n);
-      const r = serie[i];
-      if (r == null) return null;
-      // Compra em sobrevenda (abaixo do nível), vende em sobrecompra (acima).
-      return compra ? r < entrada.nivel : r > entrada.nivel;
+      for (let i = 0; i < N; i++) {
+        const r = serie[i];
+        if (r == null) continue;
+        // Compra em sobrevenda (abaixo do nível), vende em sobrecompra (acima).
+        out[i] = compra ? r < entrada.nivel : r > entrada.nivel;
+      }
+      return out;
     }
   }
+}
+
+/**
+ * Para cada `i ≥ n`, o máximo (`high`) ou mínimo (`low`) das velas `[i-n, i)`.
+ *
+ * ⚠️ MESMA SEMÂNTICA da varredura antiga, inclusive com `NaN`: lá
+ * `velas[k].high > maxima` é falso para NaN, então NaN nunca vira o extremo e
+ * uma janela só de NaN fica em `-Infinity`/`Infinity`. Aqui o NaN é descartado
+ * na entrada do deque pela mesma razão — e o diferencial cobre o caso.
+ */
+function extremosDaJanelaAnterior(
+  velas: ReadonlyArray<VelaComTempo>, n: number, campo: "high" | "low",
+): number[] {
+  const N = velas.length;
+  const vazio = campo === "high" ? -Infinity : Infinity;
+  const out: number[] = new Array(N).fill(vazio);
+  const melhor = campo === "high"
+    ? (a: number, b: number) => a >= b
+    : (a: number, b: number) => a <= b;
+  // Índices candidatos; os valores em `velas[idx][campo]` ficam monotônicos.
+  const deque: number[] = [];
+  let cabeca = 0;
+  for (let i = 0; i < N; i++) {
+    if (i >= n) {
+      // Janela de `i` é [i-n, i): descarta quem saiu pela esquerda.
+      while (cabeca < deque.length && deque[cabeca] < i - n) cabeca++;
+      out[i] = cabeca < deque.length ? velas[deque[cabeca]][campo] : vazio;
+    }
+    // A vela `i` entra para as janelas de i+1 … i+n.
+    const x = velas[i][campo];
+    if (Number.isNaN(x)) continue;
+    while (deque.length > cabeca && melhor(x, velas[deque[deque.length - 1]][campo])) deque.pop();
+    deque.push(i);
+  }
+  return out;
 }
 
 export interface RodadaDoMotor {
@@ -180,6 +242,25 @@ export function rodar(
   const operacoes: Operacao[] = [];
   let aindaAbertas = 0;
   let livreApartirDe = 0;
+  /**
+   * ⚠️⚠️ A FATIA QUE VAI PARA `computeExitPath` TERMINA NA VELA DO FECHAMENTO
+   * (CE-01). Antes era `slice(i + 1)` — o RESTO DA SÉRIE INTEIRA —, e o
+   * `computeExitPath` ainda filtrava esse resto todo: O(N) por operação, O(N²)
+   * numa estratégia que opera muito. Com 175 mil velas (o teto de uma rodada) e
+   * milhares de operações isso era a rodada inteira.
+   *
+   * ⚠️ É EQUIVALENTE, não aproximado, e a condição é verificada aqui:
+   *   · `computeExitPath` filtra `c.t >= abertaEm && c.t <= ate`. Se cada vela
+   *     está pelo menos 1 ms depois da anterior, toda vela depois de `i` já
+   *     satisfaz `c.t >= abriuEm + 1`, e as depois de `ate` saem pelo filtro;
+   *   · ele devolve na PRIMEIRA vela que toca alvo ou stop — que é
+   *     `indiceDoFechamento`, com a mesma regra. As velas depois dela nunca
+   *     eram lidas; quando nada toca, o índice é a última vela `≤ ate`, que é
+   *     a janela inteira de antes.
+   * Série fora desse contrato (tempo repetido ou voltando) cai no caminho
+   * antigo, sem atalho — o resultado nunca depende da otimização.
+   */
+  const fatiaCurta = tempoAvancaPeloMenos1ms(velas);
 
   for (let i = 0; i < velas.length; i++) {
     if (!marca[i] || i < livreApartirDe) continue;
@@ -211,10 +292,11 @@ export function rodar(
      * fechar a posição com o movimento que ainda estava acontecendo quando a
      * decisão foi tomada. É o lookahead pela porta dos fundos.
      */
-    const daqui = paraCaminho.slice(i + 1);
     // ⚠️ O fim desta posição é o que vier primeiro: o horizonte ou o fim da
     // janela pedida. `computeExitPath` recebe exatamente este limite.
     const ate = Math.min(velas[velas.length - 1].t, expiraEm);
+    const iFechou = indiceDoFechamento(velas, i, alvo, stop, dir, ate);
+    const daqui = fatiaCurta ? paraCaminho.slice(i + 1, iFechou + 1) : paraCaminho.slice(i + 1);
 
     const v = computeExitPath(
       {
@@ -255,7 +337,6 @@ export function rodar(
     }
 
     const desfecho: Desfecho = v.reason === "target" ? "alvo" : v.reason === "stop" ? "stop" : "expirada";
-    const iFechou = indiceDoFechamento(velas, i, alvo, stop, dir, ate);
     operacoes.push({
       abriuEm,
       fechouEm: velas[iFechou].t,
@@ -296,6 +377,18 @@ function indiceDoFechamento(
     if (precoResolve(velas[j], alvo, stop, dir)) return j;
   }
   return ultima;
+}
+
+/**
+ * `true` quando cada vela está pelo menos 1 ms depois da anterior — o contrato
+ * que torna a fatia curta de `rodar` idêntica à fatia longa. Tempo não finito
+ * também cai fora (comparação com NaN é sempre falsa).
+ */
+function tempoAvancaPeloMenos1ms(velas: ReadonlyArray<VelaComTempo>): boolean {
+  for (let j = 1; j < velas.length; j++) {
+    if (!(velas[j].t - velas[j - 1].t >= 1)) return false;
+  }
+  return true;
 }
 
 /** Esta vela toca alvo ou stop? ⚠️ Stop-first, igual a `computeExitPath`. */
