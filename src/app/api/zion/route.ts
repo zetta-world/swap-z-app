@@ -4,6 +4,7 @@ import { aiAtivo, faltaChave } from "@/lib/ai/ativo";
 import { ZION_FOUNDATION } from "@/lib/zion/foundation";
 import { cacheDeRespostaDoZion, chaveDeResposta, podeUsarCache } from "@/lib/zion/cache-de-resposta";
 import { getModeInstructions, type ZionOp } from "@/lib/zion/mode-prompts";
+import { blocosDoSistema } from "@/lib/zion/fatos-da-plataforma";
 import { getTokenSecurity, isGoPlusSupported, type GoPlusTokenSecurity } from "@/lib/api/goplus";
 import { getHoneypot, isHoneypotSupported, type HoneypotResponse } from "@/lib/api/honeypot";
 import { getTokenInfo, getTopPools, getTrendingPools, getTokenTopPool, getRecentTrades, type TokenInfo, type PoolSummary } from "@/lib/api/geckoterminal";
@@ -454,7 +455,9 @@ async function runZion(args: RunArgs, signal?: AbortSignal) {
          * Manter a ordem importa nos dois: do mais estável para o mais variável,
          * que é o que qualquer cache de prefixo aproveita.
          */
-        const blocos = [ZION_FOUNDATION, modeInstructions, LANG_INSTRUCTION[args.lang]];
+        // ⚠️ RM-09: no modo `ask` entram os FATOS OFICIAIS da plataforma (derivados das constantes do
+        // produto), entre a fundação e o modo — estáveis, então dentro do prefixo cacheável.
+        const blocos = blocosDoSistema(args.op, ZION_FOUNDATION, modeInstructions, LANG_INSTRUCTION[args.lang]);
         let texto = "";
         const entregar = (delta: string) => {
           texto += delta;

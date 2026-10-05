@@ -33,10 +33,13 @@ describe("o gabarito cobre os temas exigidos e vem do código", () => {
     expect(avaliarResposta(tiers, "O Pilot tem análises ilimitadas, os outros 5, 10 e 25, e 30 no total.").aprovado).toBe(false);
   });
 
-  it("Founders: preço provisório, 36 meses — 'preço final' e 'vitalício' reprovam", () => {
+  it("Founders (RM-09): preço EM DEFINIÇÃO + 36 meses aprova; citar o preço provisório, 'final' ou 'vitalício' reprova", () => {
+    // ⚠️ Antes este teste APROVAVA "Pro US$ 149, Trader 399 e Pilot 1.990, preços provisórios" — a vitrine
+    // (OD-NFT-02, `/pricing`) não mostra preço provisório em superfície pública, e o ZION é uma.
     const f = casosDeQualidade().find((c) => c.id === "founders")!;
-    expect(avaliarResposta(f, "Pro US$ 149, Trader 399 e Pilot 1.990, preços provisórios; premium por 36 meses.").aprovado).toBe(true);
-    expect(avaliarResposta(f, "Pro 149, Trader 399, Pilot 1990 — preço final, premium vitalício por 36 meses.").aprovado).toBe(false);
+    expect(avaliarResposta(f, "O preço do passe ainda está em definição; o premium vale 36 meses a partir do encerramento da venda.").aprovado).toBe(true);
+    expect(avaliarResposta(f, "Pro US$ 149, Trader US$ 399 e Pilot US$ 1.990, preços provisórios; premium por 36 meses.").aprovado).toBe(false);
+    expect(avaliarResposta(f, "Preço em definição, premium vitalício por 36 meses.").aprovado).toBe(false);
   });
 });
 

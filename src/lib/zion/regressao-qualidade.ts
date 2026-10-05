@@ -19,7 +19,7 @@
 import { CHAINS } from "@/lib/chains";
 import { TIER_FEE_BPS } from "@/lib/tier/fees";
 import { BANCADA_COTAS, TIER_DAILY_ANALYSES } from "@/lib/tier/types";
-import { PLAN_TIERS, FOUNDERS_PRICE_STATUS } from "@/lib/pricing/plans";
+import { PLAN_TIERS, precoPublicoUsd } from "@/lib/pricing/plans";
 
 export interface CasoDeQualidade {
   id: string;
@@ -37,6 +37,7 @@ export function casosDeQualidade(): CasoDeQualidade[] {
   const ativas = CHAINS.filter((c) => !c.comingSoon);
   const zetta = CHAINS.find((c) => c.id === "zetta");
   const plano = (t: "pro" | "trader" | "pilot") => PLAN_TIERS.find((p) => p.tier === t)!;
+  const precoFinal = (["pro", "trader", "pilot"] as const).every((t) => precoPublicoUsd(plano(t)) != null);
   return [
     {
       id: "redes", tema: "redes suportadas",
@@ -71,12 +72,24 @@ export function casosDeQualidade(): CasoDeQualidade[] {
     {
       id: "founders", tema: "Founders",
       pergunta: "Quanto custa o passe Founders e por quanto tempo vale o premium?",
+      /**
+       * ⚠️ RM-09 (audit remediation): este caso EXIGIA os preços provisórios ($149/$399/$1.990) — o
+       * oposto da regra da vitrine (OD-NFT-02): enquanto o preço não for FINAL, nenhuma superfície
+       * pública o mostra, e `/pricing` diz "preço em definição". O ZION é superfície pública. Agora o
+       * gabarito segue `precoPublicoUsd`: com preço final, exige os números; sem, exige "em definição"
+       * e PROÍBE os números.
+       */
       obrigatorios: [
-        ...(["pro", "trader", "pilot"] as const).map((t) => [String(plano(t).usdTarget), plano(t).usdTarget.toLocaleString("en-US"), plano(t).usdTarget.toLocaleString("pt-BR")]),
-        ["36 meses", "36 months"],
-        ...(FOUNDERS_PRICE_STATUS === "PROVISIONAL_FOR_DEMAND_VALIDATION" ? [["provisório", "provisional", "preliminar"]] : []),
+        ...(precoFinal
+          ? (["pro", "trader", "pilot"] as const).map((t) => [String(plano(t).usdTarget), plano(t).usdTarget.toLocaleString("en-US"), plano(t).usdTarget.toLocaleString("pt-BR")])
+          : [["em definição", "being defined", "not final", "não é final", "ainda não foi definido", "en definición"]]),
+        ["36 meses", "36 months", "36 meses"],
       ],
-      proibidos: [/preço (final|definitivo)/i, /final price/i, /vitalíci|lifetime premium/i],
+      proibidos: [
+        /preço (final|definitivo)/i, /final price/i, /vitalíci|lifetime premium/i,
+        ...(precoFinal ? [] : (["pro", "trader", "pilot"] as const).map((t) =>
+          new RegExp(`\\$\\s?${plano(t).usdTarget.toLocaleString("en-US").replace(",", "[.,]?")}\\b`))),
+      ],
     },
     {
       id: "workbench", tema: "Workbench",

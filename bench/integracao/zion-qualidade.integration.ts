@@ -16,6 +16,7 @@ import { describe, it, expect } from "vitest";
 import { casosDeQualidade, avaliarResposta } from "@/lib/zion/regressao-qualidade";
 import { ZION_FOUNDATION } from "@/lib/zion/foundation";
 import { getModeInstructions } from "@/lib/zion/mode-prompts";
+import { blocosDoSistema } from "@/lib/zion/fatos-da-plataforma";
 import { openaiCompatChat, openaiCompatConfigFromEnv } from "@/lib/ai/provider";
 
 const AUTORIZADO = process.env.ZION_QUALIDADE_AO_VIVO === "1";
@@ -24,7 +25,9 @@ const cfg = openaiCompatConfigFromEnv();
 describe.skipIf(!AUTORIZADO || !cfg)("ZION ao vivo — regressão de qualidade (CE-08)", () => {
   it("taxa de aprovação por modelo", { timeout: 600_000 }, async () => {
     const modelos = (process.env.ZION_QUALIDADE_MODELOS ?? cfg!.model).split(",").map((s) => s.trim());
-    const sistema = [ZION_FOUNDATION, getModeInstructions("ask"), "IDIOMA DE SAÍDA OBRIGATÓRIO: Português do Brasil."].join("\n\n");
+    // ⚠️ RM-09: o MESMO contexto que a rota monta no modo ask (com os fatos oficiais) — medir outro
+    // contexto mediria outro produto.
+    const sistema = blocosDoSistema("ask", ZION_FOUNDATION, getModeInstructions("ask"), "IDIOMA DE SAÍDA OBRIGATÓRIO: Português do Brasil.").join("\n\n");
     const placar: Record<string, number> = {};
     for (const model of modelos) {
       let ok = 0;
