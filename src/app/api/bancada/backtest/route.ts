@@ -256,6 +256,15 @@ export async function POST(req: NextRequest) {
   const restamHoje = d.cota.backtestsPorDia - reserva.rodadas;
 
   // ── 5. As velas e o motor ─────────────────────────────────────────────
+  /**
+   * ⚠️ CE-14: o custo REAL desta rodada vai para a linha dela (0075) — tempo,
+   * velas da FONTE (requisição paga/limitada por IP) e do cache. É o dado que a
+   * auditoria econômica precisa e que nenhum benchmark local substitui.
+   */
+  const t0 = performance.now();
+  let velasDaFonte = 0;
+  let velasDoCache = 0;
+  const contar = (l: { daFonte: number; doCache: number }) => { velasDaFonte += l.daFonte; velasDoCache += l.doCache; };
   const operacoes: Operacao[] = [];
   const problemas: string[] = [];
   const retornosDeSegurar: number[] = [];
@@ -282,6 +291,7 @@ export async function POST(req: NextRequest) {
       // `DURACAO_MS` não tem "1w", e passar diárias no lugar faria o `htf1w` do
       // seletor ler outra coisa do que lê ao vivo — em silêncio.
       const w1 = agregar(d1.velas, 7);
+      for (const l of [h1, h4, d1]) contar(l);
       for (const [nome, l] of [["1h", h1], ["4h", h4], ["1d", d1]] as const) {
         if (l.porqueIncompleta) problemas.push(`${simbolo} ${nome}: ${l.porqueIncompleta}`);
       }
@@ -323,6 +333,7 @@ export async function POST(req: NextRequest) {
     }
 
     const leitura = await velasDoIntervalo(db, simbolo, intervalo, janelaDe, janelaAte);
+    contar(leitura);
     if (leitura.porqueIncompleta) problemas.push(`${simbolo}: ${leitura.porqueIncompleta}`);
     if (leitura.velas.length < 2) continue;
 
@@ -426,7 +437,8 @@ export async function POST(req: NextRequest) {
   }
 
   await fecharRodada(dono, db, rodadaId, gr.ok ? "concluida" : "falhou",
-    gr.ok ? undefined : gr.porque);
+    gr.ok ? undefined : gr.porque,
+    { duracaoMs: performance.now() - t0, velasDaFonte, velasDoCache });
 
   return json({
     ok: true, rodadaId, tier,

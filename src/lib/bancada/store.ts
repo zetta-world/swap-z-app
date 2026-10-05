@@ -598,11 +598,29 @@ export async function reservarRodada(
  * que nunca poderia abrir, e o cliente merece o motivo NA HORA — foi assim que
  * o Maker de Faixa ficou dois dias sem operar sem ninguém notar.
  */
+export interface MetricasDaRodada {
+  /** Tempo de relógio das leituras + motor, em ms. */
+  duracaoMs: number;
+  /** Velas que vieram da FONTE externa nesta rodada (requisição paga/limitada). */
+  velasDaFonte: number;
+  /** Velas servidas pelo cache `mercado_vela`. */
+  velasDoCache: number;
+}
+
 export async function fecharRodada(
   dono: Dono, db: SupabaseClient, id: string, status: StatusRodada, porque?: string,
+  /** ⚠️ CE-14 (0075): métricas de custo na própria linha. Ausentes = NULL (não medido). */
+  metricas?: MetricasDaRodada,
 ): Promise<Escrita<true>> {
+  const m = metricas
+    ? {
+        duracao_ms: Math.max(0, Math.round(metricas.duracaoMs)),
+        velas_da_fonte: Math.max(0, Math.round(metricas.velasDaFonte)),
+        velas_do_cache: Math.max(0, Math.round(metricas.velasDoCache)),
+      }
+    : {};
   const { error } = await db.from("bancada_rodada")
-    .update({ status, porque: porque ?? null, terminada_em: new Date().toISOString() })
+    .update({ status, porque: porque ?? null, terminada_em: new Date().toISOString(), ...m })
     .eq("dono", dono).eq("id", id);
   if (error) return falhou(error, "fechar rodada");
   return { ok: true, valor: true };

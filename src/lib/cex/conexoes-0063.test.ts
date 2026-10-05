@@ -208,7 +208,12 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
      * grava o `ultimo_tique` de muitas mesas numa escrita, com a posse conferida
      * por linha (`id` + `dono`), no formato de sempre. Nasce fechada (teste 21).
      *
-     * ⚠️ NENHUMA DAS DOZE (0063–0074) FOI APLICADA EM PRODUÇÃO. 0070–0074
+     * E uma DÉCIMA SEGUNDA vez, no mesmo round: a 0075 é ADITIVA — três colunas
+     * anuláveis de métrica de custo na linha da rodada da bancada (tempo, velas
+     * da fonte, velas do cache), em vez de um evento por rodada numa tabela sem
+     * retenção (teste 22).
+     *
+     * ⚠️ NENHUMA DAS TREZE (0063–0075) FOI APLICADA EM PRODUÇÃO. 0070–0075
      * existem só na lane B; o alvo de release (C1 `53cd85a`) vai até a 0069.
      */
     const novas = readdirSync("supabase/migrations")
@@ -227,6 +232,7 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
       "0072_founders_demand_price_rule.sql",
       "0073_bancada_reserva_atomica.sql",
       "0074_bancada_ultimos_tiques_em_lote.sql",
+      "0075_bancada_rodada_metricas_de_custo.sql",
     ]);
   });
 });
