@@ -109,6 +109,46 @@ export async function gravarUltimoTique(
  * `simbolos` da última avaliação de verdade — é ele que a tela mostra enquanto
  * a próxima não chega.
  */
+export interface UltimoTiqueEmLote {
+  id: string;
+  dono: Dono;
+  visto: Record<string, unknown>;
+}
+
+/**
+ * ⚠️⚠️ O ÚLTIMO TIQUE DE MUITAS MESAS NUMA ESCRITA (CE-09, migration 0074).
+ *
+ * Um PATCH por mesa avaliada era o novo gargalo depois que a fila passou a
+ * incluir todas as mesas: 3.250 desks = 3.250 requisições por tique. A RPC
+ * grava o lote com a MESMA guarda de posse (`id` e `dono` por linha) e o mesmo
+ * formato `{ em, simbolos }`.
+ *
+ * ⚠️ Melhor-esforço, como o PATCH que substitui. E se a RPC não existir (0074
+ * ainda não aplicada) ou falhar, cai para o caminho antigo, item a item — o
+ * registro não pode sumir por causa da otimização.
+ */
+export async function gravarUltimosTiques(
+  db: SupabaseClient, itens: ReadonlyArray<UltimoTiqueEmLote>, emMs: number,
+): Promise<{ viaLote: boolean; gravados: number }> {
+  if (itens.length === 0) return { viaLote: true, gravados: 0 };
+  const LOTE = 500;
+  let gravados = 0;
+  for (let i = 0; i < itens.length; i += LOTE) {
+    const fatia = itens.slice(i, i + LOTE);
+    const { data, error } = await db.rpc("bancada_gravar_ultimos_tiques", {
+      p_itens: fatia.map((x) => ({ id: x.id, dono: x.dono, em: emMs, simbolos: x.visto })),
+    });
+    if (error) {
+      for (const x of itens.slice(i)) {
+        try { await gravarUltimoTique(x.dono, db, x.id, x.visto, emMs); gravados++; } catch { /* melhor-esforço */ }
+      }
+      return { viaLote: false, gravados };
+    }
+    gravados += Number(data) || 0;
+  }
+  return { viaLote: true, gravados };
+}
+
 export async function marcarTiqueAdiado(
   db: SupabaseClient, ids: string[], emMs: number,
 ): Promise<void> {
@@ -325,14 +365,38 @@ export interface MesaDoCron {
  * `donoDeLinhaDoBanco`. ⚠️ Se isto aparecer numa rota de cliente, o isolamento
  * acabou.
  */
-export async function mesasLigadasParaOCron(db: SupabaseClient, limite = 200): Promise<MesaDoCron[]> {
-  const { data, error } = await db.from("bancada_estrategia")
-    .select("id, dono, params, simbolos, intervalo, criada_em, mesa, papel_desde, praca, papel")
-    .eq("papel_adiante", true).is("arquivada_em", null)
-    .order("criada_em", { ascending: true })
-    .limit(Math.max(1, Math.min(1000, Math.floor(limite))));
-  if (error || !data) return [];
-  return paraMesasDoCron(data);
+/**
+ * ⚠️⚠️ TODAS AS MESAS LIGADAS, PAGINADAS (CE-09) — não "as 200 mais antigas".
+ *
+ * Era `limit(200)` ordenado por `criada_em`: um CORTE, não uma fila. A mesa nº
+ * 201 — sempre a do cliente MAIS NOVO — nunca entrava no tique, nem como
+ * adiada. Medido no teste de carga (CE-10): com 3.250 desks (o direito de
+ * Trader + Pilot), 3.050 nunca foram vistos. A justiça entre mesas agora é do
+ * cursor do tique (`tique.ts`), sobre a lista inteira.
+ *
+ * Paginação por chave (`id > último`), 1.000 por página (o `db-max-rows`).
+ * `teto` é um freio de sanidade, não um limite de produto: acima dele o tique
+ * declara o corte em `problemas` em vez de calar.
+ */
+export const TETO_DE_MESAS_DO_CRON = 20_000;
+
+export async function mesasLigadasParaOCron(
+  db: SupabaseClient, teto = TETO_DE_MESAS_DO_CRON,
+): Promise<MesaDoCron[]> {
+  const linhas: unknown[] = [];
+  let depoisDe: string | null = null;
+  while (linhas.length < teto) {
+    let q = db.from("bancada_estrategia")
+      .select("id, dono, params, simbolos, intervalo, criada_em, mesa, papel_desde, praca, papel")
+      .eq("papel_adiante", true).is("arquivada_em", null);
+    if (depoisDe) q = q.gt("id", depoisDe);
+    const { data, error } = await q.order("id", { ascending: true }).limit(Math.min(1000, teto - linhas.length));
+    if (error || !data) return [];
+    if (data.length === 0) break;
+    linhas.push(...data);
+    depoisDe = String((data[data.length - 1] as { id: string }).id);
+  }
+  return paraMesasDoCron(linhas);
 }
 
 /**
@@ -393,11 +457,26 @@ export async function mesasDasPosicoesParaOCron(
   if (ids.length === 0) return [];
   // ⚠️ Sem `.eq("papel_adiante")` e sem `.is("arquivada_em", null)` DE PROPÓSITO:
   // é exatamente o filtro que congelava a posição órfã.
-  const { data, error } = await db.from("bancada_estrategia")
-    .select("id, dono, params, simbolos, intervalo, criada_em, mesa, papel_desde, praca, papel")
-    .in("id", ids.slice(0, 1000));
-  if (error || !data) return [];
-  return paraMesasDoCron(data);
+  /**
+   * ⚠️⚠️ EM LOTES DE 100 (CE-09). `.in("id", 500 UUIDs)` vira uma URL de ~18 KB;
+   * o PostgREST a devolve num cabeçalho e o cliente HTTP do Node recusa
+   * cabeçalho acima de 16 KB (medido: falha a partir de ~450 ids). A leitura
+   * voltava vazia e TODAS as posições abertas viravam "sem linha de estratégia"
+   * — nenhuma fechava. 100 ids ≈ 3,7 KB.
+   */
+  const LOTE = 100;
+  const linhas: unknown[] = [];
+  const unicos = [...new Set(ids)];
+  for (let i = 0; i < unicos.length; i += LOTE) {
+    const { data, error } = await db.from("bancada_estrategia")
+      .select("id, dono, params, simbolos, intervalo, criada_em, mesa, papel_desde, praca, papel")
+      .in("id", unicos.slice(i, i + LOTE));
+    // Lote que falha não apaga os outros: as posições dele aparecem como
+    // "sem linha" (declarado em `problemas`) e as demais seguem fechando.
+    if (error || !data) continue;
+    linhas.push(...data);
+  }
+  return paraMesasDoCron(linhas);
 }
 
 // ── RODADAS ─────────────────────────────────────────────────────────
@@ -994,14 +1073,29 @@ export async function posicoesAbertas(dono: Dono, db: SupabaseClient): Promise<P
  * existe para o cron e o nome é a trava: `paraOCron` numa rota `/api/bancada/*`
  * é impossível de ler como acidente.
  */
-export async function posicoesAbertasParaOCron(db: SupabaseClient, limite = 500): Promise<Posicao[]> {
-  const { data, error } = await db.from("bancada_posicao")
-    .select(COLUNAS_POSICAO)
-    .eq("status", "aberta")
-    .order("aberta_em", { ascending: true })
-    .limit(Math.max(1, Math.min(2000, Math.floor(limite))));
-  if (error || !data) return [];
-  return (data as unknown as LinhaPosicao[]).map(paraPosicao).filter((p): p is Posicao => p !== null);
+/**
+ * ⚠️⚠️ TODAS AS POSIÇÕES ABERTAS, PAGINADAS (CE-09) — não "as 500 mais antigas".
+ *
+ * Com o corte em 500 por `aberta_em`, toda posição aberta depois da 500ª nunca
+ * era lida para fechar enquanto as antigas seguissem abertas. Agora o tique lê
+ * todas e agrupa a leitura de velas por par (`tique.ts`), então o custo cresce
+ * com o número de PARES, não de posições.
+ */
+export async function posicoesAbertasParaOCron(
+  db: SupabaseClient, teto = TETO_DE_MESAS_DO_CRON,
+): Promise<Posicao[]> {
+  const linhas: LinhaPosicao[] = [];
+  let depoisDe: string | null = null;
+  while (linhas.length < teto) {
+    let q = db.from("bancada_posicao").select(COLUNAS_POSICAO).eq("status", "aberta");
+    if (depoisDe) q = q.gt("id", depoisDe);
+    const { data, error } = await q.order("id", { ascending: true }).limit(Math.min(1000, teto - linhas.length));
+    if (error || !data) return [];
+    if (data.length === 0) break;
+    linhas.push(...(data as unknown as LinhaPosicao[]));
+    depoisDe = String(linhas[linhas.length - 1].id);
+  }
+  return linhas.map(paraPosicao).filter((p): p is Posicao => p !== null);
 }
 
 /**

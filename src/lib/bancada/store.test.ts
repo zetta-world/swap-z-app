@@ -81,11 +81,12 @@ function consulta(
   const api = {
     eq(col: string, val: unknown) { filtros.push((r) => r[col] === val); return api; },
     neq(col: string, val: unknown) { filtros.push((r) => r[col] !== val); return api; },
+    gt(col: string, val: unknown) { filtros.push((r) => comparavel(r[col]) > comparavel(val)); return api; },
     range(de: number, ate: number) { faixa = [de, ate]; return api; },
     gte(col: string, val: unknown) { filtros.push((r) => comparavel(r[col]) >= comparavel(val)); return api; },
     lte(col: string, val: unknown) { filtros.push((r) => comparavel(r[col]) <= comparavel(val)); return api; },
     is(col: string, val: unknown) { filtros.push((r) => (r[col] ?? null) === val); return api; },
-    in(col: string, vals: unknown[]) { filtros.push((r) => vals.includes(r[col])); return api; },
+    in(col: string, vals: unknown[]) { maiorIn.n = Math.max(maiorIn.n, vals.length); filtros.push((r) => vals.includes(r[col])); return api; },
     order(col: string, o?: { ascending?: boolean }) { ordem = { col, asc: o?.ascending !== false }; return api; },
     limit(n: number) { limite = n; return api; },
     maybeSingle() { um = true; return api; },
@@ -156,6 +157,8 @@ function bancoFalso(inicial: Record<string, Linha[]> = {}, falhas: Record<string
 }
 
 let respostaRpc: { data: unknown; error: { message: string } | null } = { data: null, error: null };
+/** CE-09: o maior `.in()` que o código pediu — a URL de 450 UUIDs estoura o cabeçalho de 16 KB. */
+const maiorIn = { n: 0 };
 const chamadasRpc: Array<{ nome: string; args: Record<string, unknown> }> = [];
 
 // ── DUAS CARTEIRAS ──────────────────────────────────────────────────
@@ -595,5 +598,39 @@ describe("⚠️⚠️ CE-04 — a cota contada no banco, não no app", () => {
       expect(r.ok, JSON.stringify(resposta)).toBe(false);
       expect(r).toMatchObject({ motivo: "desconhecido" });
     }
+  });
+});
+
+
+describe("⚠️⚠️ CE-09 — o cron lê TODAS as mesas e posições, e o `.in()` vai em lotes", () => {
+  const ESTRATEGIA = (i: number) => ({
+    id: `e-${String(i).padStart(6, "0")}`, dono: `0xd${i % 400}`, chain: "evm", nome: `m${i}`, params: {},
+    praca: "spot_gate", papel: "taker", papel_adiante: true, arquivada_em: null, simbolos: ["BTC"],
+    intervalo: "1h", criada_em: new Date(1_700_000_000_000 + i * 1000).toISOString(), mesa: "strat_mech", papel_desde: null,
+  });
+
+  it("2.500 mesas ligadas voltam TODAS — antes eram as 200 mais antigas", async () => {
+    const { db } = bancoFalso({ bancada_estrategia: Array.from({ length: 2500 }, (_, i) => ESTRATEGIA(i)) });
+    const ligadas = await mesasLigadasParaOCron(db);
+    expect(ligadas).toHaveLength(2500);
+    expect(new Set(ligadas.map((m) => m.id)).size).toBe(2500);
+  });
+
+  it("1.600 posições abertas voltam TODAS — antes eram as 500 mais antigas", async () => {
+    const pos = Array.from({ length: 1600 }, (_, i) => ({
+      id: `p-${String(i).padStart(6, "0")}`, dono: `0xd${i % 400}`, estrategia_id: `e-${String(i).padStart(6, "0")}`,
+      simbolo: "BTC", lado: "long", entrada: 100, tamanho_usd: 1000, alvo_pct: 2, stop_pct: 1, expira_em: null,
+      vela_em: 1, status: "aberta", aberta_em: new Date(1_700_000_000_000 + i).toISOString(), playbook: null, horas_limite: 48,
+    }));
+    const { db } = bancoFalso({ bancada_posicao: pos });
+    expect(await posicoesAbertasParaOCron(db)).toHaveLength(1600);
+  });
+
+  it("as mesas de 450 posições chegam — em lotes de no máximo 100 ids", async () => {
+    const { db } = bancoFalso({ bancada_estrategia: Array.from({ length: 450 }, (_, i) => ESTRATEGIA(i)) });
+    maiorIn.n = 0;
+    const ids = Array.from({ length: 450 }, (_, i) => ESTRATEGIA(i).id);
+    expect(await mesasDasPosicoesParaOCron(db, ids)).toHaveLength(450);
+    expect(maiorIn.n).toBeLessThanOrEqual(100);
   });
 });
