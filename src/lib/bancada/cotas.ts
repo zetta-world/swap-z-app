@@ -147,6 +147,44 @@ export function orcamentoDiarioDeUnidades(tier: Tier): number {
   return Math.floor(cota.backtestsPorDia * tetoDeVelasPorRodada(cota) * FRACAO_DO_TETO_NO_ORCAMENTO[tier]);
 }
 
+/**
+ * ⚠️⚠️ O "BACKTEST PADRÃO" — DEFINIÇÃO PROPOSTA (CEO + auditor, 05/10/2026), AINDA NÃO APROVADA (RM-10).
+ *
+ * Direção comercial provisória: "5.000 backtests PADRÃO por janela de 24 horas", em vez de um
+ * "até 5.000" que escondia o segundo limite (o orçamento de unidades). Um backtest padrão é, NO
+ * MÁXIMO: 3 ativos × 1 ano de histórico × velas de 4h, na ESTRATÉGIA PRÓPRIA. Backtests maiores
+ * consomem proporcionalmente mais do orçamento diário (a mesma fórmula de sempre).
+ *
+ * ⚠️ O MODO MESA NÃO CABE NESTA DEFINIÇÃO: ele lê 1h+4h+1d e pesa 2, então os mesmos 3 ativos × 1
+ * ano custam 67.890 unidades (10× o padrão) — 5.000 deles não cabem no 1/16 do Pilot. Declarado
+ * aqui e no relatório, para a definição comercial ser escrita sabendo disso. Nada aqui muda a
+ * oferta, a fração ou o número de backtests.
+ */
+export const BACKTEST_PADRAO = {
+  simbolos: 3, dias: 365, intervalo: "4h", mesa: false,
+  status: "PROPOSTA_NAO_APROVADA" as const,
+};
+
+/** Unidades de um pedido de `simbolos` × `dias` em `intervalo` — a MESMA fórmula da rota. */
+export function unidadesDe(simbolos: number, dias: number, intervalo: string, mesa = false): number | null {
+  const p: PedidoDeRodada = {
+    simbolos: Array.from({ length: simbolos }, (_, i) => `S${i}`), intervalo,
+    janelaDe: 0, janelaAte: dias * DIA_MS, capitalUsd: 1, mesa,
+  };
+  const velas = custoDoPedido(p);
+  return velas == null ? null : unidadesDoPedido(p, velas);
+}
+
+/**
+ * Quantos backtests de `unidades` cabem num dia do plano: o MENOR entre a cota de rodadas e o
+ * orçamento ÷ unidades. É a resposta a "o cliente consegue usar o X que comprou?".
+ */
+export function backtestsPorDiaDe(tier: Tier, unidades: number): number {
+  const x = BANCADA_COTAS[tier].backtestsPorDia;
+  if (!(unidades > 0)) return x;
+  return Math.min(x, Math.floor(orcamentoDiarioDeUnidades(tier) / unidades));
+}
+
 export type ValidacaoDoPedido =
   | { ok: true; custoVelas: number; unidades: number; cota: CotaDaBancada }
   | { ok: false; motivo: MotivoDaRecusa; porque: string; cota: CotaDaBancada };
