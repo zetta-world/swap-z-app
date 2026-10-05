@@ -231,7 +231,7 @@ export async function POST(req: NextRequest) {
     params: paramsCongelados,
     custoVelas: d.custoVelas,
     custoUnidades: d.unidades,
-  }, { rodadas: d.cota.backtestsPorDia, unidades: orcamentoDiarioDeUnidades(d.cota) });
+  }, { rodadas: d.cota.backtestsPorDia, unidades: orcamentoDiarioDeUnidades(tier) });
 
   if (!reserva.ok) {
     /**
@@ -248,7 +248,7 @@ export async function POST(req: NextRequest) {
     }
     return json({
       ok: false, error: reserva.motivo,
-      porque: porqueDaReservaRecusada(reserva.motivo, d.cota, reserva.rodadas),
+      porque: porqueDaReservaRecusada(reserva.motivo, tier, reserva.rodadas),
       tier, cota: d.cota, upgradeUrl: "/pricing",
     }, 429);
   }

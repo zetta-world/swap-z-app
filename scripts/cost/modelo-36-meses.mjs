@@ -24,7 +24,7 @@ const fixoMes = Object.values(P.fixosMensaisUsd).reduce((s, x) => s + v(x), 0);
 
 /** Teto de velas por rodada e orçamento diário de unidades — a MESMA fórmula de `cotas.ts`. */
 const tetoPorRodada = (t) => P.tiers[t].simbolosPorTeste * P.tiers[t].janelaMaxDias * 24;
-const orcamentoDia = (t) => Math.floor(P.tiers[t].backtestsPorDia * tetoPorRodada(t) * P.orcamentoWorkbench.fracaoDoTeto);
+const orcamentoDia = (t) => Math.floor(P.tiers[t].backtestsPorDia * tetoPorRodada(t) * P.orcamentoWorkbench.fracaoDoTeto[t]);
 
 /** Custo de UMA análise do ZION (provedor ativo = Kimi; Sonnet como sensibilidade). */
 function custoAnalise(cen, provedor = "kimi") {
@@ -80,12 +80,25 @@ function linha(t, cen) {
   const workbenchCpuAntes = velasDia * ((un.cpuPorVelaPropriaUsAntes / 3.6e9) * pr.cpuHoraUsd) * DIAS_MES * MESES;
   const workbenchCpuDepois = velasDia * ((un.cpuPorVelaPropriaUs / 3.6e9) * pr.cpuHoraUsd) * DIAS_MES * MESES;
   const papel = T.mesasDePapel * c.mesasAtivas * custoMesaMes(cen) * MESES;
-  const cash = ia + workbench + papel;
+  // Armazenamento ACUMULADO (o que é gravado no mês m é pago de m até o fim):
+  // Σ_{m=1..M} (m × bytes/mês) GB-mês. Com retenção de R meses das operações,
+  // o detalhe para de crescer depois de R meses.
+  const rodadasMes = backtestsPorDia(t, cen) * DIAS_MES;
+  const opsPorRodada = (velasDia / Math.max(1, backtestsPorDia(t, cen))) * un.operacoesPorVela;
+  const gbRodadasMes = (rodadasMes * un.bytesPorRodada) / 1e9;
+  const gbOpsMes = (rodadasMes * opsPorRodada * un.bytesPorOperacao) / 1e9;
+  const somaMeses = (MESES * (MESES + 1)) / 2;
+  const R = un.retencaoOperacoesMeses;
+  const somaComRetencao = (R * (R + 1)) / 2 + (MESES - R) * R;
+  const armazenamento = (gbRodadasMes * somaMeses + gbOpsMes * somaMeses) * pr.armazenamentoGbMesUsd;
+  const armazenamentoComRetencao = (gbRodadasMes * somaMeses + gbOpsMes * somaComRetencao) * pr.armazenamentoGbMesUsd;
+  const cash = ia + workbench + papel + armazenamento;
   const humano = c.suporteHorasMes[t] * pr.horaHumanaUsd * MESES;
   const fixo = fixoPorHolder36;
   return {
     tier: t, cenario: cen, preco: T.preco,
-    ia, iaSonnet, workbench, workbenchCpuAntes, workbenchCpuDepois, papel, cash, humano, fixo,
+    ia, iaSonnet, workbench, workbenchCpuAntes, workbenchCpuDepois, papel, armazenamento, armazenamentoComRetencao,
+    gbMesFinal: gbRodadasMes + gbOpsMes, cash, humano, fixo,
     economico: cash + humano + fixo,
     velasDia, analisesMes,
   };
@@ -121,10 +134,10 @@ out.push(`| fixos da plataforma por holder (36 meses, ${holders} holders) | ${us
 out.push("");
 out.push("## 2. Custo de 36 meses por holder");
 out.push("");
-out.push("| cenário | plano | preço | ZION | Workbench | papel | **CASH** | CASH/preço | HUMANO | FIXO | **ECONÔMICO** | econômico/preço |");
-out.push("|---|---|---|---|---|---|---|---|---|---|---|---|");
+out.push("| cenário | plano | preço | ZION | Workbench | papel | armazenamento | **CASH** | CASH/preço | HUMANO | FIXO | **ECONÔMICO** | econômico/preço |");
+out.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|");
 for (const l of linhas) {
-  out.push(`| ${l.cenario} | ${l.tier} | ${usd(l.preco)} | ${usd(l.ia)} | ${usd(l.workbench)} | ${usd(l.papel)} | **${usd(l.cash)}** | ${pct(l.cash / l.preco)} | ${usd(l.humano)} | ${usd(l.fixo)} | **${usd(l.economico)}** | ${pct(l.economico / l.preco)} |`);
+  out.push(`| ${l.cenario} | ${l.tier} | ${usd(l.preco)} | ${usd(l.ia)} | ${usd(l.workbench)} | ${usd(l.papel)} | ${usd(l.armazenamento)} | **${usd(l.cash)}** | ${pct(l.cash / l.preco)} | ${usd(l.humano)} | ${usd(l.fixo)} | **${usd(l.economico)}** | ${pct(l.economico / l.preco)} |`);
 }
 out.push("");
 out.push("ZION com Sonnet (sensibilidade de provedor), 36 meses: " + TIERS.map((t) => `${t} ${CENARIOS.map((c) => `${c[0]} ${usd(L(t, c).iaSonnet)}`).join(" / ")}`).join(" · "));
@@ -165,7 +178,24 @@ for (const t of TIERS) {
   out.push(`| ${t} | ${usd(passivo("EXPECTED"))} | ${usd(passivo("HEAVY"))} | ${usd(passivo("STRESS"))} | ${usd(P.tiers[t].preco * P.reservaDeServico["40/35/15"][t])}: ${cob(P.reservaDeServico["40/35/15"][t])} | ${usd(P.tiers[t].preco * P.reservaDeServico["25/20/10"][t])}: ${cob(P.reservaDeServico["25/20/10"][t])} | ${pct(orientada)} (${usd(passivo("HEAVY") * 1.2)}) |`);
 }
 out.push("");
-out.push("## 7. Leitura (gerada dos números acima)");
+out.push("## 7. Armazenamento: sem retenção × retenção de operações (PROPOSTA, não implementada)");
+out.push("");
+out.push(`Cada backtest grava a rodada, o resultado e TODAS as operações (\`bancada_operacao\`); nada tem retenção hoje. A proposta mantém o detalhe das operações por ${un.retencaoOperacoesMeses} meses e o resumo para sempre — exige decisão do dono (dado do cliente).`);
+out.push("");
+out.push("| cenário | plano | GB/mês gravados | 36 meses sem retenção | com retenção |");
+out.push("|---|---|---|---|---|");
+for (const l of linhas) out.push(`| ${l.cenario} | ${l.tier} | ${l.gbMesFinal.toFixed(3)} | ${usd(l.armazenamento)} | ${usd(l.armazenamentoComRetencao)} |`);
+out.push("");
+out.push("## 8. Comparação com a assinatura mensal (Hird, preço do código)");
+out.push("");
+out.push("| cenário | plano | custo econômico por mês | preço mensal | custo/preço |");
+out.push("|---|---|---|---|---|");
+for (const l of linhas) {
+  const mensal = P.tiers[l.tier].mensalHird;
+  out.push(`| ${l.cenario} | ${l.tier} | ${usd(l.economico / MESES)} | ${usd(mensal)} | ${pct(l.economico / MESES / mensal)} |`);
+}
+out.push("");
+out.push("## 9. Leitura (gerada dos números acima)");
 out.push("");
 for (const cen of CENARIOS) {
   const partes = TIERS.map((t) => {
@@ -176,7 +206,7 @@ for (const cen of CENARIOS) {
   out.push(`- **${cen}** — ${partes.join("; ")}.`);
 }
 const pilotStressWb = L("pilot", "STRESS").workbench;
-out.push(`- O Workbench do Pilot em STRESS (orçamento de unidades do CE-05 usado todo dia) custa ${usd(pilotStressWb)} em 36 meses, ${pct(pilotStressWb / P.tiers.pilot.preco)} do preço — o orçamento atual limita o abuso, mas não o bastante para o Pilot (risco CE-05-R1).`);
+out.push(`- O Workbench do Pilot em STRESS (orçamento de unidades do CE-05/CE-15 usado todo dia, fração 1/16) custa ${usd(pilotStressWb)} em 36 meses, ${pct(pilotStressWb / P.tiers.pilot.preco)} do preço; com a fração uniforme de ¼ seriam ~4× isso (ver o relatório, CE-05-R1).`);
 out.push(`- Trocar Kimi por Sonnet multiplica a linha do ZION por ~${(custoAnalise("EXPECTED", "sonnet") / custoAnalise("EXPECTED")).toFixed(1)}× (EXPECTED).`);
 out.push("- O HUMANO depende inteiramente de `horaHumanaUsd` e das horas por plano, que são hipóteses: o dono precisa fixá-las antes de qualquer conclusão sobre margem.");
 out.push("");

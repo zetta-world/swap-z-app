@@ -203,18 +203,27 @@ describe("⚠️⚠️ CE-05 — orçamento sensível a computação", () => {
   const DIA = 86_400_000;
   const fim = 1_790_000_000_000;
 
-  it("a fórmula, escrita: X rodadas × ¼ do teto por rodada — por plano", async () => {
-    const { orcamentoDiarioDeUnidades, tetoDeVelasPorRodada } = await cotas();
+  it("a fórmula, escrita: X rodadas × fração do teto por rodada — ¼, e 1/16 no Pilot", async () => {
+    const { orcamentoDiarioDeUnidades, tetoDeVelasPorRodada, FRACAO_DO_TETO_NO_ORCAMENTO } = await cotas();
     const { BANCADA_COTAS } = await tipos();
     for (const t of ["free", "pro", "trader", "pilot"] as const) {
       const c = BANCADA_COTAS[t];
-      expect(orcamentoDiarioDeUnidades(c)).toBe(Math.floor(c.backtestsPorDia * tetoDeVelasPorRodada(c) / 4));
+      expect(orcamentoDiarioDeUnidades(t)).toBe(Math.floor(c.backtestsPorDia * tetoDeVelasPorRodada(c) * FRACAO_DO_TETO_NO_ORCAMENTO[t]));
     }
     // Os números que o relatório publica.
-    expect(orcamentoDiarioDeUnidades(BANCADA_COTAS.free)).toBe(65_700);
-    expect(orcamentoDiarioDeUnidades(BANCADA_COTAS.pro)).toBe(4_380_000);
-    expect(orcamentoDiarioDeUnidades(BANCADA_COTAS.trader)).toBe(21_900_000);
-    expect(orcamentoDiarioDeUnidades(BANCADA_COTAS.pilot)).toBe(219_000_000);
+    expect(orcamentoDiarioDeUnidades("free")).toBe(65_700);
+    expect(orcamentoDiarioDeUnidades("pro")).toBe(4_380_000);
+    expect(orcamentoDiarioDeUnidades("trader")).toBe(21_900_000);
+    expect(orcamentoDiarioDeUnidades("pilot")).toBe(54_750_000);
+  });
+
+  it("o orçamento de cada plano cobre com folga o uso PESADO modelado (CE-15)", async () => {
+    const { orcamentoDiarioDeUnidades } = await cotas();
+    // Uso pesado do modelo de 36 meses: rodadas/dia × 20 mil velas.
+    const pesado = { pro: 30 * 20_000, trader: 150 * 20_000, pilot: 1500 * 20_000 };
+    for (const t of ["pro", "trader", "pilot"] as const) {
+      expect(orcamentoDiarioDeUnidades(t) / pesado[t], t).toBeGreaterThanOrEqual(1.8);
+    }
   });
 
   it("uso comum NUNCA esbarra no orçamento: X rodadas de 3 símbolos × 1 ano em diárias cabem com sobra", async () => {
@@ -224,11 +233,11 @@ describe("⚠️⚠️ CE-05 — orçamento sensível a computação", () => {
       const v = validarPedido(t, { simbolos: ["BTC", "ETH", "SOL"], intervalo: "1d", janelaDe: fim - 365 * DIA, janelaAte: fim, capitalUsd: 100 });
       expect(v.ok).toBe(true);
       if (!v.ok) continue;
-      expect(v.unidades * BANCADA_COTAS[t].backtestsPorDia).toBeLessThan(orcamentoDiarioDeUnidades(BANCADA_COTAS[t]));
+      expect(v.unidades * BANCADA_COTAS[t].backtestsPorDia).toBeLessThan(orcamentoDiarioDeUnidades(t));
     }
   });
 
-  it("rodadas no TETO por rodada: cabem X/4 por dia (e X/8 no modo mesa) — é o freio de abuso", async () => {
+  it("rodadas no TETO por rodada: cabem X/16 por dia no Pilot (X/4 nos outros) — é o freio de abuso", async () => {
     const { validarPedido, orcamentoDiarioDeUnidades, tetoDeVelasPorRodada } = await cotas();
     const { BANCADA_COTAS } = await tipos();
     const c = BANCADA_COTAS.pilot;
@@ -241,7 +250,7 @@ describe("⚠️⚠️ CE-05 — orçamento sensível a computação", () => {
     expect(v.ok).toBe(true);
     if (!v.ok) return;
     expect(v.custoVelas).toBe(teto);
-    expect(Math.floor(orcamentoDiarioDeUnidades(c) / v.unidades)).toBe(c.backtestsPorDia / 4);
+    expect(Math.floor(orcamentoDiarioDeUnidades("pilot") / v.unidades)).toBe(Math.floor(c.backtestsPorDia / 16));
   });
 
   it("modo mesa pesa 2: lê os três prazos E roda o seletor da casa em cada barra", async () => {

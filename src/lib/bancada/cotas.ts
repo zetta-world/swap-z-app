@@ -108,16 +108,25 @@ const DIA_MS = 86_400_000;
  *
  *     unidades(rodada) = custoVelas × (mesa ? 2 : 1)
  *
- * ORÇAMENTO DIÁRIO = backtestsPorDia × ¼ do teto de uma rodada.
+ * ORÇAMENTO DIÁRIO = backtestsPorDia × fração(plano) do teto de uma rodada.
  *
- *     orcamento(tier) = backtestsPorDia × tetoDeVelasPorRodada(cota) / 4
+ *     orcamento(tier) = backtestsPorDia × tetoDeVelasPorRodada(cota) × fração(tier)
+ *     fração: free/pro/trader = ¼ · pilot = 1/16
+ *
+ * ⚠️ POR QUE O PILOT TEM FRAÇÃO MENOR (CE-15). Com ¼, o Pilot podia ler 219
+ * milhões de velas por dia — 7× o uso PESADO modelado (1.500 rodadas × 20 mil
+ * velas = 30 milhões) — e o modelo de 36 meses mostrou esse teto custando ~94%
+ * do preço só em leitura, fora o armazenamento. Com 1/16 o teto é 54,75 milhões
+ * por dia: 1,8× o uso pesado, ainda permitindo as 5.000 rodadas com ~11 mil
+ * velas cada. Os outros planos têm 7×+ de folga sobre o pesado com ¼.
  *
  * Leitura em português: o cliente roda as X rodadas do plano enquanto a rodada
- * MÉDIA usar até um quarto do teto por rodada (o teto continua o mesmo). Uso
+ * MÉDIA usar até a fração do teto por rodada (o teto continua o mesmo). Uso
  * comum fica muito abaixo disso — 3 símbolos × 1 ano em diárias = 1.095 velas,
  * 0,6% do teto do Pro. Quem só roda rodadas no teto máximo faz X/4 delas por
- * dia (X/8 no modo mesa). É isso que impede 5.000 rodadas de 175 mil velas em
- * 24h — 876 milhões de leituras — sem mexer em quem usa o produto normalmente.
+ * dia (X/16 no Pilot; metade disso no modo mesa). É isso que impede 5.000
+ * rodadas de 175 mil velas em 24h — 876 milhões de leituras — sem mexer em
+ * quem usa o produto normalmente.
  *
  * ⚠️ RISCO COMERCIAL DECLARADO, não escondido: o texto "até X backtests/24h"
  * continua verdadeiro ("até"), mas para rodadas pesadas X deixa de ser
@@ -125,14 +134,17 @@ const DIA_MS = 86_400_000;
  * Nada aqui muda preço, plano ou o número X.
  */
 export const PESO_DO_MODO_MESA = 2;
-export const FRACAO_DO_TETO_NO_ORCAMENTO = 0.25;
+export const FRACAO_DO_TETO_NO_ORCAMENTO: Record<Tier, number> = {
+  free: 0.25, pro: 0.25, trader: 0.25, pilot: 1 / 16,
+};
 
 export function unidadesDoPedido(p: PedidoDeRodada, custoVelas: number): number {
   return Math.max(0, Math.ceil(custoVelas * (p.mesa ? PESO_DO_MODO_MESA : 1)));
 }
 
-export function orcamentoDiarioDeUnidades(cota: CotaDaBancada): number {
-  return Math.floor(cota.backtestsPorDia * tetoDeVelasPorRodada(cota) * FRACAO_DO_TETO_NO_ORCAMENTO);
+export function orcamentoDiarioDeUnidades(tier: Tier): number {
+  const cota = BANCADA_COTAS[tier];
+  return Math.floor(cota.backtestsPorDia * tetoDeVelasPorRodada(cota) * FRACAO_DO_TETO_NO_ORCAMENTO[tier]);
 }
 
 export type ValidacaoDoPedido =
@@ -201,14 +213,14 @@ export function validarPedido(tier: Tier, pedido: PedidoDeRodada): ValidacaoDoPe
 
 /** As frases de recusa da RESERVA (banco), com o número que o banco contou. */
 export function porqueDaReservaRecusada(
-  motivo: "cota_esgotada" | "orcamento_esgotado", cota: CotaDaBancada, rodadas: number,
+  motivo: "cota_esgotada" | "orcamento_esgotado", tier: Tier, rodadas: number,
 ): string {
   if (motivo === "cota_esgotada") {
     return `você já rodou ${rodadas} testes nas últimas 24 horas, que é o limite do seu plano. `
       + "A cota é uma janela móvel: ela reabre aos poucos, conforme os testes antigos completam 24h.";
   }
   return `os testes das últimas 24 horas já leram o volume de dados do seu plano `
-    + `(${orcamentoDiarioDeUnidades(cota).toLocaleString("pt-BR")} unidades). Rodadas menores — intervalo maior `
+    + `(${orcamentoDiarioDeUnidades(tier).toLocaleString("pt-BR")} unidades). Rodadas menores — intervalo maior `
     + "ou janela mais curta — continuam cabendo; a janela é móvel e reabre conforme os testes antigos completam 24h.";
 }
 
