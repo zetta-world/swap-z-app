@@ -24,8 +24,8 @@
     "recrutamentoBrlPorContratacao": 1500,
     "treinamentoCursoBrlPorL1": 1800,
     "treinamentoCursoBrlPorLead": 1200,
-    "treinamentoHorasL1": 120,
-    "treinamentoHorasLead": 80,
+    "treinamentoHorasCobertasPelaFolhaL1": 120,
+    "treinamentoHorasCobertasPelaFolhaLead": 80,
     "supervisaoInicialHorasPorContratacao": 24,
     "custoCeoEspecialistaBrlHora": 250,
     "horasBrutasMes": 190.67,
@@ -34,7 +34,7 @@
     "rampProdutividadeTresMeses": [0.45, 0.65, 0.8],
     "fonteFgts": "https://www.gov.br/trabalho-e-emprego/pt-br/assuntos/inspecao-do-trabalho/areas-de-atuacao/fgts-fundo-de-garantia-do-tempo-de-servico",
     "fontePrevidencia": "https://www.gov.br/receitafederal/pt-br/assuntos/orientacao-tributaria/tributos/contribuicoes-previdenciarias-pf",
-    "nota": "FGTS oficial: em regra 8% da remuneração. Receita: cenário geral de 20% patronal. RAT/terceiros e provisão são hipóteses prudenciais; enquadramento real pode mudar o custo."
+    "nota": "FGTS oficial: em regra 8% da remuneração. Receita: cenário geral de 20% patronal. RAT/terceiros e provisão são hipóteses prudenciais; enquadramento real pode mudar o custo. Horas de treinamento já são pagas pela folha e refletidas no ramp; treinamento extra inclui apenas recrutamento, curso/material e supervisão adicional."
   },
   "staffing": {
     "S1_LEAN": {
@@ -86,6 +86,31 @@
     }
   },
   "otherOpsBrlMes": 2500,
-  "prudentialServiceReserveBuffer": 0.25,
+  "serviceLiability": {
+    "checkpointsMesesPrestados": [0, 1, 3, 12, 24, 36],
+    "buffersPrudenciais": [0.1, 0.25, 0.5],
+    "frontLoadedIncurridoNoMes": 1,
+    "recalculo": "PERIODICO_COM_CUSTO_REAL_INCORRIDO_E_RUN_RATE_OBSERVADO",
+    "hibridoP90": "MAX_EXPECTED_AJUSTADO_POR_USO_E_P90_EMPIRICO_MAIS_BUFFER_DE_EXECUCAO; INDISPONIVEL_ATE_EXISTIR_TELEMETRIA"
+  },
+  "capitalPolicyV1Reference": {
+    "grossUsd": 796250,
+    "totalBrl": 4149100,
+    "bucketsBrl": {
+      "IMPOSTOS": 747000,
+      "EMERGENCIA": 502100,
+      "CEO": 360000,
+      "INFRA": 360000,
+      "IA": 300000,
+      "EQUIPE": 720000,
+      "SEGURANCA": 250000,
+      "ESCRITORIO": 240000,
+      "ESTACAO": 80000,
+      "CRESCIMENTO": 450000,
+      "OPERACOES": 140000
+    },
+    "serviceCoverageBuckets": ["INFRA", "IA", "EQUIPE", "OPERACOES"],
+    "nota": "A service reserve é uma segregação dentro dos baldes que já cobrem o serviço, não uma alocação adicional acima de 100%. Impostos são reserva de planejamento, não cálculo tributário."
+  },
   "referral": [0, 0.1, 0.15, 0.2]
 }

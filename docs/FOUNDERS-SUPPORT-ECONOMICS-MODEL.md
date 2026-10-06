@@ -5,11 +5,13 @@
 
 ## Staffing models
 
-| modelo | desenho | suporte 36m | treinamento/ramp | total 36m | horas produtivas 36m |
-|---|---|---:|---:|---:|---:|
-| S1_LEAN | 2 L1 desde o início; terceira pessoa somente quando o gatilho operacional for atingido | R$ 435.281 | R$ 25.742 | R$ 461.023 | 8.432 |
-| S2_CEO_PLAN | 3 L1 desde o início, salário-base inicial de R$3.000 por pessoa | R$ 652.922 | R$ 38.613 | R$ 691.535 | 12.649 |
-| S3_MATURE | 2 L1 + 1 L2/lead qualificado desde o início | R$ 776.170 | R$ 38.088 | R$ 814.258 | 12.649 |
+| modelo | desenho | folha/benefícios/ferramentas 36m | treinamento EXTRA | horas de treinamento já cobertas pela folha | total 36m | horas produtivas 36m |
+|---|---|---:|---:|---:|---:|---:|
+| S1_LEAN | 2 L1 desde o início; terceira pessoa somente quando o gatilho operacional for atingido | R$ 435.281 | R$ 18.600 | 240 h | R$ 453.881 | 8.432 |
+| S2_CEO_PLAN | 3 L1 desde o início, salário-base inicial de R$3.000 por pessoa | R$ 652.922 | R$ 27.900 | 360 h | R$ 680.822 | 12.649 |
+| S3_MATURE | 2 L1 + 1 L2/lead qualificado desde o início | R$ 776.170 | R$ 27.300 | 320 h | R$ 803.470 | 12.649 |
+
+As horas de treinamento já são remuneradas na folha e reduzem a capacidade pelo ramp; não são cobradas novamente. `treinamento EXTRA` contém somente recrutamento, curso/material e supervisão adicional.
 
 ## Capacity and ZION deflection
 
@@ -32,29 +34,29 @@
 
 | cenário | tier | compute | AI | database/cloud | support L1/L2 | CEO/expert | training | fixed | other ops | **total** | total/preço |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| EXPECTED | pro | $0.09 | $37.10 | $0.08 | $17.38 | $0.18 | $1.03 | $1.79 | $5.66 | **$63.32** | 42.5% |
-| EXPECTED | trader | $0.37 | $92.75 | $0.34 | $41.71 | $0.44 | $2.47 | $1.79 | $5.66 | **$145.53** | 36.5% |
-| EXPECTED | pilot | $1.13 | $111.30 | $1.02 | $121.65 | $1.29 | $7.19 | $1.79 | $5.66 | **$251.03** | 12.6% |
-| HEAVY | pro | $5.13 | $121.80 | $4.61 | $26.56 | $3.68 | $1.57 | $1.79 | $5.66 | **$170.81** | 114.6% |
-| HEAVY | trader | $25.67 | $304.50 | $23.04 | $61.97 | $8.59 | $3.66 | $1.79 | $5.66 | **$434.90** | 109.0% |
-| HEAVY | pilot | $256.61 | $365.40 | $230.43 | $177.05 | $24.55 | $10.47 | $1.79 | $5.66 | **$1,071.97** | 53.9% |
-| STRESS | pro | $37.38 | $186.37 | $33.43 | $33.36 | $30.07 | $1.64 | $1.79 | $5.66 | **$329.71** | 221.3% |
-| STRESS | trader | $186.91 | $465.93 | $167.16 | $71.49 | $64.43 | $3.51 | $1.79 | $5.66 | **$966.89** | 242.3% |
-| STRESS | pilot | $469.75 | $559.12 | $424.54 | $190.64 | $171.82 | $9.36 | $1.79 | $5.66 | **$1,832.68** | 92.1% |
+| EXPECTED | pro | $0.09 | $37.10 | $0.08 | $17.38 | $0.18 | $0.74 | $1.79 | $5.66 | **$63.03** | 42.3% |
+| EXPECTED | trader | $0.37 | $92.75 | $0.34 | $41.71 | $0.44 | $1.78 | $1.79 | $5.66 | **$144.85** | 36.3% |
+| EXPECTED | pilot | $1.13 | $111.30 | $1.02 | $121.65 | $1.29 | $5.20 | $1.79 | $5.66 | **$249.04** | 12.5% |
+| HEAVY | pro | $5.13 | $121.80 | $4.61 | $26.56 | $3.68 | $1.13 | $1.79 | $5.66 | **$170.37** | 114.3% |
+| HEAVY | trader | $25.67 | $304.50 | $23.04 | $61.97 | $8.59 | $2.65 | $1.79 | $5.66 | **$433.88** | 108.7% |
+| HEAVY | pilot | $256.61 | $365.40 | $230.43 | $177.05 | $24.55 | $7.57 | $1.79 | $5.66 | **$1,069.06** | 53.7% |
+| STRESS | pro | $37.38 | $186.37 | $33.43 | $33.36 | $30.07 | $1.17 | $1.79 | $5.66 | **$329.24** | 221.0% |
+| STRESS | trader | $186.91 | $465.93 | $167.16 | $71.49 | $64.43 | $2.51 | $1.79 | $5.66 | **$965.89** | 242.1% |
+| STRESS | pilot | $469.75 | $559.12 | $424.54 | $190.64 | $171.82 | $6.71 | $1.79 | $5.66 | **$1,830.03** | 92.0% |
 
 ## Referral sensitivity per paid pass
 
 | cenário | tier | 0% | 10% | 15% | 20% |
 |---|---|---:|---:|---:|---:|
-| EXPECTED | pro | $85.68 | $70.78 | $63.33 | $55.88 |
-| EXPECTED | trader | $253.47 | $213.57 | $193.62 | $173.67 |
-| EXPECTED | pilot | $1,738.97 | $1,539.97 | $1,440.47 | $1,340.97 |
-| HEAVY | pro | $-21.81 | $-36.71 | $-44.16 | $-51.61 |
-| HEAVY | trader | $-35.90 | $-75.80 | $-95.75 | $-115.70 |
-| HEAVY | pilot | $918.03 | $719.03 | $619.53 | $520.03 |
-| STRESS | pro | $-180.71 | $-195.61 | $-203.06 | $-210.51 |
-| STRESS | trader | $-567.89 | $-607.79 | $-627.74 | $-647.69 |
-| STRESS | pilot | $157.32 | $-41.68 | $-141.18 | $-240.68 |
+| EXPECTED | pro | $85.97 | $71.07 | $63.62 | $56.17 |
+| EXPECTED | trader | $254.15 | $214.25 | $194.30 | $174.35 |
+| EXPECTED | pilot | $1,740.96 | $1,541.96 | $1,442.46 | $1,342.96 |
+| HEAVY | pro | $-21.37 | $-36.27 | $-43.72 | $-51.17 |
+| HEAVY | trader | $-34.88 | $-74.78 | $-94.73 | $-114.68 |
+| HEAVY | pilot | $920.94 | $721.94 | $622.44 | $522.94 |
+| STRESS | pro | $-180.24 | $-195.14 | $-202.59 | $-210.04 |
+| STRESS | trader | $-566.89 | $-606.79 | $-626.74 | $-646.69 |
+| STRESS | pilot | $159.97 | $-39.03 | $-138.53 | $-238.03 |
 
 ## CEO/expert escalation sensitivity (36 months, full portfolio)
 
@@ -66,18 +68,42 @@
 
 ## Service reserve from remaining liability
 
-Regra: passivo econômico EXPECTED remanescente × 1.25. No fechamento da venda restam 36/36 meses; após `m` meses, multiplicar por `(36-m)/36`. Não inclui reserva fiscal, emergência, runway do CEO ou growth.
+A reserva é capital segregado para pagar custos futuros, não um custo novo. A obrigação remanescente soma front-loaded ainda não incorrido, folha/serviço mensal futuro, AI, compute, DB/cloud, fixed ops e volume/escalation esperados. Folha usa a grade mensal real; DB/cloud usa a curva de storage. O modelo deve ser recalculado periodicamente com custos incorridos e uso observado.
 
-| tier | passivo EXPECTED 36m | buffer | reserva sugerida/pass | % do preço | carteira paga + reserva |
-|---|---:|---:|---:|---:|---:|
-| pro | $63.32 | 25.0% | $79.15 | 53.1% | $160,672.00 |
-| trader | $145.53 | 25.0% | $181.92 | 45.6% | $138,257.95 |
-| pilot | $251.03 | 25.0% | $313.79 | 15.8% | $31,379.18 |
+| meses prestados | passivo EXPECTED remanescente | ×1,10 | ×1,25 | ×1,50 |
+|---:|---:|---:|---:|---:|
+| 0 | $262,948.76 | $289,243.64 | $328,685.95 | $394,423.15 |
+| 1 | $252,505.84 | $277,756.42 | $315,632.30 | $378,758.76 |
+| 3 | $238,381.23 | $262,219.35 | $297,976.53 | $357,571.84 |
+| 12 | $174,780.97 | $192,259.07 | $218,476.21 | $262,171.45 |
+| 24 | $88,300.77 | $97,130.84 | $110,375.96 | $132,451.15 |
+| 36 | $0.00 | $0.00 | $0.00 | $0.00 |
 
+Opção híbrida P90/uso observado: definida, mas **não calculável sem telemetria real**. Ela usa o maior entre expected ajustado pelo run-rate observado e P90 empírico, mais buffer de execução. HEAVY permanece cenário de risco e não vira reserva automática.
+
+### Initial per-pass sensitivity (model output, not policy)
+
+| tier | obrigação expected/pass | ×1,10 | ×1,25 | ×1,50 |
+|---|---:|---:|---:|---:|
+| pro | $63.03 | $69.34 | $78.79 | $94.55 |
+| trader | $144.85 | $159.34 | $181.06 | $217.28 |
+| pilot | $249.04 | $273.94 | $311.30 | $373.56 |
+
+## Capital policy reconciliation
+
+A Service Reserve é reconciliada dentro da política de capital já existente. Não se soma uma segunda reserva aos 100% do caixa. D/E/F/K (infra, IA, equipe e operações) oferecem R$ 1.520.000 de cobertura já alocada; eventual excesso exige reclassificação formal de outros baldes, nunca capital fictício.
+
+| buffer | gross proceeds | tax/regulatory | service liability reserve | emergency + CEO runway | deployable corporate capital | reallocation required | soma | > gross? |
+|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| 10.0% | R$ 4.149.100 | R$ 747.000 | R$ 1.590.840 | R$ 862.100 | R$ 949.160 | R$ 70.840 | R$ 4.149.100 | NO |
+| 25.0% | R$ 4.149.100 | R$ 747.000 | R$ 1.807.773 | R$ 862.100 | R$ 732.227 | R$ 287.773 | R$ 4.149.100 | NO |
+| 50.0% | R$ 4.149.100 | R$ 747.000 | R$ 2.169.327 | R$ 862.100 | R$ 370.673 | R$ 649.327 | R$ 4.149.100 | NO |
+
+A linha tributária é somente reserva de planejamento; não decide tratamento fiscal. Nenhum buffer foi aprovado como percentual final.
 ## Portfolio result
 
 | cenário | receita bruta paga | custo 2.890 holders | 0% referral | 10% | 15% | 20% |
 |---|---:|---:|---:|---:|---:|---:|
-| EXPECTED | $796,250.00 | $264,247.30 | $532,002.70 | $452,377.70 | $412,565.20 | $372,752.70 |
-| HEAVY | $796,250.00 | $784,455.01 | $11,794.99 | $-67,830.01 | $-107,642.51 | $-147,455.01 |
-| STRESS | $796,250.00 | $1,587,406.33 | $-791,156.33 | $-870,781.33 | $-910,593.83 | $-950,406.33 |
+| EXPECTED | $796,250.00 | $262,948.76 | $533,301.24 | $453,676.24 | $413,863.74 | $374,051.24 |
+| HEAVY | $796,250.00 | $782,507.20 | $13,742.80 | $-65,882.20 | $-105,694.70 | $-145,507.20 |
+| STRESS | $796,250.00 | $1,585,444.87 | $-789,194.87 | $-868,819.87 | $-908,632.37 | $-948,444.87 |

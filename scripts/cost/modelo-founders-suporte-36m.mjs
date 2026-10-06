@@ -22,13 +22,17 @@ const progressao = (papel) => papel === "LEAD" ? P.trabalho.progressaoAnualLead 
 const salarioNoMes = (papel, mesDesdeInicio) => salarioBase(papel) * (1 + progressao(papel)) ** Math.floor((mesDesdeInicio - 1) / 12);
 const custoMensalPessoa = (papel, mesDesdeInicio) => salarioNoMes(papel, mesDesdeInicio) * (1 + encargos)
   + P.trabalho.beneficiosBrlMesPessoa + P.trabalho.ferramentasBrlMesPessoa;
-const treinamentoCash = (papel) => P.trabalho.recrutamentoBrlPorContratacao
-  + (papel === "LEAD" ? P.trabalho.treinamentoCursoBrlPorLead : P.trabalho.treinamentoCursoBrlPorL1);
+const treinamentoExtra = (papel) => P.trabalho.recrutamentoBrlPorContratacao
+  + (papel === "LEAD" ? P.trabalho.treinamentoCursoBrlPorLead : P.trabalho.treinamentoCursoBrlPorL1)
+  + P.trabalho.supervisaoInicialHorasPorContratacao * P.trabalho.custoCeoEspecialistaBrlHora;
+const horasTreinamentoCobertasPelaFolha = (papel) => papel === "LEAD"
+  ? P.trabalho.treinamentoHorasCobertasPelaFolhaLead
+  : P.trabalho.treinamentoHorasCobertasPelaFolhaL1;
 const horasProdutivasSteady = P.trabalho.horasBrutasMes * P.trabalho.fracaoProdutiva * P.trabalho.disponibilidadeFeriasAusencias;
 
 function staffing(nome) {
   const cfg = P.staffing[nome];
-  let suporteBrl = 0, treinamentoBrl = 0, horas36 = 0;
+  let suporteBrl = 0, treinamentoBrl = 0, horasTreinamentoNaFolha = 0, horas36 = 0;
   const meses = [];
   for (let mes = 1; mes <= MESES; mes++) {
     let custo = 0, horas = 0, ativos = 0;
@@ -41,16 +45,17 @@ function staffing(nome) {
       const ramp = P.trabalho.rampProdutividadeTresMeses[desde - 1] ?? 1;
       horas += horasProdutivasSteady * ramp;
       if (desde === 1) {
-        treinamentoBrl += treinamentoCash(pessoa.papel)
-          + (pessoa.papel === "LEAD" ? P.trabalho.treinamentoHorasLead : P.trabalho.treinamentoHorasL1) * (mensal / P.trabalho.horasBrutasMes)
-          + P.trabalho.supervisaoInicialHorasPorContratacao * P.trabalho.custoCeoEspecialistaBrlHora;
+        // A folha já paga as horas de treinamento e o ramp já reduz a capacidade.
+        // Somamos aqui somente desembolsos extras: recrutamento, curso/material e supervisão adicional.
+        treinamentoBrl += treinamentoExtra(pessoa.papel);
+        horasTreinamentoNaFolha += horasTreinamentoCobertasPelaFolha(pessoa.papel);
       }
     }
     suporteBrl += custo;
     horas36 += horas;
     meses.push({ mes, ativos, custoBrl: custo, horasProdutivas: horas });
   }
-  return { nome, descricao: cfg.descricao, suporteBrl, treinamentoBrl, totalBrl: suporteBrl + treinamentoBrl, horas36, meses };
+  return { nome, descricao: cfg.descricao, suporteBrl, treinamentoBrl, horasTreinamentoNaFolha, totalBrl: suporteBrl + treinamentoBrl, horas36, meses };
 }
 
 const staffingModels = Object.fromEntries(Object.keys(P.staffing).map((n) => [n, staffing(n)]));
@@ -126,6 +131,89 @@ function linha(t, cen) {
 
 const linhas = CENARIOS.flatMap((c) => TIERS.map((t) => linha(t, c)));
 const L = (t, c) => linhas.find((x) => x.tier === t && x.cenario === c);
+
+const restanteLinear = (total, mesesPrestados) => total * (MESES - mesesPrestados) / MESES;
+const restanteDatabase = (total, mesesPrestados) => {
+  const somaTotal = MESES * (MESES + 1) / 2;
+  const somaIncorrida = mesesPrestados * (mesesPrestados + 1) / 2;
+  return total * (somaTotal - somaIncorrida) / somaTotal;
+};
+
+/**
+ * Obrigação de serviço por holder após N meses efetivamente prestados.
+ * - front-loaded: recrutamento/curso/supervisão extra ainda não incorridos;
+ * - recurring: folha exata dos meses futuros, fixos e other ops;
+ * - variable: AI, compute, DB/cloud e escalação remanescentes.
+ *
+ * Não usa 1/36 cego: folha segue a progressão mensal e DB/cloud segue a curva
+ * acumulativa de storage. Dados observados devem substituir a previsão no
+ * recálculo periódico.
+ */
+function obrigacaoRestante(t, cen, mesesPrestados) {
+  if (!Number.isInteger(mesesPrestados) || mesesPrestados < 0 || mesesPrestados > MESES) throw new Error(`meses_prestados_invalidos:${mesesPrestados}`);
+  const l = L(t, cen);
+  const d = demanda(cen);
+  const staff = staffingModels[P.operacao.staffingPorCenario[cen]];
+  const share = d.horasMes > 0 ? d.porTier[t].horasMes / d.horasMes : 0;
+  const payrollFutureBrl = staff.meses.slice(mesesPrestados).reduce((s, x) => s + x.custoBrl, 0);
+  const frontLoaded = mesesPrestados < P.serviceLiability.frontLoadedIncurridoNoMes ? l.training : 0;
+  const recurring = {
+    payrollService: payrollFutureBrl / brlUsd * share / holders(t),
+    fixed: restanteLinear(l.fixed, mesesPrestados),
+    otherOps: restanteLinear(l.otherOps, mesesPrestados),
+  };
+  const variable = {
+    compute: restanteLinear(l.compute, mesesPrestados),
+    ai: restanteLinear(l.ai, mesesPrestados),
+    databaseCloud: restanteDatabase(l.databaseCloud, mesesPrestados),
+    ceoExpert: restanteLinear(l.ceoExpert, mesesPrestados),
+  };
+  const total = frontLoaded + Object.values(recurring).reduce((a, b) => a + b, 0)
+    + Object.values(variable).reduce((a, b) => a + b, 0);
+  return { tier: t, cenario: cen, mesesPrestados, frontLoaded, recurring, variable, total };
+}
+
+const serviceLiability = {
+  definition: "DYNAMIC_REMAINING_SERVICE_LIABILITY",
+  recalculation: P.serviceLiability.recalculo,
+  reserveIsAdditionalCost: false,
+  hybridP90Observed: { status: "UNAVAILABLE_WITHOUT_OBSERVED_TELEMETRY", method: P.serviceLiability.hibridoP90 },
+  buffers: P.serviceLiability.buffersPrudenciais,
+  checkpoints: P.serviceLiability.checkpointsMesesPrestados.map((mesesPrestados) => {
+    const tiers = Object.fromEntries(TIERS.map((t) => [t, obrigacaoRestante(t, "EXPECTED", mesesPrestados)]));
+    const portfolioExpected = TIERS.reduce((s, t) => s + tiers[t].total * holders(t), 0);
+    return {
+      mesesPrestados,
+      tiers,
+      portfolioExpected,
+      reserveSensitivity: Object.fromEntries(P.serviceLiability.buffersPrudenciais.map((b) => [String(b), portfolioExpected * (1 + b)])),
+    };
+  }),
+};
+
+const capitalPolicy = P.capitalPolicyV1Reference;
+const serviceCoverageBrl = capitalPolicy.serviceCoverageBuckets.reduce((s, k) => s + capitalPolicy.bucketsBrl[k], 0);
+const taxRegulatoryBrl = capitalPolicy.bucketsBrl.IMPOSTOS;
+const emergencyRunwayBrl = capitalPolicy.bucketsBrl.EMERGENCIA + capitalPolicy.bucketsBrl.CEO;
+const initialLiabilityUsd = serviceLiability.checkpoints.find((x) => x.mesesPrestados === 0).portfolioExpected;
+const capitalReconciliation = P.serviceLiability.buffersPrudenciais.map((buffer) => {
+  const serviceReserveBrl = initialLiabilityUsd * (1 + buffer) * brlUsd;
+  const deployableCorporateCapitalBrl = Math.max(0, capitalPolicy.totalBrl - taxRegulatoryBrl - emergencyRunwayBrl - serviceReserveBrl);
+  const reallocationRequiredBrl = Math.max(0, serviceReserveBrl - serviceCoverageBrl);
+  return {
+    buffer,
+    grossProceedsBrl: capitalPolicy.totalBrl,
+    taxRegulatoryBrl,
+    serviceReserveBrl,
+    emergencyRunwayBrl,
+    deployableCorporateCapitalBrl,
+    existingServiceCoverageBrl: serviceCoverageBrl,
+    reallocationRequiredBrl,
+    reconciledTotalBrl: taxRegulatoryBrl + serviceReserveBrl + emergencyRunwayBrl + deployableCorporateCapitalBrl,
+    exceedsGross: taxRegulatoryBrl + serviceReserveBrl + emergencyRunwayBrl > capitalPolicy.totalBrl,
+  };
+});
+
 const usd = (x) => `$${x.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const brl = (x) => `R$ ${x.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 const pct = (x) => `${(x * 100).toFixed(1)}%`;
@@ -138,9 +226,11 @@ out.push("> Cenário de planejamento, não parecer contábil/jurídico. Custos d
 out.push("");
 out.push("## Staffing models");
 out.push("");
-out.push("| modelo | desenho | suporte 36m | treinamento/ramp | total 36m | horas produtivas 36m |");
-out.push("|---|---|---:|---:|---:|---:|");
-for (const s of Object.values(staffingModels)) out.push(`| ${s.nome} | ${s.descricao} | ${brl(s.suporteBrl)} | ${brl(s.treinamentoBrl)} | ${brl(s.totalBrl)} | ${Math.round(s.horas36).toLocaleString("pt-BR")} |`);
+out.push("| modelo | desenho | folha/benefícios/ferramentas 36m | treinamento EXTRA | horas de treinamento já cobertas pela folha | total 36m | horas produtivas 36m |");
+out.push("|---|---|---:|---:|---:|---:|---:|");
+for (const s of Object.values(staffingModels)) out.push(`| ${s.nome} | ${s.descricao} | ${brl(s.suporteBrl)} | ${brl(s.treinamentoBrl)} | ${s.horasTreinamentoNaFolha.toLocaleString("pt-BR")} h | ${brl(s.totalBrl)} | ${Math.round(s.horas36).toLocaleString("pt-BR")} |`);
+out.push("");
+out.push("As horas de treinamento já são remuneradas na folha e reduzem a capacidade pelo ramp; não são cobradas novamente. `treinamento EXTRA` contém somente recrutamento, curso/material e supervisão adicional.");
 out.push("");
 out.push("## Capacity and ZION deflection");
 out.push("");
@@ -176,16 +266,30 @@ for (const cen of CENARIOS) {
 out.push("");
 out.push("## Service reserve from remaining liability");
 out.push("");
-out.push(`Regra: passivo econômico EXPECTED remanescente × ${(1 + P.prudentialServiceReserveBuffer).toFixed(2)}. No fechamento da venda restam 36/36 meses; após \`m\` meses, multiplicar por \`(36-m)/36\`. Não inclui reserva fiscal, emergência, runway do CEO ou growth.`);
+out.push("A reserva é capital segregado para pagar custos futuros, não um custo novo. A obrigação remanescente soma front-loaded ainda não incorrido, folha/serviço mensal futuro, AI, compute, DB/cloud, fixed ops e volume/escalation esperados. Folha usa a grade mensal real; DB/cloud usa a curva de storage. O modelo deve ser recalculado periodicamente com custos incorridos e uso observado.");
 out.push("");
-out.push("| tier | passivo EXPECTED 36m | buffer | reserva sugerida/pass | % do preço | carteira paga + reserva |");
-out.push("|---|---:|---:|---:|---:|---:|");
-for (const t of TIERS) {
-  const liab = L(t, "EXPECTED").total;
-  const reserve = liab * (1 + P.prudentialServiceReserveBuffer);
-  out.push(`| ${t} | ${usd(liab)} | ${pct(P.prudentialServiceReserveBuffer)} | ${usd(reserve)} | ${pct(reserve / B.tiers[t].preco)} | ${usd(reserve * holders(t))} |`);
-}
+out.push("| meses prestados | passivo EXPECTED remanescente | ×1,10 | ×1,25 | ×1,50 |");
+out.push("|---:|---:|---:|---:|---:|");
+for (const cp of serviceLiability.checkpoints) out.push(`| ${cp.mesesPrestados} | ${usd(cp.portfolioExpected)} | ${usd(cp.reserveSensitivity["0.1"])} | ${usd(cp.reserveSensitivity["0.25"])} | ${usd(cp.reserveSensitivity["0.5"])} |`);
 out.push("");
+out.push("Opção híbrida P90/uso observado: definida, mas **não calculável sem telemetria real**. Ela usa o maior entre expected ajustado pelo run-rate observado e P90 empírico, mais buffer de execução. HEAVY permanece cenário de risco e não vira reserva automática.");
+out.push("");
+out.push("### Initial per-pass sensitivity (model output, not policy)");
+out.push("");
+out.push("| tier | obrigação expected/pass | ×1,10 | ×1,25 | ×1,50 |");
+out.push("|---|---:|---:|---:|---:|");
+const initialCheckpoint = serviceLiability.checkpoints.find((x) => x.mesesPrestados === 0);
+for (const t of TIERS) out.push(`| ${t} | ${usd(initialCheckpoint.tiers[t].total)} | ${usd(initialCheckpoint.tiers[t].total * 1.10)} | ${usd(initialCheckpoint.tiers[t].total * 1.25)} | ${usd(initialCheckpoint.tiers[t].total * 1.50)} |`);
+out.push("");
+out.push("## Capital policy reconciliation");
+out.push("");
+out.push("A Service Reserve é reconciliada dentro da política de capital já existente. Não se soma uma segunda reserva aos 100% do caixa. D/E/F/K (infra, IA, equipe e operações) oferecem R$ " + serviceCoverageBrl.toLocaleString("pt-BR") + " de cobertura já alocada; eventual excesso exige reclassificação formal de outros baldes, nunca capital fictício.");
+out.push("");
+out.push("| buffer | gross proceeds | tax/regulatory | service liability reserve | emergency + CEO runway | deployable corporate capital | reallocation required | soma | > gross? |");
+out.push("|---:|---:|---:|---:|---:|---:|---:|---:|---|");
+for (const c of capitalReconciliation) out.push(`| ${pct(c.buffer)} | ${brl(c.grossProceedsBrl)} | ${brl(c.taxRegulatoryBrl)} | ${brl(c.serviceReserveBrl)} | ${brl(c.emergencyRunwayBrl)} | ${brl(c.deployableCorporateCapitalBrl)} | ${brl(c.reallocationRequiredBrl)} | ${brl(c.reconciledTotalBrl)} | ${c.exceedsGross ? "YES" : "NO"} |`);
+out.push("");
+out.push("A linha tributária é somente reserva de planejamento; não decide tratamento fiscal. Nenhum buffer foi aprovado como percentual final.");
 out.push("## Portfolio result");
 out.push("");
 out.push("| cenário | receita bruta paga | custo 2.890 holders | 0% referral | 10% | 15% | 20% |");
@@ -195,7 +299,7 @@ for (const cen of CENARIOS) {
   out.push(`| ${cen} | ${usd(receitaTotal)} | ${usd(cost)} | ${P.referral.map((r) => usd(receitaTotal * (1 - r) - cost)).join(" | ")} |`);
 }
 
-const data = { assumptions: P, staffingModels, lines: linhas, generated: { holdersTotal, receitaTotal } };
+const data = { assumptions: P, staffingModels, lines: linhas, serviceLiability, capitalReconciliation, generated: { holdersTotal, receitaTotal } };
 writeFileSync("scripts/cost/founders-support-economics-output.json", JSON.stringify(data, null, 2) + "\n");
 writeFileSync("docs/FOUNDERS-SUPPORT-ECONOMICS-MODEL.md", out.join("\n") + "\n");
 console.log(out.join("\n"));

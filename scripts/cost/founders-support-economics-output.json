@@ -25,8 +25,8 @@
       "recrutamentoBrlPorContratacao": 1500,
       "treinamentoCursoBrlPorL1": 1800,
       "treinamentoCursoBrlPorLead": 1200,
-      "treinamentoHorasL1": 120,
-      "treinamentoHorasLead": 80,
+      "treinamentoHorasCobertasPelaFolhaL1": 120,
+      "treinamentoHorasCobertasPelaFolhaLead": 80,
       "supervisaoInicialHorasPorContratacao": 24,
       "custoCeoEspecialistaBrlHora": 250,
       "horasBrutasMes": 190.67,
@@ -39,7 +39,7 @@
       ],
       "fonteFgts": "https://www.gov.br/trabalho-e-emprego/pt-br/assuntos/inspecao-do-trabalho/areas-de-atuacao/fgts-fundo-de-garantia-do-tempo-de-servico",
       "fontePrevidencia": "https://www.gov.br/receitafederal/pt-br/assuntos/orientacao-tributaria/tributos/contribuicoes-previdenciarias-pf",
-      "nota": "FGTS oficial: em regra 8% da remuneração. Receita: cenário geral de 20% patronal. RAT/terceiros e provisão são hipóteses prudenciais; enquadramento real pode mudar o custo."
+      "nota": "FGTS oficial: em regra 8% da remuneração. Receita: cenário geral de 20% patronal. RAT/terceiros e provisão são hipóteses prudenciais; enquadramento real pode mudar o custo. Horas de treinamento já são pagas pela folha e refletidas no ramp; treinamento extra inclui apenas recrutamento, curso/material e supervisão adicional."
     },
     "staffing": {
       "S1_LEAN": {
@@ -153,7 +153,48 @@
       }
     },
     "otherOpsBrlMes": 2500,
-    "prudentialServiceReserveBuffer": 0.25,
+    "serviceLiability": {
+      "checkpointsMesesPrestados": [
+        0,
+        1,
+        3,
+        12,
+        24,
+        36
+      ],
+      "buffersPrudenciais": [
+        0.1,
+        0.25,
+        0.5
+      ],
+      "frontLoadedIncurridoNoMes": 1,
+      "recalculo": "PERIODICO_COM_CUSTO_REAL_INCORRIDO_E_RUN_RATE_OBSERVADO",
+      "hibridoP90": "MAX_EXPECTED_AJUSTADO_POR_USO_E_P90_EMPIRICO_MAIS_BUFFER_DE_EXECUCAO; INDISPONIVEL_ATE_EXISTIR_TELEMETRIA"
+    },
+    "capitalPolicyV1Reference": {
+      "grossUsd": 796250,
+      "totalBrl": 4149100,
+      "bucketsBrl": {
+        "IMPOSTOS": 747000,
+        "EMERGENCIA": 502100,
+        "CEO": 360000,
+        "INFRA": 360000,
+        "IA": 300000,
+        "EQUIPE": 720000,
+        "SEGURANCA": 250000,
+        "ESCRITORIO": 240000,
+        "ESTACAO": 80000,
+        "CRESCIMENTO": 450000,
+        "OPERACOES": 140000
+      },
+      "serviceCoverageBuckets": [
+        "INFRA",
+        "IA",
+        "EQUIPE",
+        "OPERACOES"
+      ],
+      "nota": "A service reserve é uma segregação dentro dos baldes que já cobrem o serviço, não uma alocação adicional acima de 100%. Impostos são reserva de planejamento, não cálculo tributário."
+    },
     "referral": [
       0,
       0.1,
@@ -166,8 +207,9 @@
       "nome": "S1_LEAN",
       "descricao": "2 L1 desde o início; terceira pessoa somente quando o gatilho operacional for atingido",
       "suporteBrl": 435281.1264000001,
-      "treinamentoBrl": 25741.97304242933,
-      "totalBrl": 461023.09944242943,
+      "treinamentoBrl": 18600,
+      "horasTreinamentoNaFolha": 240,
+      "totalBrl": 453881.1264000001,
       "horas36": 8432.434137600003,
       "meses": [
         {
@@ -392,8 +434,9 @@
       "nome": "S2_CEO_PLAN",
       "descricao": "3 L1 desde o início, salário-base inicial de R$3.000 por pessoa",
       "suporteBrl": 652921.6896000003,
-      "treinamentoBrl": 38612.95956364399,
-      "totalBrl": 691534.6491636443,
+      "treinamentoBrl": 27900,
+      "horasTreinamentoNaFolha": 360,
+      "totalBrl": 680821.6896000003,
       "horas36": 12648.651206400004,
       "meses": [
         {
@@ -618,8 +661,9 @@
       "nome": "S3_MATURE",
       "descricao": "2 L1 + 1 L2/lead qualificado desde o início",
       "suporteBrl": 776169.9264,
-      "treinamentoBrl": 38088.0631457492,
-      "totalBrl": 814257.9895457492,
+      "treinamentoBrl": 27300,
+      "horasTreinamentoNaFolha": 320,
+      "totalBrl": 803469.9264,
       "horas36": 12648.651206400004,
       "meses": [
         {
@@ -852,9 +896,9 @@
       "fixed": 1.7937716262975778,
       "support": 17.37857333812433,
       "ceoExpert": 0.18409090909090914,
-      "training": 1.0277467577925232,
+      "training": 0.7426039046592405,
       "otherOps": 5.6621579112928595,
-      "total": 63.31901370259819
+      "total": 63.03387084946491
     },
     {
       "tier": "trader",
@@ -866,9 +910,9 @@
       "fixed": 1.7937716262975778,
       "support": 41.7085760114984,
       "ceoExpert": 0.44181818181818194,
-      "training": 2.466592218702057,
+      "training": 1.782249371182178,
       "otherOps": 5.6621579112928595,
-      "total": 145.53468516599932
+      "total": 144.85034231847945
     },
     {
       "tier": "pilot",
@@ -880,9 +924,9 @@
       "fixed": 1.7937716262975778,
       "support": 121.65001336687031,
       "ceoExpert": 1.2886363636363638,
-      "training": 7.194227304547663,
+      "training": 5.198227332614684,
       "otherOps": 5.6621579112928595,
-      "total": 251.0334546272789
+      "total": 249.03745465534593
     },
     {
       "tier": "pro",
@@ -894,9 +938,9 @@
       "fixed": 1.7937716262975778,
       "support": 26.557725832824904,
       "ceoExpert": 3.6818181818181817,
-      "training": 1.5705901795258892,
+      "training": 1.1348383160463698,
       "otherOps": 5.6621579112928595,
-      "total": 170.8058474597594
+      "total": 170.3700955962799
     },
     {
       "tier": "trader",
@@ -908,9 +952,9 @@
       "fixed": 1.7937716262975778,
       "support": 61.968026943258096,
       "ceoExpert": 8.59090909090909,
-      "training": 3.6647104188937414,
+      "training": 2.6479560707748626,
       "otherOps": 5.6621579112928595,
-      "total": 434.8979908070416
+      "total": 433.88123645892273
     },
     {
       "tier": "pilot",
@@ -922,9 +966,9 @@
       "fixed": 1.7937716262975778,
       "support": 177.05150555216602,
       "ceoExpert": 24.545454545454547,
-      "training": 10.470601196839262,
+      "training": 7.565588773642464,
       "otherOps": 5.6621579112928595,
-      "total": 1071.966647270684
+      "total": 1069.0616348474873
     },
     {
       "tier": "pro",
@@ -936,9 +980,9 @@
       "fixed": 1.7937716262975778,
       "support": 33.362128794326246,
       "ceoExpert": 30.068181818181813,
-      "training": 1.6371400449494606,
+      "training": 1.1734364925854288,
       "otherOps": 5.6621579112928595,
-      "total": 329.7063496350479
+      "total": 329.2426460826839
     },
     {
       "tier": "trader",
@@ -950,9 +994,9 @@
       "fixed": 1.7937716262975778,
       "support": 71.49027598784195,
       "ceoExpert": 64.4318181818182,
-      "training": 3.508157239177416,
+      "training": 2.514506769825919,
       "otherOps": 5.6621579112928595,
-      "total": 966.8872766428183
+      "total": 965.8936261734668
     },
     {
       "tier": "pilot",
@@ -964,9 +1008,453 @@
       "fixed": 1.7937716262975778,
       "support": 190.64073596757854,
       "ceoExpert": 171.8181818181818,
-      "training": 9.355085971139776,
+      "training": 6.705351386202451,
       "otherOps": 5.6621579112928595,
-      "total": 1832.6811149491243
+      "total": 1830.031380364187
+    }
+  ],
+  "serviceLiability": {
+    "definition": "DYNAMIC_REMAINING_SERVICE_LIABILITY",
+    "recalculation": "PERIODICO_COM_CUSTO_REAL_INCORRIDO_E_RUN_RATE_OBSERVADO",
+    "reserveIsAdditionalCost": false,
+    "hybridP90Observed": {
+      "status": "UNAVAILABLE_WITHOUT_OBSERVED_TELEMETRY",
+      "method": "MAX_EXPECTED_AJUSTADO_POR_USO_E_P90_EMPIRICO_MAIS_BUFFER_DE_EXECUCAO; INDISPONIVEL_ATE_EXISTIR_TELEMETRIA"
+    },
+    "buffers": [
+      0.1,
+      0.25,
+      0.5
+    ],
+    "checkpoints": [
+      {
+        "mesesPrestados": 0,
+        "tiers": {
+          "pro": {
+            "tier": "pro",
+            "cenario": "EXPECTED",
+            "mesesPrestados": 0,
+            "frontLoaded": 0.7426039046592405,
+            "recurring": {
+              "payrollService": 17.37857333812433,
+              "fixed": 1.7937716262975778,
+              "otherOps": 5.6621579112928595
+            },
+            "variable": {
+              "compute": 0.08847008,
+              "ai": 37.099421279999994,
+              "databaseCloud": 0.0847818,
+              "ceoExpert": 0.18409090909090914
+            },
+            "total": 63.03387084946492
+          },
+          "trader": {
+            "tier": "trader",
+            "cenario": "EXPECTED",
+            "mesesPrestados": 0,
+            "frontLoaded": 1.782249371182178,
+            "recurring": {
+              "payrollService": 41.7085760114984,
+              "fixed": 1.7937716262975778,
+              "otherOps": 5.6621579112928595
+            },
+            "variable": {
+              "compute": 0.37408881639024394,
+              "ai": 92.7485532,
+              "databaseCloud": 0.3391272,
+              "ceoExpert": 0.44181818181818194
+            },
+            "total": 144.85034231847942
+          },
+          "pilot": {
+            "tier": "pilot",
+            "cenario": "EXPECTED",
+            "mesesPrestados": 0,
+            "frontLoaded": 5.198227332614684,
+            "recurring": {
+              "payrollService": 121.65001336687031,
+              "fixed": 1.7937716262975778,
+              "otherOps": 5.6621579112928595
+            },
+            "variable": {
+              "compute": 1.129002614634146,
+              "ai": 111.29826383999998,
+              "databaseCloud": 1.0173816,
+              "ceoExpert": 1.2886363636363638
+            },
+            "total": 249.03745465534593
+          }
+        },
+        "portfolioExpected": 262948.76345199277,
+        "reserveSensitivity": {
+          "0.1": 289243.63979719207,
+          "0.25": 328685.95431499096,
+          "0.5": 394423.14517798915
+        }
+      },
+      {
+        "mesesPrestados": 1,
+        "tiers": {
+          "pro": {
+            "tier": "pro",
+            "cenario": "EXPECTED",
+            "mesesPrestados": 1,
+            "frontLoaded": 0,
+            "recurring": {
+              "payrollService": 16.925505106399967,
+              "fixed": 1.7439446366782005,
+              "otherOps": 5.50487574709028
+            },
+            "variable": {
+              "compute": 0.08601257777777778,
+              "ai": 36.06888179999999,
+              "databaseCloud": 0.0846545,
+              "ceoExpert": 0.1789772727272728
+            },
+            "total": 60.592851640673494
+          },
+          "trader": {
+            "tier": "trader",
+            "cenario": "EXPECTED",
+            "mesesPrestados": 1,
+            "frontLoaded": 0,
+            "recurring": {
+              "payrollService": 40.621212255359936,
+              "fixed": 1.7439446366782005,
+              "otherOps": 5.50487574709028
+            },
+            "variable": {
+              "compute": 0.36369746037940387,
+              "ai": 90.1722045,
+              "databaseCloud": 0.338618,
+              "ceoExpert": 0.4295454545454547
+            },
+            "total": 139.17409805405327
+          },
+          "pilot": {
+            "tier": "pilot",
+            "cenario": "EXPECTED",
+            "mesesPrestados": 1,
+            "frontLoaded": 0,
+            "recurring": {
+              "payrollService": 118.47853574479979,
+              "fixed": 1.7439446366782005,
+              "otherOps": 5.50487574709028
+            },
+            "variable": {
+              "compute": 1.0976414308943088,
+              "ai": 108.20664539999999,
+              "databaseCloud": 1.015854,
+              "ceoExpert": 1.2528409090909092
+            },
+            "total": 237.30033786855347
+          }
+        },
+        "portfolioExpected": 252505.83713850303,
+        "reserveSensitivity": {
+          "0.1": 277756.42085235333,
+          "0.25": 315632.2964231288,
+          "0.5": 378758.7557077545
+        }
+      },
+      {
+        "mesesPrestados": 3,
+        "tiers": {
+          "pro": {
+            "tier": "pro",
+            "cenario": "EXPECTED",
+            "mesesPrestados": 3,
+            "frontLoaded": 0,
+            "recurring": {
+              "payrollService": 16.01936864295125,
+              "fixed": 1.6442906574394462,
+              "otherOps": 5.190311418685122
+            },
+            "variable": {
+              "compute": 0.08109757333333334,
+              "ai": 34.00780283999999,
+              "databaseCloud": 0.08401800000000001,
+              "ceoExpert": 0.16875000000000007
+            },
+            "total": 57.19563913240914
+          },
+          "trader": {
+            "tier": "trader",
+            "cenario": "EXPECTED",
+            "mesesPrestados": 3,
+            "frontLoaded": 0,
+            "recurring": {
+              "payrollService": 38.44648474308302,
+              "fixed": 1.6442906574394462,
+              "otherOps": 5.190311418685122
+            },
+            "variable": {
+              "compute": 0.3429147483577236,
+              "ai": 85.0195071,
+              "databaseCloud": 0.33607200000000004,
+              "ceoExpert": 0.4050000000000001
+            },
+            "total": 131.38458066756533
+          },
+          "pilot": {
+            "tier": "pilot",
+            "cenario": "EXPECTED",
+            "mesesPrestados": 3,
+            "frontLoaded": 0,
+            "recurring": {
+              "payrollService": 112.13558050065878,
+              "fixed": 1.6442906574394462,
+              "otherOps": 5.190311418685122
+            },
+            "variable": {
+              "compute": 1.034919063414634,
+              "ai": 102.02340851999998,
+              "databaseCloud": 1.008216,
+              "ceoExpert": 1.1812500000000001
+            },
+            "total": 224.21797616019796
+          }
+        },
+        "portfolioExpected": 238381.22636216,
+        "reserveSensitivity": {
+          "0.1": 262219.348998376,
+          "0.25": 297976.5329527,
+          "0.5": 357571.83954324
+        }
+      },
+      {
+        "mesesPrestados": 12,
+        "tiers": {
+          "pro": {
+            "tier": "pro",
+            "cenario": "EXPECTED",
+            "mesesPrestados": 12,
+            "frontLoaded": 0,
+            "recurring": {
+              "payrollService": 11.941754557432029,
+              "fixed": 1.1958477508650518,
+              "otherOps": 3.7747719408619065
+            },
+            "variable": {
+              "compute": 0.05898005333333334,
+              "ai": 24.732947519999996,
+              "databaseCloud": 0.0748524,
+              "ceoExpert": 0.12272727272727277
+            },
+            "total": 41.901881495219584
+          },
+          "trader": {
+            "tier": "trader",
+            "cenario": "EXPECTED",
+            "mesesPrestados": 12,
+            "frontLoaded": 0,
+            "recurring": {
+              "payrollService": 28.66021093783688,
+              "fixed": 1.1958477508650518,
+              "otherOps": 3.7747719408619065
+            },
+            "variable": {
+              "compute": 0.24939254426016266,
+              "ai": 61.832368800000005,
+              "databaseCloud": 0.2994096,
+              "ceoExpert": 0.29454545454545467
+            },
+            "total": 96.30654702836947
+          },
+          "pilot": {
+            "tier": "pilot",
+            "cenario": "EXPECTED",
+            "mesesPrestados": 12,
+            "frontLoaded": 0,
+            "recurring": {
+              "payrollService": 83.59228190202423,
+              "fixed": 1.1958477508650518,
+              "otherOps": 3.7747719408619065
+            },
+            "variable": {
+              "compute": 0.7526684097560974,
+              "ai": 74.19884255999997,
+              "databaseCloud": 0.8982288,
+              "ceoExpert": 0.8590909090909091
+            },
+            "total": 165.27173227259817
+          }
+        },
+        "portfolioExpected": 174780.96840411634,
+        "reserveSensitivity": {
+          "0.1": 192259.065244528,
+          "0.25": 218476.21050514543,
+          "0.5": 262171.4526061745
+        }
+      },
+      {
+        "mesesPrestados": 24,
+        "tiers": {
+          "pro": {
+            "tier": "pro",
+            "cenario": "EXPECTED",
+            "mesesPrestados": 24,
+            "frontLoaded": 0,
+            "recurring": {
+              "payrollService": 6.158144544256799,
+              "fixed": 0.5979238754325259,
+              "otherOps": 1.8873859704309532
+            },
+            "variable": {
+              "compute": 0.02949002666666667,
+              "ai": 12.366473759999998,
+              "databaseCloud": 0.0465918,
+              "ceoExpert": 0.061363636363636384
+            },
+            "total": 21.147373613150577
+          },
+          "trader": {
+            "tier": "trader",
+            "cenario": "EXPECTED",
+            "mesesPrestados": 24,
+            "frontLoaded": 0,
+            "recurring": {
+              "payrollService": 14.779546906216321,
+              "fixed": 0.5979238754325259,
+              "otherOps": 1.8873859704309532
+            },
+            "variable": {
+              "compute": 0.12469627213008133,
+              "ai": 30.916184400000002,
+              "databaseCloud": 0.1863672,
+              "ceoExpert": 0.14727272727272733
+            },
+            "total": 48.63937735148261
+          },
+          "pilot": {
+            "tier": "pilot",
+            "cenario": "EXPECTED",
+            "mesesPrestados": 24,
+            "frontLoaded": 0,
+            "recurring": {
+              "payrollService": 43.1070118097976,
+              "fixed": 0.5979238754325259,
+              "otherOps": 1.8873859704309532
+            },
+            "variable": {
+              "compute": 0.3763342048780487,
+              "ai": 37.09942127999999,
+              "databaseCloud": 0.5591016,
+              "ceoExpert": 0.42954545454545456
+            },
+            "total": 84.05672419508457
+          }
+        },
+        "portfolioExpected": 88300.76764133091,
+        "reserveSensitivity": {
+          "0.1": 97130.84440546401,
+          "0.25": 110375.95955166363,
+          "0.5": 132451.15146199637
+        }
+      },
+      {
+        "mesesPrestados": 36,
+        "tiers": {
+          "pro": {
+            "tier": "pro",
+            "cenario": "EXPECTED",
+            "mesesPrestados": 36,
+            "frontLoaded": 0,
+            "recurring": {
+              "payrollService": 0,
+              "fixed": 0,
+              "otherOps": 0
+            },
+            "variable": {
+              "compute": 0,
+              "ai": 0,
+              "databaseCloud": 0,
+              "ceoExpert": 0
+            },
+            "total": 0
+          },
+          "trader": {
+            "tier": "trader",
+            "cenario": "EXPECTED",
+            "mesesPrestados": 36,
+            "frontLoaded": 0,
+            "recurring": {
+              "payrollService": 0,
+              "fixed": 0,
+              "otherOps": 0
+            },
+            "variable": {
+              "compute": 0,
+              "ai": 0,
+              "databaseCloud": 0,
+              "ceoExpert": 0
+            },
+            "total": 0
+          },
+          "pilot": {
+            "tier": "pilot",
+            "cenario": "EXPECTED",
+            "mesesPrestados": 36,
+            "frontLoaded": 0,
+            "recurring": {
+              "payrollService": 0,
+              "fixed": 0,
+              "otherOps": 0
+            },
+            "variable": {
+              "compute": 0,
+              "ai": 0,
+              "databaseCloud": 0,
+              "ceoExpert": 0
+            },
+            "total": 0
+          }
+        },
+        "portfolioExpected": 0,
+        "reserveSensitivity": {
+          "0.1": 0,
+          "0.25": 0,
+          "0.5": 0
+        }
+      }
+    ]
+  },
+  "capitalReconciliation": [
+    {
+      "buffer": 0.1,
+      "grossProceedsBrl": 4149100,
+      "taxRegulatoryBrl": 747000,
+      "serviceReserveBrl": 1590840.0188845564,
+      "emergencyRunwayBrl": 862100,
+      "deployableCorporateCapitalBrl": 949159.9811154436,
+      "existingServiceCoverageBrl": 1520000,
+      "reallocationRequiredBrl": 70840.01888455637,
+      "reconciledTotalBrl": 4149100,
+      "exceedsGross": false
+    },
+    {
+      "buffer": 0.25,
+      "grossProceedsBrl": 4149100,
+      "taxRegulatoryBrl": 747000,
+      "serviceReserveBrl": 1807772.7487324502,
+      "emergencyRunwayBrl": 862100,
+      "deployableCorporateCapitalBrl": 732227.2512675498,
+      "existingServiceCoverageBrl": 1520000,
+      "reallocationRequiredBrl": 287772.7487324502,
+      "reconciledTotalBrl": 4149100,
+      "exceedsGross": false
+    },
+    {
+      "buffer": 0.5,
+      "grossProceedsBrl": 4149100,
+      "taxRegulatoryBrl": 747000,
+      "serviceReserveBrl": 2169327.2984789405,
+      "emergencyRunwayBrl": 862100,
+      "deployableCorporateCapitalBrl": 370672.7015210595,
+      "existingServiceCoverageBrl": 1520000,
+      "reallocationRequiredBrl": 649327.2984789405,
+      "reconciledTotalBrl": 4149100,
+      "exceedsGross": false
     }
   ],
   "generated": {
