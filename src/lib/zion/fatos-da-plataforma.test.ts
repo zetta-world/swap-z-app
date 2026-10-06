@@ -90,7 +90,7 @@ describe("RM-09 · 1. cada fato do bloco É a constante do produto", () => {
     expect(BLOCO).toMatch(/follow the CURRENT holder; transferring does NOT restart or extend/);
     expect(fatosDaPlataforma().founders.politicaStatusFounder).toEqual(POLITICA_STATUS_FOUNDER);
     expect(BLOCO).toMatch(/durable property of the pass/);
-    expect(BLOCO).toMatch(/does NOT guarantee lifetime Premium, future products or future ecosystem benefits/);
+    expect(BLOCO).toMatch(/Premium ends after exactly 36 months; the status does NOT guarantee future products or future ecosystem benefits/);
   });
 
   it("Founders: venda usa allowlist 48h, limites cumulativos 2\/2\/1, Pilot público e 14 dias totais", () => {

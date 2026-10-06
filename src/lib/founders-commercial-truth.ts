@@ -71,7 +71,7 @@ export const BENEFICIOS: readonly Beneficio[] = [
 
 /**
  * O status é duradouro como propriedade do passe, não uma promessa aberta de
- * Premium vitalício ou de produtos e benefícios futuros.
+ * Premium além dos 36 meses ou de produtos e benefícios futuros.
  */
 export const POLITICA_STATUS_FOUNDER = {
   natureza: "PROPRIEDADE_DURADOURA_DO_PASSE" as const,

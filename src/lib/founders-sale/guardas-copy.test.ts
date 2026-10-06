@@ -20,7 +20,6 @@ const PROIBIDOS: Array<[string, RegExp]> = [
   ["pool de recompensas Founder", /funds a Founder rewards pool|financia um pool de recompensas|financia un pool de recompensas|注入\s*Founder\s*奖励池/i],
   ["governança de tesouraria", /roadmap and treasury governance|governança de tesouraria|gobernanza de tesorería|金库治理中拥有发言权/i],
   ["whitelist garantida em coleções futuras", /Guaranteed allowlist on every future/i],
-  ["Premium vitalício", /lifetime\s+premium|premium\s+(vitalício|vitalicio|perpetuo|perpétuo|forever)|永久\s*Premium/i],
   ["benefícios futuros de todo o ecossistema", /keeps unlocking benefits across the whole|continua liberando benefícios em todo|sigue desbloqueando beneficios en todo|在整个\s*Zettaword\s*生态系统中持续解锁权益/i],
   ["acesso perpétuo a produto futuro", /perpetual beta access|acesso beta perpétuo|acceso beta perpetuo|永久 Beta 访问/i],
   ["preço antigo em SOL como verdade", /Pro 1\.5 SOL|Trader 4 SOL|Pilot 30 SOL|30 SOL Pilot|Pilot de 30 SOL|30 SOL 的 Pilot|"1\.5 SOL"|"4 SOL"|"30 SOL"/],
@@ -48,10 +47,13 @@ describe("Founders — copy proibida não volta", () => {
 
   it("as 4 línguas dizem 36 meses e não falam em v3 no bloco pricing", () => {
     for (const lang of ["en", "pt", "es", "zh"] as const) {
-      const pr = (messages[lang] as unknown as { pricing: Record<string, string> }).pricing;
+      const catalog = messages[lang] as unknown as { pricing: Record<string, string>; founders: Record<string, string> };
+      const pr = catalog.pricing;
       expect(pr.heroTitleHL, lang).toMatch(/36/);
       expect(pr.faq2A, lang).toMatch(/36/);
       expect(Object.values(pr).join(" "), lang).not.toMatch(/\bv3\b/i);
+      expect(Object.values({ ...catalog.pricing, ...catalog.founders }).join(" "), lang)
+        .not.toMatch(/lifetime\s+premium|premium\s+(vitalício|vitalicio|perpetuo|perpétuo|forever)|永久\s*Premium/i);
       for (const k of ["tierProPrice", "tierTraderPrice", "tierPilotPrice"]) expect(pr[k], `${lang}.${k}`).not.toMatch(/\d/);
     }
   });

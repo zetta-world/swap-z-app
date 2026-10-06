@@ -194,13 +194,13 @@ describe("estoque: sem oversell, tetos por fase, reservas", () => {
     expect(retry.ok && retry.replay).toBe(true);
     expect(e.alocacao(w, "PRO", "publica", null)).toEqual({ granted: 2, used: 2, remaining: 0 });
   });
-  it("allowlist: teto = min(fase, concedido); concedido 0 = nada; Pilot fora da allowlist recusado", async () => {
+  it("allowlist: teto = min(fase, concedido); concedido 0 = nada; Pilot remanescente entra na pública", async () => {
     const { e } = mk();
     const w = carteiraSintetica("y");
     expect(await e.reservar({ tier: "PRO", carteira: w, unidades: 1, chave: "a0", fase: "allowlist", vendaAberta: true, elegivel: true, concedido: 0 })).toMatchObject({ ok: false, erro: "teto_da_carteira" });
     expect((await e.reservar({ tier: "PRO", carteira: w, unidades: 1, chave: "a1", fase: "allowlist", vendaAberta: true, elegivel: true, concedido: 5 })).ok).toBe(true);
     expect(await e.reservar({ tier: "PRO", carteira: w, unidades: 1, chave: "a2", fase: "allowlist", vendaAberta: true, elegivel: true, concedido: 5 })).toMatchObject({ ok: false, erro: "teto_da_carteira" });
-    expect(await e.reservar({ tier: "PILOT", carteira: w, unidades: 1, chave: "p1", fase: "publica", vendaAberta: true, elegivel: true })).toEqual({ ok: false, erro: "tier_fora_da_fase" });
+    expect((await e.reservar({ tier: "PILOT", carteira: w, unidades: 1, chave: "p1", fase: "publica", vendaAberta: true, elegivel: true })).ok).toBe(true);
     expect(await e.reservar({ tier: "GOLD", carteira: w, unidades: 1, chave: "g", fase: "publica", vendaAberta: true, elegivel: true })).toEqual({ ok: false, erro: "tier_invalido" });
   });
   it("reserva expirada e cancelada liberam unidade; confirmar expirada falha", async () => {

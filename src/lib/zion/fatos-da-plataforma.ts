@@ -179,7 +179,7 @@ export function blocoDeFatos(f: FatosDaPlataforma = fatosDaPlataforma()): string
     `  Premium: ${f.founders.premiumMeses} months, counted from the OFFICIAL END OF THE SALE (not from the purchase). Not lifetime.`,
     "  Transfer: the pass is a standard NFT that can be transferred or sold; premium and Founder status follow the CURRENT holder; "
       + "transferring does NOT restart or extend the premium window. Resale and resale price are not guaranteed.",
-    "  Founder status is a durable property of the pass. Rights linked to the status belong to the current holder under the applicable ownership policy. It does NOT guarantee lifetime Premium, future products or future ecosystem benefits.",
+    "  Founder status is a durable property of the pass. Rights linked to the status belong to the current holder under the applicable ownership policy. Premium ends after exactly 36 months; the status does NOT guarantee future products or future ecosystem benefits.",
     `  Royalties on secondary sales go to the Z-SWAP treasury${f.founders.royaltyParaHolders ? " and are shared with holders" : " and are NOT distributed to holders"}.`,
     `  Available at launch — Pro: ${f.founders.disponiveis.pro.join(", ")}; Trader: ${f.founders.disponiveis.trader.join(", ")}; Pilot: ${f.founders.disponiveis.pilot.join(", ")}.`,
     `  Implemented but DISABLED (never present as available): Pro: ${f.founders.implementadosDesabilitados.pro.join(", ") || "none"}; Trader: ${f.founders.implementadosDesabilitados.trader.join(", ") || "none"}; Pilot: ${f.founders.implementadosDesabilitados.pilot.join(", ") || "none"}.`,
