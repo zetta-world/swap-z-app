@@ -1,7 +1,9 @@
 # PLANO — FOUNDERS FINAL SALE + LIABILITY CLOSURE
 
 **Data:** 06/10/2026  
-**Status:** IMPLEMENTED_AWAITING_EXACT_SHA_RECERTIFICATION
+**Status:** IMPLEMENTED_RECERTIFIED_AWAITING_INDEPENDENT_AUDIT
+**RECERTIFIED_CANDIDATE_SHA:** `8ef9bbe27ff1f74dd8d1f7f6e6f7abb180497150`
+**RECERTIFIED_CANDIDATE_TREE:** `d489e23e12004782f9620ac8bedf1f9f3a482ad4`
 **PHASE_BASE_SHA:** `30366d0e95bcf3222f47fb9ef955a2a1bf294096`  
 **Branch local:** `founders-sale-rules-final-delta-20261006`  
 **Publicação/deploy:** proibidos; esta fase é local e termina em auditoria independente.
@@ -60,6 +62,18 @@ Executar apenas o delta determinado pela auditoria independente:
 7. inspeção de integridade de migrations, package files e boundary de produção.
 
 Toda primeira falha será preservada e investigada. Não haverá retry para fabricar PASS.
+
+### Resultado
+
+- alvo Founders/copy/ZION/economia: 18 arquivos / 270 testes PASS;
+- type-check: PASS;
+- lint: 0 erros / 145 avisos;
+- suíte completa: 314 arquivos / 4.669 testes PASS;
+- production build: PASS;
+- regeneração determinística: PASS, hashes idênticos e diff vazio;
+- duas falhas iniciais de executor (`git show` sem Git comum; symlink de
+  `node_modules` recusado pelo Turbopack) foram preservadas e corrigidas apenas
+  no ambiente descartável, sem alteração do candidato.
 
 ## 5. Entrega
 

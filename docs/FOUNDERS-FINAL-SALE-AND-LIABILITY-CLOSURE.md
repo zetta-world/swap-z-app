@@ -2,7 +2,8 @@
 
 > **Data-base:** 06/10/2026  
 > **Escopo:** delta final pós-auditoria independente.  
-> **Estado:** implementação local; a seção de recertificação será atestada somente após os gates do SHA exato.  
+> **Estado:** candidato local `8ef9bbe27ff1f74dd8d1f7f6e6f7abb180497150`
+> recertificado pelo implementador; auditoria independente pendente.
 > **Não autoriza:** preço final, publicação, deploy, treasury real, venda ou operação financeira.
 
 ## 1. EXECUTIVE VERDICT
@@ -238,18 +239,35 @@ decide preço final.
 
 ## 17. TESTS
 
-Estado antes da recertificação do SHA exato:
+Recertificação local do SHA exato
+`8ef9bbe27ff1f74dd8d1f7f6e6f7abb180497150`, tree
+`d489e23e12004782f9620ac8bedf1f9f3a482ad4`, em Node `v24.21.0` e npm
+`11.19.0`:
 
-- regressões de regras, copy, ZION e economia: **PENDING EXECUTION**;
-- type-check: **PENDING EXECUTION**;
-- lint: **PENDING EXECUTION**;
-- full suite: **PENDING EXECUTION**;
-- production build: **PENDING EXECUTION**;
-- regeneração determinística: verificada localmente; repetição não alterou os
-  hashes dos outputs.
+| gate | resultado |
+|---|---|
+| `npm ci` | PASS; 1.665 pacotes; lockfile inalterado |
+| regressões Founders/copy/ZION/economia | PASS, 18 arquivos / 270 testes |
+| type-check | PASS, exit 0 |
+| lint | PASS, 0 erros / 145 avisos |
+| suíte completa | PASS, 314 arquivos / 4.669 testes |
+| production build | PASS, exit 0; 36 páginas estáticas geradas |
+| regeneração econômica | PASS; hashes antes/depois idênticos; diff vazio |
 
-Esta seção só será promovida em commit documental posterior se a campanha do
-SHA exato passar. Uma primeira falha permanecerá na evidência.
+A primeira execução direcionada no candidato documental `1cc619d` preservou
+três falhas reais de consistência em 271 testes: uma expectativa histórica de
+Pilot exclusivo da allowlist e duas guardas que se autodenunciavam ao citar a
+frase proibida. O commit `8ef9bbe` alinhou esses testes/guardas com a verdade
+final; a repetição passou 270/270.
+
+A primeira execução da suíte completa no SHA final foi **INVALIDA COMO PROVA
+DO PRODUTO**: dois testes que chamam `git show` não enxergavam o diretório Git
+comum do worktree dentro do container. Com o mesmo SHA/tree, foi acrescentado
+somente o bind read-only desse diretório e a suíte passou 4.669/4.669. O
+primeiro build também preservou uma falha ambiental: Turbopack recusou o
+symlink externo de `node_modules`. Substituir o symlink no worktree descartável
+por bind mount das mesmas dependências permitiu o build PASS, sem mudar código
+ou lockfile.
 
 ## 18. OPEN RISKS
 
@@ -259,9 +277,10 @@ SHA exato passar. Uma primeira falha permanecerá na evidência.
 3. telemetria de deflexão, suporte, AI, compute e DB ainda precisa substituir
    hipóteses;
 4. a opção híbrida P90 permanece indisponível sem série observada;
-5. supply chain permanece `OPEN — SEPARATE DISPOSITION CAMPAIGN` (26 high/40
-   moderate total; 21 high/37 moderate omit-dev; 0 critical na medição
-   anterior);
+5. supply chain permanece `OPEN — SEPARATE DISPOSITION CAMPAIGN`: a medição
+   atual encontrou 1 critical / 27 high / 40 moderate no audit completo e
+   1 critical / 22 high / 37 moderate com `--omit=dev`; a contagem histórica
+   anterior não foi reutilizada como se fosse atual;
 6. nenhuma decisão deste documento autoriza produção, venda ou deploy.
 
 ## 19. AUDITOR HANDOFF
