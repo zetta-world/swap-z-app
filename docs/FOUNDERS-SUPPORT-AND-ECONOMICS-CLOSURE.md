@@ -2,7 +2,9 @@
 
 > **Data-base:** 06/10/2026
 > **Escopo:** verdade comercial do Founders Pass e economia de serviço por 36 meses.
-> **Estado:** candidato local; publicação, preço final e lançamento continuam bloqueados até recertificação e auditoria independente.
+> **Estado:** candidato local recertificado pelo implementador no SHA exato
+> `c2bfc4ab93801fc8084e952564afde0cde5ceae6`; auditoria independente,
+> publicação, preço final e lançamento continuam pendentes/bloqueados.
 > **Modelo reproduzível:** `node scripts/cost/modelo-founders-suporte-36m.mjs`.
 
 ## 1. EXECUTIVE VERDICT
@@ -313,3 +315,23 @@ continuidade.
    EXPECTED para sobreviver.
 8. Submeter código, modelo, premissas e este relatório a auditoria independente
    antes de qualquer publicação.
+
+### Evidência de recertificação local
+
+- Node `v24.21.0`; npm `11.19.0`; `npm ci` e production build PASS;
+- lint PASS com 0 erros/145 avisos; type-check PASS;
+- testes do escopo: 21 arquivos, 288/288 testes PASS;
+- suíte completa autoritativa no runner Node 24 com Git e Git common dir
+  somente leitura: 313/313 arquivos, 4.654/4.654 testes PASS;
+- primeira tentativa: `FAIL_ENVIRONMENT` porque a imagem slim não continha
+  Git; segunda: `FAIL_ENVIRONMENT` porque a worktree não via o Git common dir.
+  Ambas permanecem na evidência e não são tratadas como PASS;
+- modelo regenerado sem diff; migrations e package files sem alteração;
+- secret scan do delta PASS;
+- evidence manifest: 33 entradas, SHA-256
+  `feafb658068684dc7baefde0bc9dd8f9d1c0cb63f542627e4453893b5b6dc301`.
+
+O `npm audit` medido nesta recertificação encontrou 66 vulnerabilidades no
+escopo completo (26 high, 40 moderate) e 58 sem dependências de desenvolvimento
+(21 high, 37 moderate). Esse finding requer campanha própria de disposição e
+não foi reduzido, aceito nem corrigido aqui.

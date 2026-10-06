@@ -4,7 +4,9 @@
 > `docs/LAUNCH-READINESS-LEDGER.md`. Ao mudar de estado, **substitua** as seções
 > atuais e **acrescente** uma entrada no ledger.
 >
-> **Medido em:** 03/10/2026 (revisão 9, ledger L-028/L-029: ensaio de release em PROD-CLONE local
+> **Medido em:** 06/10/2026 (revisão 10, ledger L-043/L-044: Founders Economics + Commercial Truth
+> implementado e recertificado localmente no SHA exato, aguardando auditoria
+> independente; não release). Revisão 9, ledger L-028/L-029: ensaio de release em PROD-CLONE local
 > CLOSED_PASS e reconciliação AO VIVO só-leitura CLOSED; produção medida ao vivo às ~22:20 UTC.
 > Revisão 8, L-027: Fase 2 certificada no C1 `53cd85a` e atestada no C2 `57d78eb`. Revisão 7, ledger L-026 — achado EA2-IA10 da
 > verificação independente final: este arquivo ainda trazia instruções de antes
@@ -17,18 +19,20 @@
 
 | campo | valor | fonte |
 |---|---|---|
-| CURRENT_WORKTREE | `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/early-access-phase2-email-doubleoptin-20261001` | `git worktree list` |
-| CURRENT_BRANCH | `early-access-phase2-email-double-optin-20261001`, **só local**, sem upstream | Git |
+| CURRENT_WORKTREE | `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/founders-closure-20261006` | `git worktree list` |
+| CURRENT_BRANCH | `founders-commercial-economics-closure-20261006`, **só local**, sem upstream | Git |
 | PRODUCT_BASE_SHA | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019`, "feat: add closed-by-default early access foundation", 01/10 17:08 −03 | Git |
 | PRODUCT_BASE_TREE | `6cd43386ab1f1a1d3181e61d1fec36c251a27b8b` | Git |
-| PHASE_BASE_SHA | `74f37f50d12dae698f14b620914bc0ce5b0c639a` · tree `5c93c0512b74777724aae62f665b10feaa95f760` (C2 da Fase 1) | ledger L-020 |
-| HEAD | o commit de control plane da L-030 (`THIS_CONTROL_PLANE_COMMIT`, só docs; filho do commit da L-029 `762224843fa8d7e340416d05ac2a99488945d541` → C2 `57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c` → C1 `53cd85a`; SHA concreto via `git rev-parse HEAD`) | Git |
-| WORKING_TREE | **limpo** (Fase 2 commitada no C1, atestada no C2; ensaio e reconciliação registrados no commit da L-029) | `git status --short` |
+| PHASE_BASE_SHA | `b464dd7fbec0941ffb26ab391a1783328dd876f9` (control plane da L-042; último código previamente validado `7aa021d032a4ba706a9447663a8daf7e67431ca1`) | ledger L-043 |
+| HEAD | `THIS_CONTROL_PLANE_COMMIT`, atestação docs-only da L-044; pai candidato `c2bfc4ab93801fc8084e952564afde0cde5ceae6`, tree `52c8cac23a27f48e25be3498090db1e31d098c43` | Git |
+| WORKING_TREE | **limpo** após a atestação docs-only; candidato exato preservado | `git status --short` |
 | LAST_CERTIFIED_RUNTIME | `0d21874b4147bb8a0b232aa0abc2302471a720e5` (tree `62ad70e36a8bcc57331297d8ce929f232fadad2c`): **CERTIFIED_EXACT_SHA** — RUNTIME RECERTIFICATION: PASS (local). Último runtime certificado; o outro SHA com `CERTIFIED_EXACT_SHA` é o C1b `f1b4ec1` (feature) | `reports/recert-0d21874-20261001T010514Z/FINAL-RUNTIME-RECERTIFICATION.md`; `docs/RELEASE-RUNBOOK.md` |
 | EARLY_ACCESS_PHASE1 | **CERTIFIED_EXACT_SHA** em `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` (= produto de `9f2ddcb` + control plane + 1 arquivo de teste). `9f2ddcbe45f9f93c9a33c331e31e32c45d410019` segue **COMMITTED_FEATURE_CHECKPOINT** (histórico: o dono o designou "certified feature checkpoint", L-009) | ledger L-009, L-016, L-019 |
 | CERTIFIED_FEATURE_SHA | **`53cd85a2a86cc2f34d4234965ef3cf519ce7adc1`** · tree `010a448c774247406cc9cc80cba34e8744426557` · **CERTIFIED_EXACT_SHA** (C1 da Fase 2; antes: `f1b4ec1`, Fase 1) | ledger L-027 |
-| CONTROL_PLANE_HEAD | o commit da L-030 (`THIS_CONTROL_PLANE_COMMIT`, só docs; **não** CERTIFIED, não deployável). Anteriores: L-029 `762224843fa8d7e340416d05ac2a99488945d541`; C2 `57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c` (atestação da Fase 2). `CERTIFIED_FEATURE_SHA` (C1) ≠ `CONTROL_PLANE_HEAD` | `AI-OPERATING-RULES.md` §5.1; L-029 |
-| CURRENT_WORK | **PRÉ-RC: aguardando resolução externa dos bloqueadores R-01 e R-02.** Fase 2 fechada (C1 certificado); ensaio de release local CLOSED_PASS (L-028); reconciliação ao vivo CLOSED (L-029). Nenhuma fase de produto em curso | L-027…L-029 |
+| CONTROL_PLANE_HEAD | `THIS_CONTROL_PLANE_COMMIT`, somente docs, filho de `c2bfc4a`; não foi recertificado e não é deployável | `AI-OPERATING-RULES.md` §5.1; L-044 |
+| CURRENT_WORK | **FOUNDERS ECONOMICS + COMMERCIAL TRUTH: READY_FOR_INDEPENDENT_AUDIT.** Implementação e recertificação local exata concluídas; publicação, preço final e lançamento continuam bloqueados | L-043/L-044 |
+| FOUNDERS_CLOSURE_CANDIDATE | `c2bfc4ab93801fc8084e952564afde0cde5ceae6` · tree `52c8cac23a27f48e25be3498090db1e31d098c43` · `EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED` · 313/313 arquivos, 4.654/4.654 testes | L-044 |
+| FOUNDERS_CLOSURE_EVIDENCE | `zswap-local/evidence/founders-economics-closure-20261006T101806Z/` · 33 entradas · manifest `feafb658068684dc7baefde0bc9dd8f9d1c0cb63f542627e4453893b5b6dc301` | L-044 |
 | LOCAL_PRODCLONE_REHEARSAL | **CLOSED_PASS** (`release-rehearsal-20261003T194816Z`): baseline, backup, restauração, 1º forward, migrations até 0069, boot, saúde, E2E do early access, smoke core, chaos, rollback, 2º forward, equivalência final, reconciliação, type-check, lint, build — todos PASS; suíte completa **4204/4204**; SQL T15/T16/T16b/O2/T14 PASS; RLS/ACL PASS; efeitos externos reais **0** | L-028 |
 | LIVE_READONLY_RECONCILIATION | **CLOSED** (`live-readonly-reconciliation-20261003T221654Z`) | L-029 |
 | INC-RR-01 | reboot do host Acer durante o ensaio: `HOST_OPERATIONAL_REBOOT` · `AGENT_INDUCED_OOM` · `PRODUCT_DEFECT=NO` · ensaio recuperado · **reconhecido pelo dono (OD-01), registro permanente** | L-028, L-029 |
@@ -75,6 +79,8 @@ quatro primeiros (no C1); **não** está deployada e o gate público está **fec
 | **AP-LOCK hosted** | fechar a disposição do PostgREST | OWNER_AUTH_REQUIRED (PASS local em PostgREST 14.17) |
 | **GATE-OPEN** | abrir o gate (além do F-01 certificado) — **não** bloqueia o release com gate fechado | passos do dono, todos já decididos ou externos: textos de Termos e Privacidade aprovados (inclui D-9: Resend e transferência na Política), domínio remetente (D-2), segredos (HMAC, Resend, webhook) por mecanismo autorizado, aplicar 0068/0069, agendar o cron (D-8), gravar `disable_early_access=false` |
 | **REAL-AUTOMATION** | DCA, Pilot e Autopilot reais | NO-GO até os gates finais (`LEDGER-MESTRE-RELEASE.md` §0.5) |
+| **FOUNDERS-INDEPENDENT-AUDIT** | publicar/finalizar a oferta Founders | PENDING — candidato `c2bfc4a` entregue para auditoria independente |
+| **FOUNDERS-SUPPLY-CHAIN** | aceitação de risco do candidato | OPEN — full audit 26 high/40 moderate; omit-dev 21 high/37 moderate; campanha separada |
 
 ## EXTERNAL_GATES (recalculados ao vivo, L-029)
 

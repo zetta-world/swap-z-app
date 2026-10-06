@@ -73,7 +73,7 @@
 | `CLAUDE.md` (raiz) | AUTHORITATIVE (só o bloco "Claude Code Entry Point"); o resto é SUPPORTING_REFERENCE (mapa do código) | 01/10, revisão 2 (commitado em `f4af976`) | current | entrada automática do Claude Code → START-HERE | **SIM** (o bloco de entrada) |
 | `AGENTS.md` (raiz) | AUTHORITATIVE | 01/10, revisão 2 (commitado em `f4af976`) | current | entrada vendor-neutral para outros agentes → START-HERE | **SIM** |
 
-## 2. Documentos existentes em `docs/` (87 arquivos)
+## 2. Documentos existentes em `docs/` (116 arquivos em 06/10/2026)
 
 `VALID_FROM` = o último commit que tocou o arquivo na linha atual
 (`git log -1 9f2ddcb -- <arquivo>`).
@@ -101,7 +101,12 @@
 | `docs/LIGHTHOUSE-BASELINE.md` | HISTORICAL_EVIDENCE | 78c40c3 2026-06-05 | — | rodada/relatório datado | NÃO |
 | `docs/MANUAL_TEST_PLAN.md` | HISTORICAL_EVIDENCE | 7aa8a87 2026-05-20 | — | rodada/relatório datado | NÃO |
 | `docs/MEDICAO-TEM-BORDA.md` | SUPPORTING_REFERENCE | 0d75311 2026-08-29 | — | trilha de produto/flywheel (fora da cadeia de release) | NÃO para estado de lançamento; reconferir no código antes de usar |
+| `docs/FOUNDERS-NFT-COPY-CORRECTION.md` | HISTORICAL_EVIDENCE | revisão em `c2bfc4a`, 2026-10-06 | verdade de benefícios substituída por `FOUNDERS-SUPPORT-AND-ECONOMICS-CLOSURE.md` e `src/lib/founders-commercial-truth.ts` | copy histórica e decisões anteriores | NÃO para benefício atual; SIM como histórico |
+| `docs/FOUNDERS-NFT-SALE-DESIGN.md` | SUPPORTING_REFERENCE | revisão em `c2bfc4a`, 2026-10-06 | benefícios atuais → `FOUNDERS-SUPPORT-AND-ECONOMICS-CLOSURE.md` | desenho técnico da venda | PARCIAL — não usar a copy histórica de benefícios |
+| `docs/FOUNDERS-SUPPORT-AND-ECONOMICS-CLOSURE.md` | SUPPORTING_REFERENCE | `c2bfc4a`, 2026-10-06 | auditoria independente pendente | verdade comercial candidata e economia de 36 meses | SIM para auditar o candidato; NÃO autoriza publicação/preço final |
+| `docs/FOUNDERS-SUPPORT-ECONOMICS-MODEL.md` | SUPPORTING_REFERENCE | `c2bfc4a`, 2026-10-06 | current para o round | saída determinística do modelo econômico | SIM como cálculo implementer-reported; premissas exigem validação real |
 | `docs/NFT-BRIEFING.md` | SUPPORTING_REFERENCE | 6039e3a 2026-06-30 | — | trilha de produto/flywheel (fora da cadeia de release) | NÃO para estado de lançamento; reconferir no código antes de usar |
+| `docs/PLANO-FOUNDERS-SUPPORT-AND-ECONOMICS-CLOSURE.md` | HISTORICAL_EVIDENCE | `c2bfc4a`, 2026-10-06 | entregue; próximo passo auditoria independente | plano do round L-043/L-044 | NÃO executar novamente; SIM para rastreabilidade |
 | `docs/OBSERVACAO-CELEIRO-23AGO.md` | SUPPORTING_REFERENCE | daea83a 2026-08-31 | — | trilha de produto/flywheel (fora da cadeia de release) | NÃO para estado de lançamento; reconferir no código antes de usar |
 | `docs/PENTEST-28-07.md` | HISTORICAL_EVIDENCE | 8cafbd3 2026-07-28 | — | rodada/relatório datado | NÃO |
 | `docs/PITCH-DECK.md` | HISTORICAL_EVIDENCE | b9e8852 2026-06-07 | — | rodada/relatório datado | NÃO |

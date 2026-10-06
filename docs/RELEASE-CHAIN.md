@@ -31,7 +31,8 @@
 >
 > `LAST_CERTIFIED_RUNTIME=0d21874b4147bb8a0b232aa0abc2302471a720e5` ·
 > `CERTIFIED_FEATURE_SHA=53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` (Fase 2, RECERT(C1)=PASS, 03/10, L-027; antes `f1b4ec1`, Fase 1, L-019) ·
-> `CONTROL_PLANE_HEAD` = o commit de control plane da L-029 (só docs, **não** CERTIFIED; filho do C2 de atestação `57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c`).
+> `CONTROL_PLANE_HEAD` = `THIS_CONTROL_PLANE_COMMIT` da L-044 (só docs,
+> **não** CERTIFIED; filho do candidato Founders `c2bfc4a`).
 > C1 `f4af9764e4c773f1bba2821f6cbef9685cfeb59d`: **RECERT FAIL** (02/10, L-018).
 > `CERTIFIED_FEATURE_SHA` (o C1 recertificado) não é necessariamente o
 > `CONTROL_PLANE_HEAD` (o C2 de atestação, só docs, nunca CERTIFIED).
@@ -97,9 +98,16 @@
  C2 da Fase 2 (o commit que traz L-027)  CONTROL_PLANE_ATTESTATION_COMMIT   registra CERTIFIED_FEATURE_SHA=53cd85a; NÃO é CERTIFIED; DO NOT DEPLOY
     │  só docs: ensaio PROD-CLONE CLOSED_PASS (L-028) + reconciliação ao vivo CLOSED (L-029) + runbook revisão 2
     ▼
- commit da L-029  CONTROL_PLANE_HEAD (só docs)                     NÃO é CERTIFIED; DO NOT DEPLOY
+ commit da L-029  control plane histórico (só docs)               NÃO é CERTIFIED; DO NOT DEPLOY
+    │  lanes locais L-031…L-042 (ver ledger)
     ▼
-  …
+ b464dd7  base do Founders Economics + Commercial Truth           PHASE_BASE; DO NOT DEPLOY
+    │  plano + implementação + documentação
+    ▼
+ c2bfc4a  candidato Founders closure                               EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED; AUDIT PENDING; DO NOT DEPLOY
+    │  só docs (diff de produto vazio)
+    ▼
+ commit da L-044  CONTROL_PLANE_HEAD                               NÃO é CERTIFIED; DO NOT DEPLOY
     ▼
  FINAL RELEASE CANDIDATE                                          NOT_STARTED
 ```
@@ -152,6 +160,9 @@ reafirmar ou remover a exceção. (Na lane de release, o passo de audit ainda é
 | 20x | C2 não autorizado (só docs, idêntico ao 20c exceto pela atribuição) | `6f9c10c` | `6f9c10cb87dbcd3dd6d2be93712c15e0fe228190` | `10c815587e498999bdb748b84771983634d009c9` | tag local `preserved/unauthorized-c2-superseded-6f9c10c` (fora do branch) | **UNAUTHORIZED_LOCAL_ATTESTATION_SUPERSEDED** · nunca enviado · DO NOT USE | substituído pelo 20c | L-027 |
 | 20c | Early Access Fase 2 — C2 (atestação, só docs; substituto autorizado) | o commit que traz L-027 | — | — | idem | `CONTROL_PLANE_ATTESTATION_COMMIT` · `CONTROL_PLANE_HEAD` · **não** CERTIFIED · DO NOT DEPLOY | prova: diff de produto `53cd85a..C2` vazio | — |
 | 20d | Registro do ensaio PROD-CLONE (CLOSED_PASS) + reconciliação ao vivo (CLOSED) + runbook revisão 2 (só docs) | o commit que traz L-029 | — | — | idem | control plane · **não** CERTIFIED · **não** atestação de recert · DO NOT DEPLOY · `CERTIFIED_FEATURE_SHA` segue `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` | prova: diff de produto `53cd85a..`este vazio; pai = `57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c` | RC pendente de R-01 (Vercel), R-02 (`CEX_RECOVERY_HMAC_KEY`), re-medição e seleção do dono |
+| 21a | base Founders Economics + Commercial Truth (control plane da L-042) | `b464dd7` | `b464dd7fbec0941ffb26ab391a1783328dd876f9` | `897925225fdffa2147786e4de166b9b8538b69bf` | `founders-commercial-economics-closure-20261006` (base local) | PHASE_BASE · DO NOT DEPLOY | nenhuma certificação nova | `183f4c6` → `3562110` → `c2bfc4a` |
+| 21b | candidato Founders commercial truth + economics | `c2bfc4a` | `c2bfc4ab93801fc8084e952564afde0cde5ceae6` | `52c8cac23a27f48e25be3498090db1e31d098c43` | `founders-commercial-economics-closure-20261006` (local, sem upstream) | `EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED` · `READY_FOR_INDEPENDENT_AUDIT` · DO NOT DEPLOY | Node 24; npm ci/build/lint/type-check PASS; 288/288 alvo; suíte 313/4654 PASS; manifest `feafb658…` | auditoria independente |
+| 21c | atestação docs-only Founders (L-044) | `THIS_CONTROL_PLANE_COMMIT` | — | — | idem | `CONTROL_PLANE_HEAD` · não CERTIFIED · DO NOT DEPLOY | diff de produto `c2bfc4a..HEAD` vazio | auditoria independente; `RELEASE_CANDIDATE=NONE` |
 | ∞ | FINAL RELEASE CANDIDATE | — | — | — | — | NOT_STARTED | — | — |
 
 Provas rápidas:

@@ -699,3 +699,16 @@
 - **Plano:** `docs/PLANO-FOUNDERS-SUPPORT-AND-ECONOMICS-CLOSURE.md`. O round fecha a classificação canônica de benefícios em pricing, prévia Founders, FAQ e ZION, e refaz a economia de 36 meses com staffing brasileiro, deflexão do ZION, escalonamento e reserva por passivo.
 - **Achado de abertura confirmado:** a fonte existente marcava `cex_autopilot` e `arb_scanner` como disponíveis; pricing e a página Founders repetiam essas promessas. Nenhuma superfície foi publicada e nenhuma alteração hospedada foi feita.
 - **Limites:** lane B local, não release; sem push, merge, deploy, Vercel, Supabase hospedado, migration hospedada, venda real ou dinheiro real.
+
+### L-044 · 2026-10-06 · FOUNDERS ECONOMICS + COMMERCIAL TRUTH entregue para auditoria independente (lane B, NÃO release)
+
+- **Handoff preservado:** estado de entrada `b464dd7fbec0941ffb26ab391a1783328dd876f9` encontrado limpo; snapshot, cópias, bundle e SHA-256 criados antes da primeira edição em `zswap-local/recovery/founders-handoff-20261006T094736Z/`. Nenhum trabalho não commitado do Claude foi descartado.
+- **Implementação:** plano `183f4c6`; código/modelo/relatório `3562110`; alinhamento documental `c2bfc4a`. Candidato local exato `c2bfc4ab93801fc8084e952564afde0cde5ceae6`, tree `52c8cac23a27f48e25be3498090db1e31d098c43`; branch local sem upstream; nenhum push.
+- **Verdade comercial:** fonte canônica com cinco estados; Autopilot CEX `IMPLEMENTED_DISABLED`; scanner de arbitragem `A_CONFIRMAR`; suporte prioritário Trader/Pilot assíncrono sem SLA/24×7/concierge/CEO pessoal; Pilot avançado roadmap; redes, fees EVM/Solana e definição dos 5.000 backtests normalizadas em pricing, venda/preview, FAQ e ZION.
+- **Economia 36 meses:** S1 Lean R$461.023; S2 3×L1 R$691.535; S3 2×L1+lead R$814.258. Recomendação: começar com 2 L1 e contratar o terceiro por ≥70% de utilização, backlog ≥100, >2 dias úteis ou previsão de 60 dias. Meta ZION 70%. Reserva de serviço EXPECTED×1,25: Pro US$79,15; Trader US$181,92; Pilot US$313,79; total full sale US$330.309.
+- **Preço/referral:** 149/399/1.990 continuam provisórios e só sustentáveis no EXPECTED; 10% referral condicional/com teto; 15% e 20% não aprovados. Nada publicado.
+- **Recertificação exata implementer-reported:** Node 24.21.0/npm 11.19.0; npm ci PASS; build PASS; lint 0/145; type-check PASS; escopo 288/288; suíte completa autoritativa 313 arquivos / 4.654 testes PASS. As duas tentativas anteriores ficam registradas como `FAIL_ENVIRONMENT` (Git ausente; Git common dir não montado), sem reclassificação.
+- **Integridade:** modelo regenerado sem diff; package-lock `8e9b522771c06ba6415c025ca363cb5015f8c3dc221b31dd191ab014766dd38a`; migrations/package files sem delta; secret scan PASS.
+- **Supply chain aberta:** audit completo 66 (26 high/40 moderate), omit-dev 58 (21 high/37 moderate), 0 critical; não corrigida nem aceita neste round.
+- **Evidência:** `zswap-local/evidence/founders-economics-closure-20261006T101806Z/`, 33 entradas; `MANIFEST.sha256` SHA-256 `feafb658068684dc7baefde0bc9dd8f9d1c0cb63f542627e4453893b5b6dc301`.
+- **Estado:** `IMPLEMENTATION_COMPLETE` + `EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED` + `READY_FOR_INDEPENDENT_AUDIT`; não é RC, não é release, não é autorização de publicação. `RELEASE_CANDIDATE=NONE`; produção, Vercel, Supabase hospedado, push, deploy e dinheiro real intocados.

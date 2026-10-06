@@ -7,7 +7,7 @@
 > Planos antigos são histórico, mesmo quando dizem "status 🟢" ou "vivo".
 > O estado atual é definido AQUI e em `docs/CURRENT-STATE.md`.
 
-**Revisão 9 (03/10/2026, ledger L-028/L-029): ensaio de release em PROD-CLONE local CLOSED_PASS e reconciliação AO VIVO só-leitura CLOSED; bloqueadores externos R-01 (Vercel) e R-02 (`CEX_RECOVERY_HMAC_KEY`).** Revisão 8 (L-027): Fase 2 CERTIFIED_EXACT_SHA no C1 e atestada no C2. Revisão 7 (L-026, EA2-IA10): este arquivo foi
+**Revisão 10 (06/10/2026, ledger L-043/L-044): Founders Economics + Commercial Truth fechado localmente no candidato `c2bfc4a`, recertificação exata implementer-reported PASS, aguardando auditoria independente; não é release nem publicação.** Revisão 9 (03/10/2026, ledger L-028/L-029): ensaio de release em PROD-CLONE local CLOSED_PASS e reconciliação AO VIVO só-leitura CLOSED; bloqueadores externos R-01 (Vercel) e R-02 (`CEX_RECOVERY_HMAC_KEY`). Revisão 8 (L-027): Fase 2 CERTIFIED_EXACT_SHA no C1 e atestada no C2. Revisão 7 (L-026, EA2-IA10): este arquivo foi
 reescrito para descrever SÓ o estado atual nas seções operacionais (§1–§10).
 Tudo o que valia antes da implementação da Fase 2 está no §11, marcado como
 HISTÓRICO. Revisões 1–6 (01–02/10): ver §11 e o ledger L-011…L-019.
@@ -29,10 +29,10 @@ plane — `CLAUDE.md`, `AGENTS.md`, `docs/**` — o movem legitimamente).
 | | |
 |---|---|
 | PRODUCT_BASE_SHA | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019` · tree `6cd43386ab1f1a1d3181e61d1fec36c251a27b8b` (Early Access Fase 1, último commit de produto) |
-| PHASE_BASE_SHA (Fase 2, histórico da fase) | `74f37f50d12dae698f14b620914bc0ce5b0c639a` · tree `5c93c0512b74777724aae62f665b10feaa95f760` (o C2 da Fase 1; registrado no ledger L-020 antes de qualquer código da Fase 2) |
-| HEAD atual | o commit de control plane da **L-030** (`THIS_CONTROL_PLANE_COMMIT`, só docs, filho do commit da L-029 `762224843fa8d7e340416d05ac2a99488945d541`, que é filho do C2 `57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c`; SHA concreto via `git rev-parse HEAD`) |
-| EXPECTED_BRANCH | `early-access-phase2-email-double-optin-20261001` (só local, sem upstream) |
-| WORKING TREE | **limpo** (Fase 2 commitada em C1, atestada em C2; ensaio e reconciliação registrados no commit da L-029) |
+| PHASE_BASE_SHA (Founders closure) | `b464dd7fbec0941ffb26ab391a1783328dd876f9` (registrado na L-043 antes do código) |
+| HEAD atual | `THIS_CONTROL_PLANE_COMMIT`, somente docs, filho do candidato `c2bfc4ab93801fc8084e952564afde0cde5ceae6` |
+| EXPECTED_BRANCH | `founders-commercial-economics-closure-20261006` (só local, sem upstream) |
+| WORKING TREE | **limpo** após a atestação L-044 |
 
 ## 3. Certificação
 
@@ -46,12 +46,13 @@ plane — `CLAUDE.md`, `AGENTS.md`, `docs/**` — o movem legitimamente).
 | CERTIFIED_FEATURE_SHA (atual) | **`53cd85a2a86cc2f34d4234965ef3cf519ce7adc1`** (C1 da Fase 2; L-027). O anterior era `f1b4ec1` (Fase 1) |
 | CONTROL_PLANE_HEAD | o commit da L-030 (`THIS_CONTROL_PLANE_COMMIT`; só docs; **não** CERTIFIED, não deployável). Anteriores: L-029 `762224843fa8d7e340416d05ac2a99488945d541` · C2 `57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c` |
 | EARLY_ACCESS_PHASE2 | **CERTIFIED_EXACT_SHA** em `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` · tree `010a448c774247406cc9cc80cba34e8744426557` (C1; recert `recert-c1-53cd85a-v31-20261003T182216Z` PASS, L-027) — **não** deployado; gate CLOSED |
+| FOUNDERS_CLOSURE_CANDIDATE | `c2bfc4ab93801fc8084e952564afde0cde5ceae6` · tree `52c8cac23a27f48e25be3498090db1e31d098c43` · recert local exata PASS reportada pelo implementador · auditoria independente pendente |
 | RELEASE_CANDIDATE | **NONE** · `RC_SELECTION_READY=NO` |
 
 ## 4. Qual worktree usar?
 
 ```
-/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/early-access-phase2-email-doubleoptin-20261001
+/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/founders-closure-20261006
 ```
 
 ⚠️ **`/home/zetta/swap-z-app` NÃO é o estado atual** (está em
@@ -62,7 +63,9 @@ plane — `CLAUDE.md`, `AGENTS.md`, `docs/**` — o movem legitimamente).
 
 | campo | valor |
 |---|---|
-| CURRENT_WORK | **PRÉ-RC** — Fase 2 certificada (C1); ensaio de release local **CLOSED_PASS** (L-028); reconciliação ao vivo **CLOSED** (L-029); aguardando a resolução externa de **R-01** e **R-02** |
+| CURRENT_WORK | **FOUNDERS ECONOMICS + COMMERCIAL TRUTH — READY_FOR_INDEPENDENT_AUDIT** (L-044); não release, não publicado |
+| FOUNDERS_RECERT | candidato `c2bfc4a`: npm ci/build/lint/type-check PASS; escopo 288/288; suíte 313 arquivos / 4.654 testes PASS; evidence manifest `feafb658…` |
+| FOUNDERS_OPEN | auditoria independente; preço final; telemetria real; disposição da supply chain; jurídico/publicação |
 | LOCAL_PRODCLONE_REHEARSAL | **CLOSED_PASS** (suíte 4204/4204; efeitos externos reais 0) — L-028 |
 | LIVE_READONLY_RECONCILIATION | **CLOSED** — produção `25fc4b0` fora do ar (402), banco sem drift desde 28/09 (55 linhas, 0068/0069 ausentes) — L-029 |
 | INC-RR-01 | `HOST_OPERATIONAL_REBOOT` · `AGENT_INDUCED_OOM` · `PRODUCT_DEFECT=NO` (reconhecido pelo dono, permanente) |
@@ -132,8 +135,11 @@ Lista completa: `docs/CURRENT-STATE.md` → OPEN_BLOCKERS.
 
 ## 9. Qual é o próximo passo exato?
 
-Nada é automático. `RELEASE_CANDIDATE=NONE` · `RC_SELECTION_READY=NO`. A seleção do RC fica pendente até,
-no mínimo:
+Nada é automático. A próxima ação desta lane é a **auditoria independente do
+candidato `c2bfc4a` e do pacote de fechamento**. `RELEASE_CANDIDATE=NONE` ·
+`RC_SELECTION_READY=NO`. Publicação e preço final continuam bloqueados.
+
+A seleção de RC da linha geral continua pendente até, no mínimo:
 
 1. **R-01** resolvido (conta/pagamento da Vercel) — dono + provedor;
 2. **R-02** resolvido (`CEX_RECOVERY_HMAC_KEY` presente com segurança no ambiente de produção) — dono;
@@ -146,23 +152,19 @@ Separado: abrir o early access (§6) e modos de dinheiro real (NO-GO). Próxima 
 Conhecido e separado (não é da Fase 2): o timeout de carga de
 `src/lib/zion/playbook-backtest.test.ts` (ZION-PLAYBOOK-TIMEOUT-LOCAL) — passou na recert do C1 e no ensaio.
 
-## 10. Como provar que estou no lugar certo? (estado ATUAL: control plane da L-029 sobre C2 sobre C1)
+## 10. Como provar que estou no lugar certo? (estado ATUAL: atestação L-044 sobre candidato Founders)
 
 ```bash
-cd /home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/early-access-phase2-email-doubleoptin-20261001
-C1=53cd85a2a86cc2f34d4234965ef3cf519ce7adc1
-C2=57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c
-git branch --show-current                      # early-access-phase2-email-double-optin-20261001
-L029=762224843fa8d7e340416d05ac2a99488945d541
-git rev-parse HEAD HEAD^{tree} HEAD^           # HEAD = commit da L-030; HEAD^ = L029
-git merge-base --is-ancestor "$C1" HEAD && echo OK-ANCESTOR-C1
-git merge-base --is-ancestor "$C2" HEAD && echo OK-ANCESTOR-C2
-git merge-base --is-ancestor "$L029" HEAD && echo OK-ANCESTOR-L029
+cd /home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/founders-closure-20261006
+CANDIDATE=c2bfc4ab93801fc8084e952564afde0cde5ceae6
+git branch --show-current                      # founders-commercial-economics-closure-20261006
+git rev-parse HEAD HEAD^{tree} HEAD^           # HEAD = atestação L-044; HEAD^ = candidato
+git merge-base --is-ancestor "$CANDIDATE" HEAD && echo OK-ANCESTOR-CANDIDATE
 git status --short                             # vazio
-git diff --stat "$C1"..HEAD -- . ':!docs/**' ':!CLAUDE.md' ':!AGENTS.md'   # vazio (C2, L-029 e L-030 são só docs)
+git diff --stat "$CANDIDATE"..HEAD -- . ':!docs/**' ':!CLAUDE.md' ':!AGENTS.md'  # vazio
 ```
 
-Válido quando: branch esperada; C1 e C2 ancestrais do HEAD; árvore limpa; diff de produto C1..HEAD vazio;
+Válido quando: branch esperada; candidato ancestral do HEAD; árvore limpa; diff de produto candidato..HEAD vazio;
 todo commit posterior explicado no ledger. Qualquer outro resultado: **ABORTAR** e reportar
 (`AI-OPERATING-RULES.md` §1), sem checkout/reset/stash/rebase.
 

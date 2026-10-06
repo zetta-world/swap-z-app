@@ -1,6 +1,6 @@
 # PLANO — FOUNDERS SUPPORT AND ECONOMICS CLOSURE
 
-**Status:** ACTIVE — implementação local, não release  
+**Status:** DELIVERED_FOR_INDEPENDENT_AUDIT — implementação e recertificação local concluídas; não release
 **Data:** 2026-10-06  
 **Branch:** `founders-commercial-economics-closure-20261006`  
 **PHASE_BASE_SHA:** `b464dd7fbec0941ffb26ab391a1783328dd876f9`  
@@ -103,3 +103,25 @@ Antes de entregar:
 
 Sem produção, Vercel, Supabase hospedado, migrations hospedadas, push, deploy,
 trade real, Autopilot real, Pilot real ou publicação da venda Founders.
+
+## 9. Fechamento implementer-reported
+
+- candidato recertificado no SHA exato:
+  `c2bfc4ab93801fc8084e952564afde0cde5ceae6`, tree
+  `52c8cac23a27f48e25be3498090db1e31d098c43`;
+- Node `v24.21.0`, npm `11.19.0`;
+- `npm ci`, build, lint (0 erros/145 avisos), type-check e testes direcionados
+  (288/288) em PASS;
+- suíte completa autoritativa: 313/313 arquivos e 4.654/4.654 testes em PASS;
+- duas tentativas ambientais anteriores permanecem registradas: imagem sem Git
+  e Git common dir ausente do bind mount; nenhuma foi reclassificada;
+- modelo econômico regenerado sem diff e secret scan do delta em PASS;
+- evidência:
+  `zswap-local/evidence/founders-economics-closure-20261006T101806Z/`,
+  33 entradas, `MANIFEST.sha256`
+  `feafb658068684dc7baefde0bc9dd8f9d1c0cb63f542627e4453893b5b6dc301`;
+- supply chain continua separada: audit completo 66 vulnerabilidades (26 high,
+  40 moderate), `--omit=dev` 58 (21 high, 37 moderate), sem correção neste
+  round;
+- próxima ação: auditoria independente. Publicação, preço final, RC, push,
+  deploy e produção continuam bloqueados.
