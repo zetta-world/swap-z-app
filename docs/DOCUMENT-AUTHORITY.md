@@ -107,6 +107,7 @@
 | `docs/FOUNDERS-SUPPORT-ECONOMICS-MODEL.md` | SUPPORTING_REFERENCE | `c2bfc4a`, 2026-10-06 | current para o round | saída determinística do modelo econômico | SIM como cálculo implementer-reported; premissas exigem validação real |
 | `docs/NFT-BRIEFING.md` | SUPPORTING_REFERENCE | 6039e3a 2026-06-30 | — | trilha de produto/flywheel (fora da cadeia de release) | NÃO para estado de lançamento; reconferir no código antes de usar |
 | `docs/PLANO-FOUNDERS-SUPPORT-AND-ECONOMICS-CLOSURE.md` | HISTORICAL_EVIDENCE | `c2bfc4a`, 2026-10-06 | entregue; próximo passo auditoria independente | plano do round L-043/L-044 | NÃO executar novamente; SIM para rastreabilidade |
+| `docs/PLANO-FOUNDERS-FINAL-SALE-AND-LIABILITY-CLOSURE.md` | ACTIVE_PLAN | aberto em 2026-10-06, L-045 | implementação local em curso | delta final pós-auditoria: venda, Founder status, treinamento e service liability | SIM para esta fase; NÃO autoriza publicação/deploy |
 | `docs/OBSERVACAO-CELEIRO-23AGO.md` | SUPPORTING_REFERENCE | daea83a 2026-08-31 | — | trilha de produto/flywheel (fora da cadeia de release) | NÃO para estado de lançamento; reconferir no código antes de usar |
 | `docs/PENTEST-28-07.md` | HISTORICAL_EVIDENCE | 8cafbd3 2026-07-28 | — | rodada/relatório datado | NÃO |
 | `docs/PITCH-DECK.md` | HISTORICAL_EVIDENCE | b9e8852 2026-06-07 | — | rodada/relatório datado | NÃO |

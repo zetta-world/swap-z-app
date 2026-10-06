@@ -712,3 +712,12 @@
 - **Supply chain aberta:** audit completo 66 (26 high/40 moderate), omit-dev 58 (21 high/37 moderate), 0 critical; não corrigida nem aceita neste round.
 - **Evidência:** `zswap-local/evidence/founders-economics-closure-20261006T101806Z/`, 33 entradas; `MANIFEST.sha256` SHA-256 `feafb658068684dc7baefde0bc9dd8f9d1c0cb63f542627e4453893b5b6dc301`.
 - **Estado:** `IMPLEMENTATION_COMPLETE` + `EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED` + `READY_FOR_INDEPENDENT_AUDIT`; não é RC, não é release, não é autorização de publicação. `RELEASE_CANDIDATE=NONE`; produção, Vercel, Supabase hospedado, push, deploy e dinheiro real intocados.
+
+### L-045 · 2026-10-06 · FOUNDERS FINAL SALE + LIABILITY CLOSURE aberto após auditoria independente (lane B, NÃO release)
+
+- **Base medida antes de qualquer código:** `PHASE_BASE_SHA=30366d0e95bcf3222f47fb9ef955a2a1bf294096`, tree `94cc97656ca84be3a21d8b8b3a0cb305bc174fbc`, atestação docs-only da L-044 sobre o candidato `c2bfc4ab93801fc8084e952564afde0cde5ceae6`.
+- **Airbag:** árvore de origem limpa, sem modified/untracked; recovery bundle e SHA-256 verificados em `zswap-local/recovery/founders-final-delta-20261006T214345Z/` antes da worktree nova.
+- **Worktree/branch:** `zswap-local/worktrees/founders-final-sale-liability-20261006` · `founders-sale-rules-final-delta-20261006`, somente local e sem upstream.
+- **Plano:** `docs/PLANO-FOUNDERS-FINAL-SALE-AND-LIABILITY-CLOSURE.md`. Escopo: Pilot disponível na public sale; limites cumulativos 2/2/1 com allowlist 1/1/1; evento de até 14 dias; copy durável sem entitlement futuro; correção do double count de treinamento; reserva dinâmica de passivo remanescente reconciliada com a política de capital.
+- **Achados de abertura confirmados:** `pilotSomenteAllowlist=true`; janela máxima modelada como 14 dias só da fase pública; copy em quatro idiomas promete benefícios por todo o ecossistema; modelo somava novamente horas de treinamento já pagas na folha e já refletidas no ramp.
+- **Limites:** sem push, merge, deploy, produção, Vercel, Supabase hospedado, migration, dependência, supply-chain remediation, preço/supply final, treasury real, publicação ou dinheiro real.
