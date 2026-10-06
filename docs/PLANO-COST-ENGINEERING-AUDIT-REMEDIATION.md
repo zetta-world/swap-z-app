@@ -1,4 +1,4 @@
-# COST ENGINEERING — AUDIT REMEDIATION ROUND · 🟡 EM EXECUÇÃO (lane B, local)
+# COST ENGINEERING — AUDIT REMEDIATION ROUND · 🟢 ENTREGUE PARA RE-AUDITORIA (lane B, local)
 
 > **Aberto em:** 05/10/2026, pelo mandato do dono após a auditoria independente do round anterior.
 > **Branch/worktree:** `cost-engineering-audit-remediation-20261005` ·
@@ -16,18 +16,18 @@ Status: 🔴 não iniciado · 🟡 em execução · 🟢 feito com evidência ·
 
 | ID | Achado da auditoria | Prioridade | Status |
 |---|---|---|---|
-| RM-01 | Trava do tique do papel: SELECT → decide → UPSERT (não exclusiva) | P0 | 🔴 |
-| RM-02 | Posição de papel duplicada (sem identidade canônica nem UNIQUE) | P0 | 🔴 |
-| RM-03 | Última vela avaliada derivada só das posições ABERTAS (reabre a mesma vela depois de fechar) | P0 | 🔴 |
-| RM-04 | `fecharRodada` com retorno ignorado (sucesso falso, rodada presa em `rodando`) | P0 | 🔴 |
-| RM-05 | 0073/0074/0075 sem semântica de release (estado 0073 sem 0075 silencioso) | P0 | 🔴 |
-| RM-06 | `{ data, error }` ignorado: fallback 0074, `gravarUltimoTique`, `marcarTiqueAdiado`, `gravarCursor`, leituras do tique | P1 | 🔴 |
-| RM-07 | Growth: erro/truncamento vira 0 | P1 | 🔴 |
-| RM-08 | Cache-write do provedor OpenAI-compatível gravado como 0 | P1 | 🔴 |
-| RM-09 | ZION `ask` sem fatos comerciais autoritativos | P0 | 🔴 |
-| RM-10 | Pilot 5.000 "backtests padrão" (3 ativos × 1 ano × 4h) dentro de 1/16 — provar ou declarar NO | P0 | 🔴 |
-| RM-11 | Suporte humano: definição explícita no modelo (sem concierge invisível) | P1 | 🔴 |
-| RM-12 | Paginação admin por offset: declarar o que não é ledger-grade; corrigir rota tocada que viole | P2 | 🔴 |
+| RM-01 | Trava do tique do papel: SELECT → decide → UPSERT (não exclusiva) | P0 | 🟢 `4cac776` — lease 0076; 2/10/30 → 1 |
+| RM-02 | Posição de papel duplicada (sem identidade canônica nem UNIQUE) | P0 | 🟢 `4cac776` — chave canônica + UNIQUE + RPC; 2/10/30 → 1 posição |
+| RM-03 | Última vela avaliada derivada só das posições ABERTAS (reabre a mesma vela depois de fechar) | P0 | 🟢 `4cac776` — `ultima_vela_aberta`; mesma vela após fechar não reabre |
+| RM-04 | `fecharRodada` com retorno ignorado (sucesso falso, rodada presa em `rodando`) | P0 | 🟢 `e8f31bd` — confirmado; rota 503/500 |
+| RM-05 | 0073/0074/0075 sem semântica de release (estado 0073 sem 0075 silencioso) | P0 | 🟢 `357b458` + 0076 — matriz A–E; unidade atômica provada |
+| RM-06 | `{ data, error }` ignorado: fallback 0074, `gravarUltimoTique`, `marcarTiqueAdiado`, `gravarCursor`, leituras do tique | P1 | 🟢 `4cac776` — desfecho lido em toda escrita do tique |
+| RM-07 | Growth: erro/truncamento vira 0 | P1 | 🟢 `d465cde` — `null` + estado; resumo 'indisponível' |
+| RM-08 | Cache-write do provedor OpenAI-compatível gravado como 0 | P1 | 🟢 `79b7ad5` — Kimi/DeepSeek; preços de lista (conferência real NOT EXERCISED) |
+| RM-09 | ZION `ask` sem fatos comerciais autoritativos | P0 | 🟢 `73d47ba` — fatos derivados no `ask`; gabarito Founders corrigido (modelo real NOT EXERCISED) |
+| RM-10 | Pilot 5.000 "backtests padrão" (3 ativos × 1 ano × 4h) dentro de 1/16 — provar ou declarar NO | P0 | 🟢 `009079d` — YES (estratégia própria) / NO (modo mesa); decisão do CEO/auditor |
+| RM-11 | Suporte humano: definição explícita no modelo (sem concierge invisível) | P1 | 🟢 `802939c` — definição + sensibilidade no modelo |
+| RM-12 | Paginação admin por offset: declarar o que não é ledger-grade; corrigir rota tocada que viole | P2 | 🟢 `d465cde` — paginação por chave; não ledger-grade declarado |
 
 ## 2. Desenho decidido antes do código
 
@@ -83,3 +83,10 @@ Resultado objetivo `STANDARD_5000_FITS = YES/NO`. NÃO alterar o 1/16.
 
 Testes em container capado (2 GB / 5 GB swap, heap 1792 MB), sem rede, `npm ci --offline`. Banco: Postgres
 `supabase/postgres:17.6.1.127` + PostgREST 14.17 descartáveis (`zswap-local/bin/rm-stack`), rede `--internal`.
+
+## 4. Entrega
+
+Último commit de código **C1b `7aa021d`** (a recertificação do C1 `802939c` FALHOU 1 teste de tempo de relógio — corrigido o
+método, limites mantidos, recertificado do zero). Recert no SHA exato: suíte 311/4.630 PASS, type-check 0, lint 0/145, build PASS,
+SQL 19/19, 20b/23b/16b/13-estável PASS, integração 19 + 1 SKIP. Relatório: `docs/COST-ENGINEERING-AUDIT-REMEDIATION-REPORT.md`.
+

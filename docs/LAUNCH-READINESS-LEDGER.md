@@ -662,3 +662,31 @@
   (MANIFEST.sha256).
 - **Estado:** `COMMITTED_FEATURE_CHECKPOINT` · não CERTIFIED · não RC · lane A intocada (`d896ce2`) · `CERTIFIED_FEATURE_SHA=53cd85a…` ·
   nenhum push, merge, deploy, Vercel, escrita/migration hospedada, Lane A, preço/supply/política comercial, treasury ou dinheiro real.
+
+### L-042 · 2026-10-05 · COST ENGINEERING — AUDIT REMEDIATION entregue para re-auditoria (lane B, NÃO release)
+
+- **Início:** HEAD auditado `14e5a2089a1f03c1726847089c7ad5f1d7f65dad` (L-041), conferido limpo; branch novo
+  `cost-engineering-audit-remediation-20261005` (sem upstream), worktree `worktrees/cost-engineering-remediation-20261005`. O branch
+  auditado não foi tocado. **Último commit de código (C1b):** `7aa021d032a4ba706a9447663a8daf7e67431ca1`; o commit desta entrada é só docs.
+- **Corrigido (auditoria independente de 14e5a20):** tique do papel sem exclusão real → lease atômico no banco (0076); posição
+  duplicada → identidade canônica `v1:<estrategia>:<intervalo>:<vela>` + UNIQUE parcial + RPC idempotente; vela reaberta depois do
+  fechamento → `ultima_vela_aberta` autoritativa; `fecharRodada` ignorado → confirmado, rota 503; 0073–0075 sem semântica de release →
+  matriz A–E provada, 0076 com pré-condição, unidade aplicável numa transação; `{ error }` ignorado no tique; Growth/resumo com erro
+  virando zero; paginação admin por offset → por chave; cache-write e formato DeepSeek no provedor OpenAI-compatível; ZION `ask` com
+  fatos oficiais DERIVADOS das constantes. **Novos achados:** gabarito Founders exigia preço provisório (corrigido); tabela de preço
+  Kimi/DeepSeek abaixo da lista (corrigida); trava de complexidade instável sob carga (corrigida, limites iguais); subcobrança de 1
+  vela/ativo, `reasoning_tokens` somados sempre, rodada não persistida sem reconciliação (OPEN, LOW).
+- **Migration local nova (NÃO aplicada em banco hospedado):** 0076 (aditiva; recusa rodar sem 0073–0075). T23/T23b PASS; guardas de
+  migrations e ACL atualizadas no mesmo commit.
+- **Pilot:** STANDARD_5000_FITS = **YES** para a definição proposta (3 ativos × 1 ano × 4h, estratégia própria; 5.000 reservas reais
+  aceitas, a 5.001ª recusada por cota); **NO** no modo mesa com a mesma definição (806/dia). Fração 1/16 e oferta inalteradas.
+- **Validação (IMPLEMENTER-REPORTED, NÃO certificação; container 2g/5g, heap 1792, `npm ci --offline`):** recert do C1 `802939c`
+  **FALHOU** (1 teste de tempo de relógio) → C1b `7aa021d`: type-check 0 · lint 0 / 145 · **suíte 311 / 4.630 PASS** · build PASS ·
+  SQL 0001→0076 19/19 · 20b/23b/16b/13-estável PASS (13 não estável FAIL preexistente; 04/05/06 não rodados) · integração PostgREST
+  19 PASS + 1 SKIP (ZION ao vivo, credencial) · matriz A–E PASS · benchmarks sem regressão (razões antes/depois na mesma execução).
+- **Modelo de 36 meses:** recalculado (preço de lista do Kimi, bloco de fatos, lease): EXPECTED positivo; **HEAVY/STRESS negativos**;
+  humano 55–85% do custo econômico. Suporte com definição provisória (assíncrono, sem 24/7, ZION primeira linha) — hipótese, não contrato.
+- **Decisões que ficam com o dono/auditor:** definição comercial do Pilot (e do modo mesa); aplicar 0073–0076 juntas no release
+  autorizado; premissas de suporte e preço; agendar `/api/bancada/tique`; credencial para o arnês do ZION ao vivo.
+- **Relatório:** `docs/COST-ENGINEERING-AUDIT-REMEDIATION-REPORT.md`. **Evidência:** `zswap-local/evidence/cost-engineering-remediation-20261005/`.
+- **Estado:** `COMMITTED_FEATURE_CHECKPOINT` · não CERTIFIED · não RC · lane A intocada · nenhum push, deploy ou escrita hospedada.
