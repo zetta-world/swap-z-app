@@ -690,3 +690,12 @@
   autorizado; premissas de suporte e preço; agendar `/api/bancada/tique`; credencial para o arnês do ZION ao vivo.
 - **Relatório:** `docs/COST-ENGINEERING-AUDIT-REMEDIATION-REPORT.md`. **Evidência:** `zswap-local/evidence/cost-engineering-remediation-20261005/`.
 - **Estado:** `COMMITTED_FEATURE_CHECKPOINT` · não CERTIFIED · não RC · lane A intocada · nenhum push, deploy ou escrita hospedada.
+
+### L-043 · 2026-10-06 · FOUNDERS ECONOMICS + COMMERCIAL TRUTH aberto (lane B, NÃO release)
+
+- **Base registrada antes de qualquer código:** `PHASE_BASE_SHA=b464dd7fbec0941ffb26ab391a1783328dd876f9` (control plane da L-042); último commit de código previamente validado `7aa021d032a4ba706a9447663a8daf7e67431ca1`.
+- **Worktree/branch:** `zswap-local/worktrees/founders-closure-20261006` · `founders-commercial-economics-closure-20261006`, somente local e sem upstream.
+- **Airbag do handoff Claude → Codex:** árvore encontrada limpa, sem untracked nem commit novo do round. Snapshot externo completo em `zswap-local/recovery/founders-handoff-20261006T094736Z`; bundle e SHA-256 verificados antes da primeira edição.
+- **Plano:** `docs/PLANO-FOUNDERS-SUPPORT-AND-ECONOMICS-CLOSURE.md`. O round fecha a classificação canônica de benefícios em pricing, prévia Founders, FAQ e ZION, e refaz a economia de 36 meses com staffing brasileiro, deflexão do ZION, escalonamento e reserva por passivo.
+- **Achado de abertura confirmado:** a fonte existente marcava `cex_autopilot` e `arb_scanner` como disponíveis; pricing e a página Founders repetiam essas promessas. Nenhuma superfície foi publicada e nenhuma alteração hospedada foi feita.
+- **Limites:** lane B local, não release; sem push, merge, deploy, Vercel, Supabase hospedado, migration hospedada, venda real ou dinheiro real.
