@@ -1,7 +1,7 @@
 # PLANO — FOUNDERS FINAL SALE + LIABILITY CLOSURE
 
 **Data:** 06/10/2026  
-**Status:** CURRENT_DEVELOPMENT  
+**Status:** IMPLEMENTED_AWAITING_EXACT_SHA_RECERTIFICATION
 **PHASE_BASE_SHA:** `30366d0e95bcf3222f47fb9ef955a2a1bf294096`  
 **Branch local:** `founders-sale-rules-final-delta-20261006`  
 **Publicação/deploy:** proibidos; esta fase é local e termina em auditoria independente.
