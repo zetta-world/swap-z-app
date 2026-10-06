@@ -6,7 +6,7 @@ import { estadoTxPublico, type EstadoTx, type EstadoTxPublico } from "./ciclo-tx
 import type { EstadoCarteira } from "./carteira";
 import type { EstadoPublico } from "./maquina";
 import { formatarSol } from "./preco";
-import { beneficiosPublicaveis, TAXA_SWAP_BPS } from "./beneficios";
+import { beneficiosPorEstado, TAXA_SWAP_BPS } from "./beneficios";
 
 /**
  * QUADROS DA PRÉVIA LOCAL — roda o SERVIÇO de verdade (cenário local, supply reduzido de SIMULAÇÃO) e fotografa,
@@ -33,7 +33,14 @@ export interface QuadroPrevia {
   reservaPorTier: Record<TierVenda, number>;
   taxaBps: Record<TierVenda, number>;
   pilotSomenteAllowlist: boolean;
-  onboarding: null | { tier: TierVenda; premiumAte: number | null; beneficiosAgora: string[]; beneficiosPlanejados: string[] };
+  onboarding: null | {
+    tier: TierVenda;
+    premiumAte: number | null;
+    beneficiosAgora: string[];
+    beneficiosDesabilitados: string[];
+    beneficiosAConfirmar: string[];
+    beneficiosPlanejados: string[];
+  };
   simulacao: true;
 }
 
@@ -134,8 +141,10 @@ export async function quadrosDaPrevia(): Promise<QuadroPrevia[]> {
     carteira: conf.status === "CONFIRMED" ? "confirmed" : "pending", concedido: 1, usado: 1, prova: "valida",
     onboarding: {
       tier: "PRO", premiumAte: ob.janelaPremium.estado === "DEFINIDA" ? ob.janelaPremium.fim : null,
-      beneficiosAgora: beneficiosPublicaveis("PRO").filter((x) => x.grupo === "A_DISPONIVEL").map((x) => x.id),
-      beneficiosPlanejados: beneficiosPublicaveis("PRO").filter((x) => x.grupo === "B_ROADMAP").map((x) => x.id),
+      beneficiosAgora: beneficiosPorEstado("PRO", "AVAILABLE_AT_LAUNCH").map((x) => x.id),
+      beneficiosDesabilitados: beneficiosPorEstado("PRO", "IMPLEMENTED_DISABLED").map((x) => x.id),
+      beneficiosAConfirmar: beneficiosPorEstado("PRO", "A_CONFIRMAR").map((x) => x.id),
+      beneficiosPlanejados: beneficiosPorEstado("PRO", "COMING_SOON_ROADMAP").map((x) => x.id),
     },
   }));
   q.push(quadro(c, "wallet-limit", { elegibilidade: "elegivel", carteira: "allocation_exhausted", restante: 0, concedido: 1, usado: 1, prova: "valida" }));

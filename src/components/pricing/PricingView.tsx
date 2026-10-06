@@ -19,6 +19,7 @@ import SignInButton from "@/components/auth/SignInButton";
 import PricingCard, { type TierConfig } from "./PricingCard";
 import FounderBenefits from "./FounderBenefits";
 import { PLAN_TIERS, usdToSol, precoPublicoUsd } from "@/lib/pricing/plans";
+import { beneficiosPublicaveis } from "@/lib/founders-commercial-truth";
 
 /**
  * ⚠️⚠️ NENHUM PLANO ANUNCIA MODELO PRÓPRIO — e isto é conserto, não simplificação.
@@ -28,22 +29,33 @@ import { PLAN_TIERS, usdToSol, precoPublicoUsd } from "@/lib/pricing/plans";
  * `app/api/zion/route.ts` o tier decide a COTA e o PORTÃO, e o modelo é
  * `ZION_MODEL ?? ativo.modelo` — um só para a plataforma inteira.
  *
- * O que separa os planos é cota, autopilot, arbitragem e suporte. O modelo, não.
+ * O que separa os planos é cota e direitos comerciais realmente disponíveis.
+ * Autopilot desabilitado e arbitragem a confirmar aparecem com esse estado,
+ * nunca como benefícios ativos.
  */
+const chavesComerciais = (tier: "PRO" | "TRADER" | "PILOT"): MessageKey[] => beneficiosPublicaveis(tier)
+  .flatMap((b): MessageKey[] => {
+    if (b.id === "cex_autopilot") return ["pricing.featAutopilotDisabled"];
+    if (b.id === "arb_scanner") return ["pricing.featArbUnconfirmed"];
+    if (b.id === "priority_support") return ["pricing.featSupport"];
+    if (b.id === "pilot_advanced_automation") return ["pricing.featPilotAutomationPlanned"];
+    return [];
+  });
+
 const TIERS: Omit<TierConfig, "modelo">[] = [
   {
     id: "pro", accent: "gold", art: "/nft/pro.jpg",
     nameKey: "pricing.tierProName", priceKey: "pricing.tierProPrice",
     fiatKey: "pricing.tierProFiat", subKey: "pricing.tierProSub",
     capKey: "pricing.tierProCap",
-    features: ["pricing.featSwap", "pricing.featSecurity", "pricing.featZionModel", "pricing.featBancada", "pricing.featAutopilot", "pricing.featFounder"],
+    features: ["pricing.featSwap", "pricing.featSecurity", "pricing.featZionModel", "pricing.featBancada", ...chavesComerciais("PRO"), "pricing.featFounder"],
   },
   {
     id: "trader", accent: "violet", art: "/nft/trader.png",
     nameKey: "pricing.tierTraderName", priceKey: "pricing.tierTraderPrice",
     fiatKey: "pricing.tierTraderFiat", subKey: "pricing.tierTraderSub",
     capKey: "pricing.tierTraderCap",
-    features: ["pricing.featSwap", "pricing.featSecurity", "pricing.featZionModel", "pricing.featBancada", "pricing.featPapelAdiante", "pricing.featAutopilot", "pricing.featArb", "pricing.featSupport", "pricing.featFounder"],
+    features: ["pricing.featSwap", "pricing.featSecurity", "pricing.featZionModel", "pricing.featBancada", "pricing.featPapelAdiante", ...chavesComerciais("TRADER"), "pricing.featFounder"],
   },
   {
     id: "pilot", accent: "prismatic", art: "/nft/pilot.jpg",
@@ -51,7 +63,7 @@ const TIERS: Omit<TierConfig, "modelo">[] = [
     nameKey: "pricing.tierPilotName", priceKey: "pricing.tierPilotPrice",
     fiatKey: "pricing.tierPilotFiat", subKey: "pricing.tierPilotSub",
     capKey: "pricing.tierPilotCap",
-    features: ["pricing.featZionModel", "pricing.featBancada", "pricing.featPapelAdiante", "pricing.featAutopilot", "pricing.featArb", "pricing.featSupport", "pricing.featFounder"],
+    features: ["pricing.featZionModel", "pricing.featBancada", "pricing.featPapelAdiante", ...chavesComerciais("PILOT"), "pricing.featFounder"],
   },
 ];
 

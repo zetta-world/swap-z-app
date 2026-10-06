@@ -1,0 +1,91 @@
+{
+  "_leia": "Premissas do fechamento Founders Support & Economics. Valores trabalhistas são cenários prudenciais de planejamento, não parecer contábil/jurídico. O regime tributário real deve ser confirmado antes da contratação.",
+  "moeda": {
+    "brlPorUsd": 5.5,
+    "fonte": "PLANNING_ASSUMPTION",
+    "nota": "Câmbio redondo e conservador para comparar custos BRL com preços USD; não é PTAX nem previsão. A tabela em BRL permanece autoritativa para staffing."
+  },
+  "trabalho": {
+    "salarioBaseL1BrlMes": 3000,
+    "salarioBaseLeadBrlMes": 5000,
+    "progressaoAnualL1": 0.08,
+    "progressaoAnualLead": 0.1,
+    "encargos": {
+      "decimoTerceiro": 0.0833333333,
+      "tercoFerias": 0.0277777778,
+      "fgts": 0.0888888889,
+      "previdenciaPatronal": 0.2,
+      "rat": 0.01,
+      "terceiros": 0.058,
+      "provisaoDesligamentoEContingencia": 0.04
+    },
+    "beneficiosBrlMesPessoa": 900,
+    "ferramentasBrlMesPessoa": 250,
+    "recrutamentoBrlPorContratacao": 1500,
+    "treinamentoCursoBrlPorL1": 1800,
+    "treinamentoCursoBrlPorLead": 1200,
+    "treinamentoHorasL1": 120,
+    "treinamentoHorasLead": 80,
+    "supervisaoInicialHorasPorContratacao": 24,
+    "custoCeoEspecialistaBrlHora": 250,
+    "horasBrutasMes": 190.67,
+    "fracaoProdutiva": 0.72,
+    "disponibilidadeFeriasAusencias": 0.88,
+    "rampProdutividadeTresMeses": [0.45, 0.65, 0.8],
+    "fonteFgts": "https://www.gov.br/trabalho-e-emprego/pt-br/assuntos/inspecao-do-trabalho/areas-de-atuacao/fgts-fundo-de-garantia-do-tempo-de-servico",
+    "fontePrevidencia": "https://www.gov.br/receitafederal/pt-br/assuntos/orientacao-tributaria/tributos/contribuicoes-previdenciarias-pf",
+    "nota": "FGTS oficial: em regra 8% da remuneração. Receita: cenário geral de 20% patronal. RAT/terceiros e provisão são hipóteses prudenciais; enquadramento real pode mudar o custo."
+  },
+  "staffing": {
+    "S1_LEAN": {
+      "descricao": "2 L1 desde o início; terceira pessoa somente quando o gatilho operacional for atingido",
+      "pessoas": [
+        { "papel": "L1", "inicioMes": 1 },
+        { "papel": "L1", "inicioMes": 1 }
+      ]
+    },
+    "S2_CEO_PLAN": {
+      "descricao": "3 L1 desde o início, salário-base inicial de R$3.000 por pessoa",
+      "pessoas": [
+        { "papel": "L1", "inicioMes": 1 },
+        { "papel": "L1", "inicioMes": 1 },
+        { "papel": "L1", "inicioMes": 1 }
+      ]
+    },
+    "S3_MATURE": {
+      "descricao": "2 L1 + 1 L2/lead qualificado desde o início",
+      "pessoas": [
+        { "papel": "L1", "inicioMes": 1 },
+        { "papel": "L1", "inicioMes": 1 },
+        { "papel": "LEAD", "inicioMes": 1 }
+      ]
+    }
+  },
+  "operacao": {
+    "dias": "segunda a sábado",
+    "humano24x7": false,
+    "ticketMinutos": { "EXPECTED": 20, "HEAVY": 25, "STRESS": 30 },
+    "deflexaoBase": { "EXPECTED": 0.7, "HEAVY": 0.5, "STRESS": 0.3 },
+    "deflexaoSensibilidade": [0.3, 0.5, 0.7, 0.85],
+    "escalacaoBase": { "EXPECTED": 0.005, "HEAVY": 0.02, "STRESS": 0.05 },
+    "escalacaoSensibilidade": [0.005, 0.01, 0.02, 0.05],
+    "horasPorEscalacao": 1.5,
+    "contatosElegiveisPorHolderMes": {
+      "EXPECTED": { "pro": 0.05, "trader": 0.12, "pilot": 0.35 },
+      "HEAVY": { "pro": 0.15, "trader": 0.35, "pilot": 1.0 },
+      "STRESS": { "pro": 0.35, "trader": 0.75, "pilot": 2.0 }
+    },
+    "staffingPorCenario": { "EXPECTED": "S1_LEAN", "HEAVY": "S2_CEO_PLAN", "STRESS": "S3_MATURE" },
+    "metaInterna": "primeira resposta humana em até 1 dia útil; não é SLA contratual",
+    "gatilhoTerceiraPessoa": {
+      "utilizacao": 0.7,
+      "mesesConsecutivos": 2,
+      "backlogTickets": 100,
+      "backlogDiasUteis": 2,
+      "nota": "Contratar quando qualquer gatilho persistir por duas medições semanais ou quando a previsão de 60 dias exceder 70% da capacidade steady-state."
+    }
+  },
+  "otherOpsBrlMes": 2500,
+  "prudentialServiceReserveBuffer": 0.25,
+  "referral": [0, 0.1, 0.15, 0.2]
+}

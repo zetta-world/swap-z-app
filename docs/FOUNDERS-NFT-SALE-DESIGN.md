@@ -10,6 +10,10 @@
 > (âncora USD, pagamento SOL, snapshot-e-congela por fase). Status de cada OD: `FOUNDERS-NFT-OWNER-DECISIONS.md` (rev. 4).
 > **Revisão 3 (04/10/2026, L-039):** reserva 30/10/0 (OD-04), royalty 2,5 % → tesouraria (OD-11), planos mensais
 > separados (OD-20), regra de demanda v1 (OD-21), multisig com papéis (OD-22). Capital: `FOUNDERS-TREASURY-AND-CAPITAL-POLICY.md`.
+> **Revisão 5 (06/10/2026):** a verdade comercial de benefícios é
+> `src/lib/founders-commercial-truth.ts` + `FOUNDERS-SUPPORT-AND-ECONOMICS-CLOSURE.md`.
+> Autopilot CEX = implementado/desabilitado; Arb Scanner = a confirmar;
+> suporte prioritário = fila assíncrona desde Trader; Pilot automation = roadmap sujeito a safety gates.
 
 ## 0. Moldura obrigatória: venda de PRODUTO, não captação de investimento
 
@@ -35,14 +39,14 @@ early access/fundraising.
 | item | estado | o que diz | fonte |
 |---|---|---|---|
 | propósito | **DECIDED** (atualizado 04/10) | Access Pass: **36 meses** de premium contados do encerramento oficial da venda + status Founder permanente (segue a política de transferência, OD-NFT-12); depois do prazo o holder cai para Free e mantém o Founder. Nenhuma versão/"v3" encurta o prazo | OD-NFT-14 (dono, 04/10) — substitui "3 anos OU v3" de `NFT-BRIEFING.md` §0 |
-| público-alvo | **DECIDED** (perfil) · demanda por tier = **medida** pela regra v1 (OD-21) | usuários de cripto/DeFi BR-first que querem o premium do Z-SWAP (ZION, autopilot, arb) e o status de fundador; o perfil por tier sai dos dados reais da validação de demanda, não de decisão | `NFT-BRIEFING.md` §1–§3, §9 |
+| público-alvo | **DECIDED** (perfil) · demanda por tier = **medida** pela regra v1 (OD-21) | usuários de cripto/DeFi BR-first que querem os benefícios premium realmente disponíveis do Z-SWAP e o status de fundador; funções desabilitadas, em roadmap ou a confirmar não são tratadas como oferta atual | `beneficios.ts` · regra v1 |
 | papel no Z-SWAP | **DECIDED** (OD-NFT-20, 04/10) | o NFT É o plano de lançamento ("Deuses"); os planos recorrentes ("Guerreiros") são produto comercial **separado**, abertos a não holders; "+30 %" = orientação de preço NÃO vinculante | `NFT-BRIEFING.md` §9 · `src/lib/pricing/plans.ts` (`NORMAL_PREMIUM = 1.3`, mensal $7,90/$20,90/$159) |
 | supply pago | **DECIDED para a proposta comercial** (04/10) | **2.000 Pro · 750 Trader · 100 Pilot = 2.850** (substitui 1.500/500/50); reserva fora da venda: 30 Pro · 10 Trader · 0 Pilot = 40 (OD-NFT-04), **não** entra aqui → coleção máxima 2.890 | decisão do dono 04/10 · código atualizado (`plans.ts`, `config.ts`) |
 | estrutura da coleção | **DECIDED** | 3 tiers ↔ `pro/trader/pilot` (`TIER_RANK` 1/2/3); arte fixa por tier (`public/nft/{pro.jpg,trader.png,pilot.jpg}`), card 3:4 obsidiana/ouro, "LIMITED EDITION", serial `ZS-{TIER}-0001` | `NFT-BRIEFING.md` §1 · `src/lib/tier/types.ts` |
-| benefícios premium (Camada A) por tier | **DECIDED + IMPLEMENTED_FOUNDATION** | `zionAdvisory→pro`, `cexAutopilot→pro`, `arbScanner→trader`, `prioritySupport→trader`; cotas diárias por tier | `NFT-BRIEFING.md` §1 · `src/lib/tier/*` (`FEATURE_TIER`, `TIER_DAILY_ANALYSES`) |
+| benefícios premium (Camada A) por tier | **DECIDED + STATEFUL** | disponível: ZION, fee EVM reduzida e suporte assíncrono desde Trader; Autopilot CEX implementado/desabilitado; Arb Scanner a confirmar; Pilot advanced automation em roadmap; cotas diárias por tier | `src/lib/founders-commercial-truth.ts` · `src/lib/tier/*` |
 | taxa de swap por tier | **DECIDED + IMPLEMENTED** | Free 100 bps (teto do dono) · Pro 50 · Trader 25 · Pilot 10; ligada em `/api/quote` (EVM; Solana hoje sem taxa — `MOTIVOS_SOLANA_SEM_TAXA`) | `src/lib/tier/fees.ts` · `src/app/api/quote/route.ts` |
 | leitura do passe | **IMPLEMENTED_FOUNDATION** | tier derivado do NFT pela Helius DAS (`getAssetsByOwner` + `ZSWAP_COLLECTION_ADDRESS`); sem coleção configurada = sem passe | `src/lib/tier/check.ts` |
-| benefícios Founder (Camada B) | **DECIDED (lista)** / implementação parcial | badge on-chain, whitelist automática em coleções futuras, Hall of Fame, Founder rewards (royalty), voto, beta perpétuo, desconto de taxa, rate limit maior, tema Founder, features grátis com badge | `NFT-BRIEFING.md` §3 · `src/components/pricing/FounderBenefits.tsx` |
+| benefícios Founder (Camada B) | **STATEFUL** | badge on-chain disponível; tema, Hall of Fame, early access, polls, beta e API limits em roadmap; royalty para holders, token allocation, allowlist futura garantida e treasury governance fora da oferta | `src/lib/founders-commercial-truth.ts` · `FounderBenefits.tsx` |
 | framing jurídico | **DECIDED (regra)** / revisão **pendente** | "rewards", nunca "dividend"; advogado cripto-BR antes do mint | `NFT-BRIEFING.md` §4 |
 | narrativa | **DECIDED**, com ajuste | "poder por 36 meses, pertencimento permanente" (o texto do §5 que cita "v3" foi neutralizado) | `NFT-BRIEFING.md` §5 + OD-NFT-14 |
 | metadata | **APPROVED** (OD-13, OD-15) · schema final **PENDING_CHAIN** | sem revelação, travado ao fim da venda; peso de enquete = tier (1/2/3, não vinculante); o schema Metaplex Core é fechado no ensaio em devnet | `NFT-BRIEFING.md` §6 |
@@ -61,10 +65,9 @@ early access/fundraising.
 | captação de investidor (equity/convertível) | **DEFERRED** (fora deste trabalho) | `fundraising_*` reservado, depende de instrumento jurídico | discovery §0 G |
 | PIX recorrente | **DEFERRED** | trilho B pós-NFT | `NFT-BRIEFING.md` §8 (5.5) |
 
-**Copy ao vivo em conflito** (no código; produção está fora do ar, 402): "Mint opens July 2026", "first-come",
-"5% … distributed to holders", "treasury governance", "3 years or until platform v3". Correção **aprovada** (OD-NFT-19);
-texto novo nas 4 línguas em `FOUNDERS-NFT-COPY-CORRECTION.md`; **aplicação pendente** — está em código de produto
-(`messages.ts`), fora de uma rodada só-docs.
+**Copy comercial local:** as correções anteriores foram aplicadas. A revisão
+de 06/10 também impede que `DISABLED`, `ROADMAP` e `A_CONFIRMAR` apareçam como
+disponíveis, nas quatro línguas. Produção/publicação continuam fora deste round.
 
 ## 5. Utilidade Founder — o que a plataforma consegue sustentar
 
@@ -75,7 +78,7 @@ LS = LEGAL_SENSITIVITY · REC = RECOMMENDED.
 
 | utilidade | TS | IR | OC | AR | LS | REC |
 |---|---|---|---|---|---|---|
-| Premium da Camada A pelo tier do passe (ZION advisory, autopilot CEX, arb scanner, suporte) por 36 meses do encerramento da venda | sim (`tier/check.ts`, gates) | configurar coleção + `ZSWAP_COLLECTION_ADDRESS` + fim do prazo (36 meses, OD-NFT-14) | **real**: tokens de IA, RPC (limitado pelas cotas diárias por tier) | média: empréstimo/aluguel do NFT entre carteiras (cache de tier) | baixa | **SIM** (núcleo do produto) |
+| Premium da Camada A realmente disponível pelo tier (ZION, fee EVM reduzida onde ativa, suporte assíncrono desde Trader) por 36 meses do encerramento | sim | configurar coleção + `ZSWAP_COLLECTION_ADDRESS` + fim do prazo | **real**: IA, infra e suporte | média: empréstimo/aluguel do NFT entre carteiras | baixa | **SIM**, com estados explícitos; Autopilot desabilitado e Arb a confirmar ficam fora da lista disponível |
 | Taxa de swap reduzida (100 → 50/25/10 bps) | sim, EVM (`fees.ts`, `/api/quote`) | nenhuma no EVM; Solana hoje não cobra | receita de taxa abdicada | baixa (holder operando para terceiros) | baixa (é desconto) | **SIM** — e corrigir a copy "Future on-chain fee discount": o desconto já existe via tier |
 | Badge Founder on-chain (o próprio NFT) | sim (Metaplex Core) | atributos no metadata | zero | baixa | baixa | **SIM** |
 | Cotas diárias maiores de análise | sim (`TIER_DAILY_ANALYSES`) | nenhuma | IA | baixa | baixa | **SIM** (parte da Camada A) |

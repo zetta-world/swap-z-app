@@ -29,7 +29,12 @@ import { TIER_FEE_BPS, CONTA_TAXA_SOLANA, MOTIVOS_SOLANA_SEM_TAXA } from "@/lib/
 import { ALL_TIERS, BANCADA_COTAS, FEATURE_TIER, TIER_DAILY_ANALYSES, type Tier } from "@/lib/tier/types";
 import { PLAN_TIERS, FOUNDERS_PRICE_STATUS, normalMonthlyUsd, precoPublicoUsd } from "@/lib/pricing/plans";
 import { CONFIG_APROVADA } from "@/lib/founders-sale/config";
-import { BENEFICIOS } from "@/lib/founders-sale/beneficios";
+import {
+  BENEFICIOS,
+  OFERTA_PADRAO_PILOT,
+  POLITICA_SUPORTE_PRIORITARIO,
+  beneficiosPorEstado,
+} from "@/lib/founders-commercial-truth";
 import { orcamentoDiarioDeUnidades } from "@/lib/bancada/cotas";
 import type { ZionOp } from "@/lib/zion/mode-prompts";
 
@@ -56,8 +61,12 @@ export interface FatosDaPlataforma {
     janelaReiniciaNaTransferencia: false;
     royaltyParaHolders: boolean;
     disponiveis: Record<(typeof PAGOS)[number], string[]>;
+    implementadosDesabilitados: Record<(typeof PAGOS)[number], string[]>;
+    aConfirmar: Record<(typeof PAGOS)[number], string[]>;
     roadmap: string[];
     excluidos: string[];
+    suportePrioritario: typeof POLITICA_SUPORTE_PRIORITARIO;
+    ofertaPadraoPilot: typeof OFERTA_PADRAO_PILOT;
     nftEPlanoMensalSeparados: boolean;
     dataDeLancamento: string | null;
   };
@@ -97,9 +106,15 @@ export function fatosDaPlataforma(): FatosDaPlataforma {
       janelaReiniciaNaTransferencia: false,
       royaltyParaHolders: CONFIG_APROVADA.royalty.distribuicaoAHolders,
       disponiveis: Object.fromEntries(PAGOS.map((t) => [t,
-        BENEFICIOS.filter((b) => b.grupo === "A_DISPONIVEL" && b.tiers.includes(tierDaVenda(t))).map((b) => b.id)])) as FatosDaPlataforma["founders"]["disponiveis"],
-      roadmap: BENEFICIOS.filter((b) => b.grupo === "B_ROADMAP").map((b) => b.id),
-      excluidos: BENEFICIOS.filter((b) => b.grupo === "C_EXCLUIDO").map((b) => b.id),
+        beneficiosPorEstado(tierDaVenda(t), "AVAILABLE_AT_LAUNCH").map((b) => b.id)])) as FatosDaPlataforma["founders"]["disponiveis"],
+      implementadosDesabilitados: Object.fromEntries(PAGOS.map((t) => [t,
+        beneficiosPorEstado(tierDaVenda(t), "IMPLEMENTED_DISABLED").map((b) => b.id)])) as FatosDaPlataforma["founders"]["implementadosDesabilitados"],
+      aConfirmar: Object.fromEntries(PAGOS.map((t) => [t,
+        beneficiosPorEstado(tierDaVenda(t), "A_CONFIRMAR").map((b) => b.id)])) as FatosDaPlataforma["founders"]["aConfirmar"],
+      roadmap: BENEFICIOS.filter((b) => b.estado === "COMING_SOON_ROADMAP").map((b) => b.id),
+      excluidos: BENEFICIOS.filter((b) => b.estado === "NOT_PART_OF_THE_OFFER").map((b) => b.id),
+      suportePrioritario: POLITICA_SUPORTE_PRIORITARIO,
+      ofertaPadraoPilot: OFERTA_PADRAO_PILOT,
       nftEPlanoMensalSeparados: CONFIG_APROVADA.relacaoPlanoMensal.estado === "CONFIGURADO"
         && CONFIG_APROVADA.relacaoPlanoMensal.valor.modelo === "PRODUTOS_COMERCIAIS_SEPARADOS",
       dataDeLancamento: CONFIG_APROVADA.dataLancamento.estado === "CONFIGURADO" ? String(CONFIG_APROVADA.dataLancamento.valor) : null,
@@ -121,7 +136,7 @@ export function blocoDeFatos(f: FatosDaPlataforma = fatosDaPlataforma()): string
     `NETWORKS AVAILABLE NOW (Z-SWAP supports these today): ${f.redes.disponiveis.join(", ")}.`,
     `COMING SOON (NOT available yet — never say it is live): ${f.redes.emBreve.join(", ") || "none"}.`,
     "",
-    `PLATFORM SWAP FEE on EVM networks, by plan: ${ALL_TIERS.map((t) => `${NOME[t]} ${pct(f.taxas.evm[t])}`).join(" · ")}.`,
+    `PLATFORM SWAP FEE on SUPPORTED EVM routes WHERE THE FEE MECHANISM IS ACTIVE, by plan: ${ALL_TIERS.map((t) => `${NOME[t]} ${pct(f.taxas.evm[t])}`).join(" · ")}. Never generalize this fee to every network or route.`,
     f.taxas.solanaCobra
       ? "Solana: the plan fee applies."
       : `Solana: NO platform fee (owner decision; reason: ${f.taxas.solanaMotivo}). Network/gas costs are separate from the platform fee.`,
@@ -136,6 +151,7 @@ export function blocoDeFatos(f: FatosDaPlataforma = fatosDaPlataforma()): string
       + `(${f.planos.filter((p) => p.tier !== "free").map((p) => `${NOME[p.tier]} ${p.orcamentoDiarioUnidades.toLocaleString("en-US")}`).join(" · ")}). `
       + `Bigger backtests (more assets, longer history, smaller candles; desk mode reads 1h+4h+1d and counts double) use more of the budget, `
       + `so the full count is reachable only with lighter backtests. Always state both limits together; the count alone is not the whole rule.`,
+    `PILOT STANDARD OFFER: up to ${f.founders.ofertaPadraoPilot.backtestsPorJanela.toLocaleString("en-US")} standard own-strategy backtests per rolling ${f.founders.ofertaPadraoPilot.janelaHoras}-hour window, up to ${f.founders.ofertaPadraoPilot.ativosMax} assets × ${f.founders.ofertaPadraoPilot.historicoDiasMax} days × ${f.founders.ofertaPadraoPilot.candle} candles. Larger runs consume proportionally more data budget. Desk mode is NOT covered by this same 5,000 definition.`,
     "",
     "FOUNDERS PASS (NFT):",
     precoFinal
@@ -146,12 +162,17 @@ export function blocoDeFatos(f: FatosDaPlataforma = fatosDaPlataforma()): string
       + "transferring does NOT restart or extend the premium window. Resale and resale price are not guaranteed.",
     `  Royalties on secondary sales go to the Z-SWAP treasury${f.founders.royaltyParaHolders ? " and are shared with holders" : " and are NOT distributed to holders"}.`,
     `  Available at launch — Pro: ${f.founders.disponiveis.pro.join(", ")}; Trader: ${f.founders.disponiveis.trader.join(", ")}; Pilot: ${f.founders.disponiveis.pilot.join(", ")}.`,
+    `  Implemented but DISABLED (never present as available): Pro: ${f.founders.implementadosDesabilitados.pro.join(", ") || "none"}; Trader: ${f.founders.implementadosDesabilitados.trader.join(", ") || "none"}; Pilot: ${f.founders.implementadosDesabilitados.pilot.join(", ") || "none"}.`,
+    `  TO BE CONFIRMED (not a launch promise): Pro: ${f.founders.aConfirmar.pro.join(", ") || "none"}; Trader: ${f.founders.aConfirmar.trader.join(", ") || "none"}; Pilot: ${f.founders.aConfirmar.pilot.join(", ") || "none"}.`,
     `  Roadmap (planned, NO date — never present as available): ${f.founders.roadmap.join(", ")}.`,
     `  Never promised: ${f.founders.excluidos.join(", ")}.`,
+    "  Priority support starts at Trader: an asynchronous priority queue, with no hard SLA, no human 24/7 coverage, no concierge and no personal CEO support obligation.",
+    "  Pilot advanced automation is only planned, subject to safety gates and certification. Never say it operates by itself for the customer.",
     f.founders.nftEPlanoMensalSeparados ? "  The Founders pass and the monthly plans are separate products; monthly plans are open to non-holders." : "",
     `  Sale date: ${f.founders.dataDeLancamento ?? "not announced yet"}.`,
     "",
-    "ZION gives analysis only: it never moves funds by itself and never holds private keys — every transaction is signed in the user's own wallet. Profit is never guaranteed.",
+    "AUTHORIZATION MODELS ARE DIFFERENT: DEX/on-chain actions require the user's wallet signature; CEX automation uses a separate, explicitly authorized exchange-credential model with financial safety gates. Never describe one as the other. CEX autopilot is currently disabled.",
+    "ZION gives analysis only: it never moves funds by itself and never holds private keys — every on-chain transaction is signed in the user's own wallet. Profit is never guaranteed.",
   ];
   return l.filter((x, i, a) => !(x === "" && a[i - 1] === "")).join("\n");
 }

@@ -1,5 +1,11 @@
 # FOUNDERS NFT — CORREÇÃO DA COPY AO VIVO · 🟢 APROVADA (OD-NFT-19) · APLICADA NA LANE B (`a8378d9`, L-038)
 
+> **HISTÓRICO / SUPERSEDED PARA BENEFÍCIOS (06/10/2026):** esta tabela preserva
+> a correção de prazo/royalty daquela rodada. A copy comercial corrente e os
+> estados de benefício estão em `src/lib/founders-commercial-truth.ts` e
+> `FOUNDERS-SUPPORT-AND-ECONOMICS-CLOSURE.md`. Trechos abaixo que enumeram
+> Autopilot ou arbitragem como ativos não devem ser reutilizados.
+
 > 04/10/2026, lane B, só docs. A copy em conflito vive em `src/lib/i18n/messages.ts` (bloco `pricing`, 4 línguas) —
 > **código de produto**. Esta rodada proíbe tocar código (diff de produto vazio), então o texto abaixo fica **pronto
 > para aplicar** na próxima rodada de produto autorizada (lane B; levar ao release exige novo C1 + recert).

@@ -22,11 +22,14 @@ function arquivos(dir: string, out: string[] = []): string[] {
 }
 
 describe("founders-sale: isolado de rede, chain e rotas", () => {
-  it("só importa node:crypto e módulos irmãos", () => {
+  it("só importa node:crypto, módulos irmãos e a verdade comercial pura", () => {
     for (const m of modulos) {
       const s = readFileSync(join(DIR, m), "utf8");
       for (const [, de] of s.matchAll(/from\s+["']([^"']+)["']/g)) {
-        expect(de === "node:crypto" || de.startsWith("./"), `${m} importa ${de}`).toBe(true);
+        expect(
+          de === "node:crypto" || de.startsWith("./") || de === "../founders-commercial-truth",
+          `${m} importa ${de}`,
+        ).toBe(true);
       }
       expect(/\bfetch\s*\(|XMLHttpRequest|WebSocket/.test(s), `${m} faz chamada de rede`).toBe(false);
     }

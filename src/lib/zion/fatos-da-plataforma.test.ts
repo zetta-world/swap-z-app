@@ -19,7 +19,7 @@ import { TIER_FEE_BPS } from "@/lib/tier/fees";
 import { BANCADA_COTAS, TIER_DAILY_ANALYSES, ALL_TIERS } from "@/lib/tier/types";
 import { PLAN_TIERS, precoPublicoUsd, FOUNDERS_PRICE_STATUS } from "@/lib/pricing/plans";
 import { CONFIG_APROVADA } from "@/lib/founders-sale/config";
-import { premiumAtivo, janelaPremium } from "@/lib/founders-sale/beneficios";
+import { OFERTA_PADRAO_PILOT, POLITICA_SUPORTE_PRIORITARIO, premiumAtivo, janelaPremium } from "@/lib/founders-sale/beneficios";
 import { orcamentoDiarioDeUnidades } from "@/lib/bancada/cotas";
 
 const BLOCO = blocoDeFatos();
@@ -56,6 +56,10 @@ describe("RM-09 · 1. cada fato do bloco É a constante do produto", () => {
     }
     expect(BLOCO).toMatch(/Pilot: 30 ZION analyses\/day · 5,000 backtests\/24h/);
     expect(BLOCO).toMatch(/Pilot 54,750,000/);
+    expect(BLOCO).toMatch(/PILOT STANDARD OFFER: up to 5,000 standard own-strategy backtests per rolling 24-hour window/);
+    expect(BLOCO).toMatch(/up to 3 assets × 365 days × 4h candles/);
+    expect(BLOCO).toMatch(/Desk mode is NOT covered by this same 5,000 definition/);
+    expect(OFERTA_PADRAO_PILOT).toMatchObject({ backtestsPorJanela: 5000, janelaHoras: 24, ativosMax: 3, historicoDiasMax: 365, candle: "4h", budgetFraction: "1/16", modoMesaIncluidoNaMesmaDefinicao: false });
     // ⚠️ os DOIS limites da bancada, ditos — nunca "ilimitado" nem "até X" sem condição
     expect(BLOCO).toMatch(/WORKBENCH LIMITS ARE TWO, BOTH REAL/);
     expect(BLOCO).not.toMatch(/unlimited|ilimitad/i);
@@ -86,16 +90,34 @@ describe("RM-09 · 1. cada fato do bloco É a constante do produto", () => {
     expect(BLOCO).toMatch(/follow the CURRENT holder; transferring does NOT restart or extend/);
   });
 
-  it("Founders: disponível × roadmap × nunca prometido, pelos grupos de beneficios.ts; royalty não vai a holder", () => {
+  it("Founders: disponível × desabilitado × a confirmar × roadmap × excluído", () => {
     const f = fatosDaPlataforma().founders;
     expect(f.disponiveis.pro).toContain("zion_advisory");
     expect(f.disponiveis.pro).not.toContain("priority_support");
     expect(f.disponiveis.trader).toContain("priority_support");
+    expect(f.disponiveis.pro).not.toContain("cex_autopilot");
+    expect(f.implementadosDesabilitados.pro).toContain("cex_autopilot");
+    expect(f.aConfirmar.trader).toContain("arb_scanner");
+    expect(f.disponiveis.trader).not.toContain("arb_scanner");
     expect(f.roadmap).toContain("beta_access");
+    expect(f.roadmap).toContain("pilot_advanced_automation");
     expect(f.excluidos).toEqual(expect.arrayContaining(["royalty_distribution_to_holders", "future_token_allocation"]));
+    expect(f.suportePrioritario).toEqual(POLITICA_SUPORTE_PRIORITARIO);
+    expect(f.suportePrioritario).toMatchObject({ comecaNoTier: "TRADER", slaRigido: false, humano24x7: false, concierge: false, obrigacaoPessoalDoCeo: false });
+    expect(BLOCO).toMatch(/Implemented but DISABLED \(never present as available\).*cex_autopilot/);
+    expect(BLOCO).toMatch(/TO BE CONFIRMED \(not a launch promise\).*arb_scanner/);
+    expect(BLOCO).toMatch(/Priority support starts at Trader: an asynchronous priority queue/);
+    expect(BLOCO).toMatch(/Pilot advanced automation is only planned, subject to safety gates and certification/);
     expect(BLOCO).toMatch(/Roadmap \(planned, NO date — never present as available\)/);
     expect(BLOCO).toMatch(/NOT distributed to holders/);
     expect(BLOCO).toMatch(/Sale date: not announced yet/);
+  });
+
+  it("não confunde autorização DEX/on-chain com autorização CEX", () => {
+    expect(BLOCO).toMatch(/AUTHORIZATION MODELS ARE DIFFERENT/);
+    expect(BLOCO).toMatch(/DEX\/on-chain actions require the user's wallet signature/);
+    expect(BLOCO).toMatch(/CEX automation uses a separate, explicitly authorized exchange-credential model/);
+    expect(BLOCO).toMatch(/CEX autopilot is currently disabled/);
   });
 });
 

@@ -13,6 +13,13 @@
 > **provisórios** $149 / $399 / $1.990 (âncora USD, pagamento SOL, snapshot-e-congela por fase) até a validação de
 > demanda (OD-NFT-02). Estado de cada decisão: `docs/FOUNDERS-NFT-OWNER-DECISIONS.md`. Os números de supply/preço
 > abaixo (1.500/500/50, 1.5/4/30 SOL) são **históricos**.
+>
+> ⚠️ **VERDADE COMERCIAL — 06/10/2026:** prevalecem
+> `src/lib/founders-commercial-truth.ts` e
+> `docs/FOUNDERS-SUPPORT-AND-ECONOMICS-CLOSURE.md`. Autopilot CEX está
+> implementado/desabilitado; Arb Scanner está a confirmar; suporte prioritário
+> é fila assíncrona desde Trader; itens Founder além do badge permanecem em
+> roadmap ou fora da oferta conforme a tabela canônica.
 
 ---
 
@@ -41,8 +48,8 @@ zero). Após o período Premium, o holder cai para o tier **Free** (swap aberto 
 | Tier (rank) | Deus / rune | **Supply** | Preço | Total se 100% | Desbloqueia (Camada A) |
 |-------------|-------------|-----------|-------|---------------|------------------------|
 | `free` (0)  | —           | ∞ | grátis | — | Swap aberto + 5 análises ZION/dia (SEMPRE grátis) |
-| `pro` (1)   | FREYR ᚠ · PROSPERITY | **1.500** | 1.5 SOL | 2.250 SOL (~R$1,8M) | + ZION advisory + CEX autopilot |
-| `trader` (2)| THOR ᚦ · THUNDER STRIKE | **500** | 4 SOL | 2.000 SOL (~R$1,6M) | + arb scanner + priority support |
+| `pro` (1)   | FREYR ᚠ · PROSPERITY | **1.500** | 1.5 SOL | 2.250 SOL (~R$1,8M) | + ZION advisory + fee EVM reduzida onde ativa; Autopilot implementado/desabilitado |
+| `trader` (2)| THOR ᚦ · THUNDER STRIKE | **500** | 4 SOL | 2.000 SOL (~R$1,6M) | + suporte prioritário assíncrono; Arb Scanner a confirmar |
 | `pilot` (3) | ODIN ᚨ · ALLFATHER | **50** | 30 SOL | 1.500 SOL (~R$1,2M) | tudo, cap de uso mais alto |
 | **TOTAL** | | **2.050 NFTs** | — | **5.750 SOL (~R$4,6M)** | |
 
@@ -50,8 +57,8 @@ Cards: `public/nft/{pro.jpg, trader.png, pilot.jpg}`.
 **Lógica de escassez:** quanto mais alto o tier, mais raro. 50 Pilots = exclusividade
 real (status + valor de revenda); 1.500 Pros = volume de comunidade.
 
-Gates de feature já implementados (`FEATURE_TIER`):
-`zionAdvisory→pro`, `cexAutopilot→pro`, `arbScanner→trader`, `prioritySupport→trader`.
+Gates de feature já implementados (`FEATURE_TIER`) não equivalem a disponibilidade
+comercial. O estado comercial canônico é separado em `beneficios.ts`.
 
 **Tema da coleção — "Z-SWAP Access Pass NFT · Deuses Nórdicos":**
 progressão **Prosperidade (Freyr) → Poder (Thor) → Onisciência (Odin)**.
@@ -70,9 +77,9 @@ tempo — não dá pra prometer tokens de IA infinitos sem queimar caixa.
 | Benefício | Por que tem custo |
 |-----------|-------------------|
 | Análises ZION AI (Sonnet/Opus) | $$ tokens Anthropic |
-| Autopilot CEX firing | RPC + execução |
-| Feed cross-CEX arb em tempo real | compute + bandwidth |
-| Suporte direto / white-glove | $$ tempo humano |
+| Autopilot CEX (IMPLEMENTED / DISABLED; não é benefício disponível) | RPC + execução quando futuramente certificado/ativado |
+| Arb Scanner (A CONFIRMAR; não é promessa de lançamento) | compute + bandwidth se aprovado |
+| Suporte assíncrono prioritário desde Trader | tempo humano, sem SLA rígido/24×7/concierge |
 | Cap mensal alto de uso | soma de tokens |
 
 → **Após os 36 meses:** holder continua com tier **Free** (5 análises/dia,
@@ -80,22 +87,23 @@ swap aberto). Sem corte de acesso à plataforma — só ao compute premium.
 
 ---
 
-## 3. CAMADA B — Founder eterno (custo operacional ZERO)
+## 3. CAMADA B — status Founder eterno; utilidades seguem estado próprio
 
-Tudo aqui custa **$0 ongoing**. Pode ser perpétuo sem queimar nada — é o que
-transforma o pass de "assinatura" em "pertencimento".
+O status do passe é permanente. Isso não torna automaticamente disponível toda
+ideia de utilidade: o badge está disponível; os demais itens abaixo são roadmap
+ou estão fora da oferta conforme `beneficios.ts`.
 
 | Benefício perpétuo | Custo p/ nós | Valor p/ holder |
 |--------------------|--------------|------------------|
 | Badge **"Z-SWAP Founder"** on-chain, visível em qualquer wallet check (Etherscan, Solscan…) | $0 (é o NFT existindo) | Status eterno, flex social |
 | **Whitelist automática** em TODAS as coleções/produtos futuros do ecossistema Zettaword (token ZETTA, próximas NFTs) | $0 (check de elegibilidade) | Acesso garantido, FOMO eliminado  ⚠️ **fora do lançamento** (grupo C, OD-NFT-18, 04/10/2026) — não prometer |
-| **Hall of Fame** perpétuo no `/about` — wallet listada como "Founding Member" | $0 (1 query) | Reconhecimento público eterno |
+| **Hall of Fame** perpétuo no `/about` — roadmap, sem data | $0 (1 query) | Reconhecimento público futuro |
 | ~~**Founder rewards** do pool de royalty da coleção~~ — **REMOVIDO 04/10/2026 (OD-NFT-11):** royalty vai para a tesouraria; **nada** é distribuído a holders | — | — |
-| **Enquetes de produto não vinculantes** (OD-NFT-15, 04/10/2026), peso por tier; **sem** governança de tesouraria | $0 | Voz no roadmap |
-| **Beta access** perpétuo — testa features novas antes de todos | $0 | Insider feeling |
+| **Enquetes de produto não vinculantes** — roadmap, sem data; **sem** governança de tesouraria | $0 | Voz futura no roadmap |
+| **Beta access** perpétuo — roadmap, sem data | $0 | Acesso futuro se implementado |
 | **Desconto em fees** on-chain se um dia cobrarmos (ex: 50% off swap fee) | opportunity cost mínimo | Economia real ao longo dos anos |
-| **Rate limit elevado** nas APIs públicas (`/api/quote`, `/api/prices`, `/api/trending`) | $0 (limite numérico) | Útil p/ power users que constroem bots |
-| **Tema "Founder"** exclusivo no app + ícone diferenciado no portfolio | $0 (CSS) | Diferenciação visual permanente |
+| **Rate limit elevado** nas APIs públicas — roadmap, sem data | $0 (limite numérico) | Útil p/ power users se implementado |
+| **Tema "Founder"** exclusivo no app — roadmap, sem data | $0 (CSS) | Diferenciação visual futura |
 | Acesso perpétuo às features sempre-grátis (`/pools`, `/explorer`, `/portfolio`, `/changelog`) **com badge Founder** | $0 | Visibilidade do status |
 
 ---
@@ -133,9 +141,11 @@ retorno, não usa caixa próprio, não posiciona o NFT como investimento.
 
 > **Z-SWAP Access Pass NFT — 36 meses de poder, pertencimento permanente.**
 >
-> Por 36 meses a partir do encerramento oficial da venda, você desbloqueia ZION AI no modelo
-> mais capaz do mercado, autopilot CEX, cross-arb e a taxa de swap reduzida do seu tier. Depois
-> desse período, seu passe mantém o status Founder on-chain e os benefícios de membro.
+> Por 36 meses a partir do encerramento oficial da venda, você desbloqueia os
+> benefícios premium disponíveis do seu tier: ZION, limites de uso, fee EVM
+> reduzida onde o mecanismo estiver ativo e suporte assíncrono prioritário a
+> partir do Trader. Autopilot CEX está desabilitado; Arb Scanner está a
+> confirmar. Depois desse período, o passe mantém o status Founder on-chain.
 > **Você não compra acesso. Você se torna parte.**
 >
 > *(Texto ajustado em 04/10/2026: saíram "v3", "participação nos royalties", "voto em governança" e
@@ -153,7 +163,7 @@ do nosso backend. Proposta (exemplo para o tier `trader`):
 {
   "name": "Z-SWAP Access Pass — THOR (Trader)",
   "symbol": "ZSWAP",
-  "description": "Founder Access Pass to Z-SWAP. 3 years of premium power, lifetime of belonging.",
+  "description": "Founder Access Pass to Z-SWAP. 36 months of available premium benefits from sale close; permanent Founder status.",
   "image": "ipfs://<CID>/trader.png",
   "attributes": [
     { "trait_type": "Tier",            "value": "Trader" },
@@ -162,9 +172,7 @@ do nosso backend. Proposta (exemplo para o tier `trader`):
     { "trait_type": "Founder",         "value": "true" },
     { "trait_type": "Premium Window",  "value": "36 months from sale close" },
     { "trait_type": "Founder Status",  "value": "Lifetime" },
-    { "trait_type": "Governance Weight", "value": 2 },
-    { "trait_type": "Whitelist",       "value": "All future Zettaword drops" },
-    { "trait_type": "Hall of Fame",    "value": "true" }
+    { "trait_type": "Commercial Truth Version", "value": "2026-10-06" }
   ],
   "properties": {
     "category": "image",
@@ -173,8 +181,9 @@ do nosso backend. Proposta (exemplo para o tier `trader`):
 }
 ```
 
-> Nota: `Governance Weight` e `collection_tier_rank` espelham `TIER_RANK`
-> (pro=1, trader=2, pilot=3). Manter sincronizado com `src/lib/tier/types.ts`.
+> Nota: `collection_tier_rank` espelha `TIER_RANK` (pro=1, trader=2,
+> pilot=3). Roadmap, allowlist futura e governança não entram como atributos
+> prometidos no metadata.
 
 ---
 

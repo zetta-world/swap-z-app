@@ -59,6 +59,17 @@ describe("FoundersSalePage", () => {
     expect(t).not.toMatch(/guaranteed (return|profit)|passive income|dividend(?!s)|revenue share(?! or)/i);
   });
 
+  it("não promove Autopilot ou arbitragem: estados comerciais aparecem separados", () => {
+    const t = texto(render(quadros[0], false));
+    expect(t).toMatch(/Available at launch/);
+    expect(t).toMatch(/Implemented — disabled/);
+    expect(t).toMatch(/CEX autopilot — implemented, disabled pending safety certification/);
+    expect(t).toMatch(/To be confirmed — not a launch promise/);
+    expect(t).toMatch(/arbitrage scanner — status to be confirmed/i);
+    const disponivel = t.slice(t.indexOf("Available at launch"), t.indexOf("Implemented — disabled"));
+    expect(disponivel).not.toMatch(/autopilot|arbitrage/i);
+  });
+
   it("reserva divulgada na vitrine pública (30/10/0, fora dos 2.850) e nenhum percentual de royalty exposto", () => {
     for (const lang of LINGUAS) {
       idioma.lang = lang;

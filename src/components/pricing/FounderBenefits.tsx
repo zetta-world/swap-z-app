@@ -1,10 +1,11 @@
 "use client";
 
 import {
-  Crown, BadgeCheck, ListChecks, Trophy, Coins, Vote,
-  FlaskConical, Percent, Gauge, Palette, Gift, Infinity as InfinityIcon,
+  Crown, BadgeCheck, ListChecks, Trophy, Vote,
+  FlaskConical, Gauge, Palette, Infinity as InfinityIcon,
 } from "lucide-react";
 import { useT, type MessageKey } from "@/lib/i18n";
+import { BENEFICIOS } from "@/lib/founders-commercial-truth";
 
 interface Benefit {
   Icon:    React.ComponentType<{ className?: string }>;
@@ -12,18 +13,22 @@ interface Benefit {
   descKey:  MessageKey;
 }
 
-const BENEFITS: Benefit[] = [
-  { Icon: BadgeCheck,   titleKey: "pricing.founderBadge",        descKey: "pricing.founderBadgeDesc" },
-  { Icon: ListChecks,   titleKey: "pricing.founderWhitelist",    descKey: "pricing.founderWhitelistDesc" },
-  { Icon: Trophy,       titleKey: "pricing.founderHall",         descKey: "pricing.founderHallDesc" },
-  { Icon: Coins,        titleKey: "pricing.founderRoyalty",      descKey: "pricing.founderRoyaltyDesc" },
-  { Icon: Vote,         titleKey: "pricing.founderGovernance",   descKey: "pricing.founderGovernanceDesc" },
-  { Icon: FlaskConical, titleKey: "pricing.founderBeta",         descKey: "pricing.founderBetaDesc" },
-  { Icon: Percent,      titleKey: "pricing.founderFees",         descKey: "pricing.founderFeesDesc" },
-  { Icon: Gauge,        titleKey: "pricing.founderApi",          descKey: "pricing.founderApiDesc" },
-  { Icon: Palette,      titleKey: "pricing.founderCustom",       descKey: "pricing.founderCustomDesc" },
-  { Icon: Gift,         titleKey: "pricing.founderFreeFeatures", descKey: "pricing.founderFreeFeaturesDesc" },
-];
+const APRESENTACAO: Record<string, Benefit> = {
+  founder_badge_onchain: { Icon: BadgeCheck, titleKey: "pricing.founderBadge", descKey: "pricing.founderBadgeDesc" },
+  early_access_priority: { Icon: ListChecks, titleKey: "pricing.founderWhitelist", descKey: "pricing.founderWhitelistDesc" },
+  hall_of_fame_opt_in: { Icon: Trophy, titleKey: "pricing.founderHall", descKey: "pricing.founderHallDesc" },
+  product_polls: { Icon: Vote, titleKey: "pricing.founderGovernance", descKey: "pricing.founderGovernanceDesc" },
+  beta_access: { Icon: FlaskConical, titleKey: "pricing.founderBeta", descKey: "pricing.founderBetaDesc" },
+  elevated_api_limits: { Icon: Gauge, titleKey: "pricing.founderApi", descKey: "pricing.founderApiDesc" },
+  founder_theme: { Icon: Palette, titleKey: "pricing.founderCustom", descKey: "pricing.founderCustomDesc" },
+};
+
+const BENEFITS: Benefit[] = BENEFICIOS
+  // Esta grade usa ícones de benefício ativo. Roadmap permanente é explicado
+  // na seção de estados da venda, sem ser promovido aqui como disponível.
+  .filter((b) => b.duracao === "PERMANENTE_COM_O_PASSE" && b.estado === "AVAILABLE_AT_LAUNCH")
+  .map((b) => APRESENTACAO[b.id])
+  .filter((b): b is Benefit => Boolean(b));
 
 export default function FounderBenefits() {
   const t = useT();

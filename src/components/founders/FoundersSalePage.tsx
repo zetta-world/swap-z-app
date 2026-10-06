@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { ShieldCheck, Lock, Network, Fingerprint, Landmark, Info, ChevronLeft, ChevronRight, Crown, CheckCircle2, CircleDashed } from "lucide-react";
+import { ShieldCheck, Lock, Network, Fingerprint, Landmark, Info, ChevronLeft, ChevronRight, Crown, CheckCircle2, CircleDashed, HelpCircle, PauseCircle } from "lucide-react";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { useUI } from "@/lib/store/ui";
 import FoundersSalePanel from "./FoundersSalePanel";
 import type { QuadroPrevia } from "@/lib/founders-sale/previa";
+import { BENEFICIOS, beneficiosPublicaveis } from "@/lib/founders-commercial-truth";
 
 /**
  * PÁGINA DA VENDA FOUNDERS — 17 seções, identidade Z-SWAP (obsidiana, ciano/violeta, ouro contido, deuses nórdicos).
@@ -16,11 +17,11 @@ import type { QuadroPrevia } from "@/lib/founders-sale/previa";
  * Sem estatística em tempo real fabricada, sem urgência falsa, sem promessa financeira.
  */
 const TIERS = ["PRO", "TRADER", "PILOT"] as const;
-const FEATURES: Record<(typeof TIERS)[number], MessageKey[]> = {
-  PRO: ["founders.pg_feat_zion", "founders.pg_feat_autopilot"],
-  TRADER: ["founders.pg_feat_zion", "founders.pg_feat_autopilot", "founders.pg_feat_arb", "founders.pg_feat_support"],
-  PILOT: ["founders.pg_feat_zion", "founders.pg_feat_autopilot", "founders.pg_feat_arb", "founders.pg_feat_support"],
-};
+const BENEFICIOS_DO_CARD = new Set(["zion_advisory", "cex_autopilot", "arb_scanner", "priority_support", "pilot_advanced_automation"]);
+const featuresDoTier = (tier: (typeof TIERS)[number]) => beneficiosPublicaveis(tier)
+  .filter((b) => BENEFICIOS_DO_CARD.has(b.id))
+  .map((b) => ({ key: `founders.pg_ben_${b.id}` as MessageKey, estado: b.estado }));
+const idsNoEstado = (estado: (typeof BENEFICIOS)[number]["estado"]) => BENEFICIOS.filter((b) => b.estado === estado && b.tiers.length > 0).map((b) => b.id);
 const DEUS: Record<(typeof TIERS)[number], { arte: string; tom: string }> = {
   PRO: { arte: "/nft/pro.jpg", tom: "from-cyan/30" },
   TRADER: { arte: "/nft/trader.png", tom: "from-violet/30" },
@@ -115,7 +116,15 @@ export default function FoundersSalePage({ quadros, previa, inicial }: { quadros
                 </div>
               </dl>
               <ul className="flex flex-col gap-1 font-sans text-sm text-ink-1">
-                {FEATURES[tier].map((f) => <li key={f} className="flex items-center gap-2"><CheckCircle2 aria-hidden className="w-4 h-4 text-cyan flex-shrink-0" />{t(f)}</li>)}
+                {featuresDoTier(tier).map((f) => {
+                  const Icon = f.estado === "AVAILABLE_AT_LAUNCH" ? CheckCircle2
+                    : f.estado === "IMPLEMENTED_DISABLED" ? PauseCircle
+                      : f.estado === "A_CONFIRMAR" ? HelpCircle : CircleDashed;
+                  const color = f.estado === "AVAILABLE_AT_LAUNCH" ? "text-cyan"
+                    : f.estado === "IMPLEMENTED_DISABLED" ? "text-gold"
+                      : f.estado === "A_CONFIRMAR" ? "text-violet" : "text-ink-3";
+                  return <li key={f.key} className="flex items-center gap-2"><Icon aria-hidden className={`w-4 h-4 ${color} flex-shrink-0`} />{t(f.key)}</li>;
+                })}
               </ul>
               {tier === "PILOT" && q.pilotSomenteAllowlist ? <p className="font-mono text-[11px] text-violet">{t("founders.pg_pilotAllowlistOnly")}</p> : null}
             </li>
@@ -129,15 +138,31 @@ export default function FoundersSalePage({ quadros, previa, inicial }: { quadros
           <div>
             <h3 className="font-mono text-[11px] tracking-widest uppercase text-green mb-2">{t("founders.pg_benefitsNow")}</h3>
             <ul className="flex flex-col gap-1.5 font-sans text-sm text-ink-1">
-              {["zion_advisory", "cex_autopilot", "arb_scanner", "priority_support", "reduced_swap_fee", "founder_badge_onchain"].map((b) => (
+              {idsNoEstado("AVAILABLE_AT_LAUNCH").map((b) => (
                 <li key={b} className="flex items-center gap-2"><CheckCircle2 aria-hidden className="w-4 h-4 text-green flex-shrink-0" />{t(`founders.pg_ben_${b}` as MessageKey)}</li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <h3 className="font-mono text-[11px] tracking-widest uppercase text-gold mb-2">{t("founders.pg_benefitsDisabled")}</h3>
+            <ul className="flex flex-col gap-1.5 font-sans text-sm text-ink-2">
+              {idsNoEstado("IMPLEMENTED_DISABLED").map((b) => (
+                <li key={b} className="flex items-center gap-2"><CircleDashed aria-hidden className="w-4 h-4 text-gold flex-shrink-0" />{t(`founders.pg_ben_${b}` as MessageKey)}</li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <h3 className="font-mono text-[11px] tracking-widest uppercase text-violet mb-2">{t("founders.pg_benefitsUnconfirmed")}</h3>
+            <ul className="flex flex-col gap-1.5 font-sans text-sm text-ink-2">
+              {idsNoEstado("A_CONFIRMAR").map((b) => (
+                <li key={b} className="flex items-center gap-2"><CircleDashed aria-hidden className="w-4 h-4 text-violet flex-shrink-0" />{t(`founders.pg_ben_${b}` as MessageKey)}</li>
               ))}
             </ul>
           </div>
           <div>
             <h3 className="font-mono text-[11px] tracking-widest uppercase text-ink-2 mb-2">{t("founders.pg_benefitsPlanned")}</h3>
             <ul className="flex flex-col gap-1.5 font-sans text-sm text-ink-2">
-              {["founder_theme", "hall_of_fame_opt_in", "early_access_priority", "product_polls", "beta_access", "elevated_api_limits"].map((b) => (
+              {idsNoEstado("COMING_SOON_ROADMAP").map((b) => (
                 <li key={b} className="flex items-center gap-2"><CircleDashed aria-hidden className="w-4 h-4 text-ink-3 flex-shrink-0" />{t(`founders.pg_ben_${b}` as MessageKey)}</li>
               ))}
             </ul>
@@ -209,6 +234,14 @@ export default function FoundersSalePage({ quadros, previa, inicial }: { quadros
               <div>
                 <h3 className="font-mono text-[11px] tracking-widest uppercase text-green mb-2">{t("founders.pg_onbNow")}</h3>
                 <ul className="flex flex-col gap-1 font-sans text-sm text-ink-1">{q.onboarding.beneficiosAgora.map((b) => <li key={b}>{t(`founders.pg_ben_${b}` as MessageKey)}</li>)}</ul>
+              </div>
+              <div>
+                <h3 className="font-mono text-[11px] tracking-widest uppercase text-gold mb-2">{t("founders.pg_benefitsDisabled")}</h3>
+                <ul className="flex flex-col gap-1 font-sans text-sm text-ink-2">{q.onboarding.beneficiosDesabilitados.map((b) => <li key={b}>{t(`founders.pg_ben_${b}` as MessageKey)}</li>)}</ul>
+              </div>
+              <div>
+                <h3 className="font-mono text-[11px] tracking-widest uppercase text-violet mb-2">{t("founders.pg_benefitsUnconfirmed")}</h3>
+                <ul className="flex flex-col gap-1 font-sans text-sm text-ink-2">{q.onboarding.beneficiosAConfirmar.map((b) => <li key={b}>{t(`founders.pg_ben_${b}` as MessageKey)}</li>)}</ul>
               </div>
               <div>
                 <h3 className="font-mono text-[11px] tracking-widest uppercase text-ink-2 mb-2">{t("founders.pg_benefitsPlanned")}</h3>
