@@ -11,7 +11,13 @@
  *      levam ~10 ms aqui e levavam ~20 s no motor antigo. 1,5 s só falha se
  *      o algoritmo mudou de classe — ou se a máquina for 150× mais lenta.
  *
- * Mediana de várias medidas, com aquecimento, para o ruído não decidir.
+ * ⚠️ AUDIT REMEDIATION (05/10/2026): a medida era a MEDIANA de 5 rodadas de `a` e DEPOIS a de `b`.
+ * Com a suíte inteira em paralelo (310 arquivos, máquina de 3,7 GB), as duas séries caíam sob
+ * cargas diferentes de CPU/GC e a razão de um algoritmo linear chegou a 3,30 — falhou na
+ * recertificação do C1 sem o motor ter mudado (o motor é o mesmo do HEAD auditado). Agora as
+ * amostras de `a` e `b` são INTERCALADAS (a mesma carga para as duas) e vale o MÍNIMO (o tempo
+ * sem interferência, o estimador padrão contra ruído de agendamento). O limite (3,2×) e o teto
+ * (1,5 s) NÃO mudaram: um O(N²) continua dando ~4× e falhando.
  */
 import { describe, it, expect } from "vitest";
 import { rodar } from "@/lib/bancada/motor";
@@ -30,15 +36,15 @@ function serie(n: number): VelaComTempo[] {
   return out;
 }
 
-function mediana(fn: () => void, vezes = 5): number {
-  fn();
-  const xs: number[] = [];
+/** Mínimo de `vezes` medidas de CADA função, intercaladas (a, b, a, b…), depois de um aquecimento. */
+function minimosIntercalados(fa: () => void, fb: () => void, vezes = 7): [number, number] {
+  fa(); fb();
+  let ma = Infinity, mb = Infinity;
   for (let i = 0; i < vezes; i++) {
-    const t0 = performance.now();
-    fn();
-    xs.push(performance.now() - t0);
+    let t0 = performance.now(); fa(); ma = Math.min(ma, performance.now() - t0);
+    t0 = performance.now(); fb(); mb = Math.min(mb, performance.now() - t0);
   }
-  return xs.sort((a, b) => a - b)[Math.floor(vezes / 2)];
+  return [ma, mb];
 }
 
 const e = (entrada: Entrada): EstrategiaDoCliente => ({
@@ -57,8 +63,7 @@ describe("motor da bancada: linear em N (trava de regressão CE-01)", () => {
       const a = serie(20_000), b = serie(40_000);
       const est = e(entrada);
       expect(rodar(b, est).operacoes.length).toBeGreaterThan(0);
-      const ta = mediana(() => { rodar(a, est); });
-      const tb = mediana(() => { rodar(b, est); });
+      const [ta, tb] = minimosIntercalados(() => { rodar(a, est); }, () => { rodar(b, est); });
       expect(tb).toBeLessThan(1_500);
       // Abaixo de ~2 ms o ruído do relógio domina a razão; o teto acima já cobre.
       if (ta > 2) expect(tb / ta).toBeLessThan(3.2);
