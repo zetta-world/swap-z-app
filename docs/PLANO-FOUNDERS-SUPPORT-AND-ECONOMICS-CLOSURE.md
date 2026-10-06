@@ -50,7 +50,8 @@ Seletores públicos nunca poderão promover os quatro últimos estados a
 
 ## 4. Superfícies no escopo
 
-- `src/lib/founders-sale/beneficios.ts` como fonte canônica;
+- `src/lib/founders-commercial-truth.ts` como fonte canônica neutra, com
+  compatibilidade no domínio isolado da venda;
 - `/pricing`, inclusive cards, camada premium e FAQ;
 - `/founders-pass`, inclusive cards, benefícios, onboarding e FAQ;
 - fatos institucionais entregues ao ZION;
@@ -102,4 +103,3 @@ Antes de entregar:
 
 Sem produção, Vercel, Supabase hospedado, migrations hospedadas, push, deploy,
 trade real, Autopilot real, Pilot real ou publicação da venda Founders.
-
