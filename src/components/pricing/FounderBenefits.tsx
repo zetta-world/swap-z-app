@@ -26,7 +26,7 @@ const APRESENTACAO: Record<string, Benefit> = {
 const BENEFITS: Benefit[] = BENEFICIOS
   // Esta grade usa ícones de benefício ativo. Roadmap permanente é explicado
   // na seção de estados da venda, sem ser promovido aqui como disponível.
-  .filter((b) => b.duracao === "PERMANENTE_COM_O_PASSE" && b.estado === "AVAILABLE_AT_LAUNCH")
+  .filter((b) => b.duracao === "STATUS_ENQUANTO_HOLDER" && b.estado === "AVAILABLE_AT_LAUNCH")
   .map((b) => APRESENTACAO[b.id])
   .filter((b): b is Benefit => Boolean(b));
 

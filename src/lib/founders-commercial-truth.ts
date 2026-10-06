@@ -30,7 +30,7 @@ export interface Beneficio {
   /** Compatibilidade de domínio. Não usar para decidir disponibilidade. */
   grupo: GrupoBeneficio;
   tiers: readonly FoundersCommercialTier[];
-  duracao: "PREMIUM_36_MESES" | "PERMANENTE_COM_O_PASSE";
+  duracao: "PREMIUM_36_MESES" | "STATUS_ENQUANTO_HOLDER";
 }
 
 const beneficio = (
@@ -56,18 +56,31 @@ export const BENEFICIOS: readonly Beneficio[] = [
   beneficio("priority_support", "AVAILABLE_AT_LAUNCH", ["TRADER", "PILOT"], "PREMIUM_36_MESES"),
   beneficio("reduced_swap_fee", "AVAILABLE_AT_LAUNCH", TODOS, "PREMIUM_36_MESES"),
   beneficio("pilot_advanced_automation", "COMING_SOON_ROADMAP", ["PILOT"], "PREMIUM_36_MESES"),
-  beneficio("founder_badge_onchain", "AVAILABLE_AT_LAUNCH", TODOS, "PERMANENTE_COM_O_PASSE"),
-  beneficio("founder_theme", "COMING_SOON_ROADMAP", TODOS, "PERMANENTE_COM_O_PASSE"),
-  beneficio("hall_of_fame_opt_in", "COMING_SOON_ROADMAP", TODOS, "PERMANENTE_COM_O_PASSE"),
-  beneficio("early_access_priority", "COMING_SOON_ROADMAP", TODOS, "PERMANENTE_COM_O_PASSE"),
-  beneficio("product_polls", "COMING_SOON_ROADMAP", TODOS, "PERMANENTE_COM_O_PASSE"),
-  beneficio("beta_access", "COMING_SOON_ROADMAP", TODOS, "PERMANENTE_COM_O_PASSE"),
-  beneficio("elevated_api_limits", "COMING_SOON_ROADMAP", TODOS, "PERMANENTE_COM_O_PASSE"),
-  beneficio("royalty_distribution_to_holders", "NOT_PART_OF_THE_OFFER", [], "PERMANENTE_COM_O_PASSE"),
-  beneficio("future_token_allocation", "NOT_PART_OF_THE_OFFER", [], "PERMANENTE_COM_O_PASSE"),
-  beneficio("guaranteed_future_allowlist", "NOT_PART_OF_THE_OFFER", [], "PERMANENTE_COM_O_PASSE"),
-  beneficio("treasury_governance", "NOT_PART_OF_THE_OFFER", [], "PERMANENTE_COM_O_PASSE"),
+  beneficio("founder_badge_onchain", "AVAILABLE_AT_LAUNCH", TODOS, "STATUS_ENQUANTO_HOLDER"),
+  beneficio("founder_theme", "COMING_SOON_ROADMAP", TODOS, "STATUS_ENQUANTO_HOLDER"),
+  beneficio("hall_of_fame_opt_in", "COMING_SOON_ROADMAP", TODOS, "STATUS_ENQUANTO_HOLDER"),
+  beneficio("early_access_priority", "COMING_SOON_ROADMAP", TODOS, "STATUS_ENQUANTO_HOLDER"),
+  beneficio("product_polls", "COMING_SOON_ROADMAP", TODOS, "STATUS_ENQUANTO_HOLDER"),
+  beneficio("beta_access", "COMING_SOON_ROADMAP", TODOS, "STATUS_ENQUANTO_HOLDER"),
+  beneficio("elevated_api_limits", "COMING_SOON_ROADMAP", TODOS, "STATUS_ENQUANTO_HOLDER"),
+  beneficio("royalty_distribution_to_holders", "NOT_PART_OF_THE_OFFER", [], "STATUS_ENQUANTO_HOLDER"),
+  beneficio("future_token_allocation", "NOT_PART_OF_THE_OFFER", [], "STATUS_ENQUANTO_HOLDER"),
+  beneficio("guaranteed_future_allowlist", "NOT_PART_OF_THE_OFFER", [], "STATUS_ENQUANTO_HOLDER"),
+  beneficio("treasury_governance", "NOT_PART_OF_THE_OFFER", [], "STATUS_ENQUANTO_HOLDER"),
 ];
+
+/**
+ * O status é duradouro como propriedade do passe, não uma promessa aberta de
+ * Premium vitalício ou de produtos e benefícios futuros.
+ */
+export const POLITICA_STATUS_FOUNDER = {
+  natureza: "PROPRIEDADE_DURADOURA_DO_PASSE" as const,
+  direitosPertencemAo: "HOLDER_ATUAL" as const,
+  conformePoliticaOwnership: true,
+  premiumMeses: 36,
+  garanteBeneficiosFuturos: false,
+  garanteProdutosFuturos: false,
+};
 
 export const beneficioPodeSerVendidoComoDisponivel = (estado: EstadoBeneficio): boolean => estado === "AVAILABLE_AT_LAUNCH";
 export const beneficiosPublicaveis = (tier: FoundersCommercialTier) => BENEFICIOS.filter((b) => b.estado !== "NOT_PART_OF_THE_OFFER" && b.tiers.includes(tier));

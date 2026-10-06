@@ -18,7 +18,7 @@ const h16 = (s: string) => createHash("sha256").update(s).digest("hex").slice(0,
 const h64 = (s: string) => createHash("sha256").update(s).digest("hex");
 
 async function ensaioCompleto(semente: string) {
-  const cfg = configDeEnsaio({ supplyPago: { PRO: 24, TRADER: 8, PILOT: 2 } });
+  const cfg = configDeEnsaio({ supplyPago: { PRO: 24, TRADER: 8, PILOT: 3 } });
   const m = montarEnsaio({ cfg });
   const s = m.servico;
   const ins = [
@@ -45,10 +45,10 @@ async function ensaioCompleto(semente: string) {
     tel({ nome: "tx_confirmed", intencao_hash: h64(e.carteira), tx_hash_ref: h64(a.txId), duracao_ms: 1000 });
   }
   const aposAllowlist = s.progresso();
-  // pública: compradores novos até esgotar Pro e Trader (Pilot não vende na pública)
+  // pública: compradores novos até esgotar todos os tiers, inclusive Pilot não vendido na allowlist
   await abrirPublica(m);
   let n = 1000;
-  for (const tier of ["PRO", "TRADER"] as TierVenda[]) {
+  for (const tier of TIERS as readonly TierVenda[]) {
     while (s.progresso().porTier[tier].available > 0) {
       const w = carteiraSintetica(`pub-${semente}-${n++}`);
       const r = await comprar(m, w, tier, `pb-${w}`, { unidades: 1 });
@@ -61,13 +61,13 @@ async function ensaioCompleto(semente: string) {
 }
 
 describe("ensaio ponta a ponta local", () => {
-  it("fluxo completo: allowlist → pública → esgotado (Pro/Trader) e Pilot não vendido fica não mintado", async () => {
+  it("fluxo completo: allowlist → Pilot remanescente na pública → sold-out real", async () => {
     const r = await ensaioCompleto("a");
     expect(r.snap.congelado).toBe(true);
     expect(r.snap.entradas.length).toBe(18); // 12 Pro + 4 Trader + 1 Pilot (EA) + 1 Pilot curado; país YY fora
     expect(r.cont.tipo).toBe("antes");
-    expect(r.aposAllowlist.porTier).toMatchObject({ PRO: { minted: 12, available: 12 }, TRADER: { minted: 4, available: 4 }, PILOT: { minted: 2, available: 0 } });
-    expect(r.final.porTier).toMatchObject({ PRO: { minted: 24, reserved: 0, available: 0 }, TRADER: { minted: 8, available: 0 }, PILOT: { minted: 2, available: 0 } });
+    expect(r.aposAllowlist.porTier).toMatchObject({ PRO: { minted: 12, available: 12 }, TRADER: { minted: 4, available: 4 }, PILOT: { minted: 2, available: 1 } });
+    expect(r.final.porTier).toMatchObject({ PRO: { minted: 24, reserved: 0, available: 0 }, TRADER: { minted: 8, available: 0 }, PILOT: { minted: 3, available: 0 } });
     expect(r.estado.publico).toBe("SOLD_OUT");
     for (const t of TIERS) { const p = r.final.porTier[t]; expect(p.minted + p.reserved + p.available).toBe(p.paid_supply); }
     expect(verificarCadeia(r.s.evidencia.todos())).toEqual({ ok: true });

@@ -32,7 +32,6 @@ export interface QuadroPrevia {
   /** OD-NFT-04: reserva NÃO paga, divulgada (fora do supply pago). */
   reservaPorTier: Record<TierVenda, number>;
   taxaBps: Record<TierVenda, number>;
-  pilotSomenteAllowlist: boolean;
   onboarding: null | {
     tier: TierVenda;
     premiumAte: number | null;
@@ -64,7 +63,7 @@ function quadroSemVenda(id: string, cfg: ConfigVenda): QuadroPrevia {
     carteira: "disconnected", tx: "IDLE", txRef: null, snapshot: null, configFingerprint: fingerprintConfig(cfg),
     preco: { status: cfg.statusPreco, porTier }, supplyPago: cfg.supplyPago, reservaPorTier: reservaEfetiva(cfg).porTier,
     taxaBps: { PRO: TAXA_SWAP_BPS.PRO, TRADER: TAXA_SWAP_BPS.TRADER, PILOT: TAXA_SWAP_BPS.PILOT },
-    pilotSomenteAllowlist: cfg.pilotSomenteAllowlist, onboarding: null, simulacao: true,
+    onboarding: null, simulacao: true,
   };
 }
 
@@ -92,7 +91,7 @@ function quadro(m: MontagemEnsaio, id: string, o: OpcoesQuadro = {}): QuadroPrev
     snapshot: snap ? { id: snap.id, raiz: snap.raiz, versao: snap.versao } : null,
     configFingerprint: s.fingerprint, preco: { status: cfg.statusPreco, porTier }, supplyPago: cfg.supplyPago, reservaPorTier: reservaEfetiva(cfg).porTier,
     taxaBps: { PRO: TAXA_SWAP_BPS.PRO, TRADER: TAXA_SWAP_BPS.TRADER, PILOT: TAXA_SWAP_BPS.PILOT },
-    pilotSomenteAllowlist: cfg.pilotSomenteAllowlist, onboarding: o.onboarding ?? null, simulacao: true,
+    onboarding: o.onboarding ?? null, simulacao: true,
   };
 }
 
@@ -151,7 +150,7 @@ export async function quadrosDaPrevia(): Promise<QuadroPrevia[]> {
   const rf = await comprar(c, carteiraSintetica(1), "PRO", "falha-demo");
   if (rf.ok) await acompanharAte(c, rf.assinatura);
   q.push(quadro(c, "tx-failed", { elegibilidade: "elegivel", tx: "falhou", carteira: "failed", concedido: 1, usado: 0, prova: "valida" }));
-  const pilot = await comprar(c, carteiraSintetica(90), "PILOT", "previa-pilot"); // Pilot só vende na allowlist
+  const pilot = await comprar(c, carteiraSintetica(90), "PILOT", "previa-pilot");
   if (pilot.ok) await acompanharAte(c, pilot.assinatura);
   await abrirPublica(c);
   q.push(quadro(c, "public-sale", { elegibilidade: "elegivel", carteira: "connected", janela: { inicioMs: cfg.horarios.publicaAbre, fimMs: cfg.horarios.vendaFecha } }));

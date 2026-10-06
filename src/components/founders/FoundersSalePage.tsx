@@ -126,7 +126,7 @@ export default function FoundersSalePage({ quadros, previa, inicial }: { quadros
                   return <li key={f.key} className="flex items-center gap-2"><Icon aria-hidden className={`w-4 h-4 ${color} flex-shrink-0`} />{t(f.key)}</li>;
                 })}
               </ul>
-              {tier === "PILOT" && q.pilotSomenteAllowlist ? <p className="font-mono text-[11px] text-violet">{t("founders.pg_pilotAllowlistOnly")}</p> : null}
+              {tier === "PILOT" ? <p className="font-mono text-[11px] text-violet">{t("founders.pg_pilotPublicSale")}</p> : null}
             </li>
           ))}
         </ul>
@@ -270,7 +270,7 @@ export default function FoundersSalePage({ quadros, previa, inicial }: { quadros
       {/* 14. FAQ */}
       <Secao id={`${id}-faq`} titulo={t("founders.pg_faqTitle")}>
         <div className="flex flex-col gap-2">
-          {[1, 2, 3, 4, 5, 6].map((n) => (
+          {[1, 2, 3, 4, 5, 6, 7].map((n) => (
             <details key={n} className="group rounded-2xl border border-border-faint bg-bg-2/60 px-4 py-3">
               <summary className="cursor-pointer min-h-11 flex items-center font-display font-bold text-sm text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan">{t(`founders.pg_faq${n}Q` as MessageKey)}</summary>
               <p className="font-sans text-sm text-ink-1 mt-2 leading-relaxed">{t(`founders.pg_faq${n}A` as MessageKey)}</p>

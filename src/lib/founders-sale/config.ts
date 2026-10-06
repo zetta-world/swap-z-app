@@ -66,13 +66,11 @@ export interface ConfigVenda {
   /** Preço por fase: referência SOL/USD fotografada e congelada (fonte da referência: não decidida). */
   comportamentoPreco: "SNAPSHOT_AND_FREEZE";
   fonteReferencia: Pendente<string>;
-  /** OD-NFT-05: allowlist 1 por tier; pública 2 (Pilot 1). Tetos CUMULATIVOS por carteira e tier. */
+  /** Regra final 06/10: allowlist 1 por tier; teto TOTAL do evento 2/2/1. Compras da allowlist contam no total. */
   tetos: { allowlist: Record<TierVenda, number>; publica: Record<TierVenda, number> };
-  /** OD-NFT-06 (princípio): Pilot só allowlist. */
-  pilotSomenteAllowlist: boolean;
-  /** OD-NFT-07: allowlist 48 h → pública até esgotar ou 14 dias. */
+  /** Allowlist 48 h; o EVENTO inteiro termina por sold-out real ou 14 dias desde `allowlistAbre`. */
   duracaoAllowlistMs: number;
-  duracaoMaximaPublicaMs: number;
+  duracaoMaximaVendaMs: number;
   /** OD-NFT-08: PENDING_EXTERNAL_READINESS — nenhuma data antes de jurídico, Vercel, ensaio hospedado, ensaio em
    *  devnet, provedores prontos e a antecedência de anúncio. `null` = sem data (a autoridade não abre). */
   dataLancamento: Pendente<number>;
@@ -151,9 +149,8 @@ export const CONFIG_APROVADA: ConfigVenda = {
   comportamentoPreco: "SNAPSHOT_AND_FREEZE",
   fonteReferencia: pendente("PENDING_EXTERNAL", "provedor da referência SOL/USD + snapshot real (nenhum oráculo de produção nesta fase)", "OD-NFT-02"),
   tetos: { allowlist: { PRO: 1, TRADER: 1, PILOT: 1 }, publica: { PRO: 2, TRADER: 2, PILOT: 1 } },
-  pilotSomenteAllowlist: true,
   duracaoAllowlistMs: 48 * H,
-  duracaoMaximaPublicaMs: 14 * D,
+  duracaoMaximaVendaMs: 14 * D,
   dataLancamento: pendente("PENDING_EXTERNAL", "PENDING_EXTERNAL_READINESS: jurídico, Vercel, ensaio hospedado, devnet, provedores e antecedência de anúncio", "OD-NFT-08"),
   horarios: { inscricaoAbre: null, inscricaoFecha: null, allowlistAbre: null, publicaAbre: null, vendaFecha: null },
   premium: { meses: 36, inicio: "ENCERRAMENTO_OFICIAL_DA_VENDA" },
@@ -210,6 +207,8 @@ export function validarConfig(cfg: ConfigVenda): string[] {
     if (!inteiroPositivo(cfg.tetos.allowlist[t]) || !inteiroPositivo(cfg.tetos.publica[t])) e.push(`teto_invalido:${t}`);
     if (cfg.tetos.publica[t] < cfg.tetos.allowlist[t]) e.push(`teto_publico_menor_que_allowlist:${t}`);
   }
+  if (cfg.duracaoAllowlistMs !== 48 * H) e.push("duracao_allowlist_fora_da_politica");
+  if (cfg.duracaoMaximaVendaMs !== 14 * D) e.push("duracao_maxima_venda_fora_da_politica");
   if (cfg.reserva.estado === "CONFIGURADO") {
     for (const t of TIERS) for (const l of cfg.reserva.valor[t]) {
       if (!inteiroPositivo(l.quantidade)) e.push(`reserva_quantidade_invalida:${t}`);
@@ -248,7 +247,7 @@ export function validarConfig(cfg: ConfigVenda): string[] {
     anterior = v;
   }
   if (h.allowlistAbre !== null && h.publicaAbre !== null && h.publicaAbre - h.allowlistAbre !== cfg.duracaoAllowlistMs) e.push("janela_allowlist_difere_da_aprovada");
-  if (h.publicaAbre !== null && h.vendaFecha !== null && h.vendaFecha - h.publicaAbre > cfg.duracaoMaximaPublicaMs) e.push("janela_publica_excede_a_aprovada");
+  if (h.allowlistAbre !== null && h.vendaFecha !== null && h.vendaFecha - h.allowlistAbre > cfg.duracaoMaximaVendaMs) e.push("janela_total_excede_a_aprovada");
   return e;
 }
 

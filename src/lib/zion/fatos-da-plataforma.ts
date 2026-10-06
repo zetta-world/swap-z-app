@@ -32,6 +32,7 @@ import { CONFIG_APROVADA } from "@/lib/founders-sale/config";
 import {
   BENEFICIOS,
   OFERTA_PADRAO_PILOT,
+  POLITICA_STATUS_FOUNDER,
   POLITICA_SUPORTE_PRIORITARIO,
   beneficiosPorEstado,
 } from "@/lib/founders-commercial-truth";
@@ -59,6 +60,7 @@ export interface FatosDaPlataforma {
     premiumComecaEm: string;
     premiumSegueOHolder: true;
     janelaReiniciaNaTransferencia: false;
+    politicaStatusFounder: typeof POLITICA_STATUS_FOUNDER;
     royaltyParaHolders: boolean;
     disponiveis: Record<(typeof PAGOS)[number], string[]>;
     implementadosDesabilitados: Record<(typeof PAGOS)[number], string[]>;
@@ -67,6 +69,14 @@ export interface FatosDaPlataforma {
     excluidos: string[];
     suportePrioritario: typeof POLITICA_SUPORTE_PRIORITARIO;
     ofertaPadraoPilot: typeof OFERTA_PADRAO_PILOT;
+    venda: {
+      allowlistHoras: number;
+      limiteAllowlist: Record<"pro" | "trader" | "pilot", number>;
+      limiteTotalEvento: Record<"pro" | "trader" | "pilot", number>;
+      pilotNaVendaPublica: true;
+      duracaoMaximaDias: number;
+      naoVendido: "UNMINTED";
+    };
     nftEPlanoMensalSeparados: boolean;
     dataDeLancamento: string | null;
   };
@@ -104,6 +114,7 @@ export function fatosDaPlataforma(): FatosDaPlataforma {
       // encerramento oficial — o teste prova as duas coisas contra as funções.
       premiumSegueOHolder: true,
       janelaReiniciaNaTransferencia: false,
+      politicaStatusFounder: POLITICA_STATUS_FOUNDER,
       royaltyParaHolders: CONFIG_APROVADA.royalty.distribuicaoAHolders,
       disponiveis: Object.fromEntries(PAGOS.map((t) => [t,
         beneficiosPorEstado(tierDaVenda(t), "AVAILABLE_AT_LAUNCH").map((b) => b.id)])) as FatosDaPlataforma["founders"]["disponiveis"],
@@ -115,6 +126,14 @@ export function fatosDaPlataforma(): FatosDaPlataforma {
       excluidos: BENEFICIOS.filter((b) => b.estado === "NOT_PART_OF_THE_OFFER").map((b) => b.id),
       suportePrioritario: POLITICA_SUPORTE_PRIORITARIO,
       ofertaPadraoPilot: OFERTA_PADRAO_PILOT,
+      venda: {
+        allowlistHoras: CONFIG_APROVADA.duracaoAllowlistMs / 3_600_000,
+        limiteAllowlist: { pro: CONFIG_APROVADA.tetos.allowlist.PRO, trader: CONFIG_APROVADA.tetos.allowlist.TRADER, pilot: CONFIG_APROVADA.tetos.allowlist.PILOT },
+        limiteTotalEvento: { pro: CONFIG_APROVADA.tetos.publica.PRO, trader: CONFIG_APROVADA.tetos.publica.TRADER, pilot: CONFIG_APROVADA.tetos.publica.PILOT },
+        pilotNaVendaPublica: true,
+        duracaoMaximaDias: CONFIG_APROVADA.duracaoMaximaVendaMs / 86_400_000,
+        naoVendido: "UNMINTED",
+      },
       nftEPlanoMensalSeparados: CONFIG_APROVADA.relacaoPlanoMensal.estado === "CONFIGURADO"
         && CONFIG_APROVADA.relacaoPlanoMensal.valor.modelo === "PRODUTOS_COMERCIAIS_SEPARADOS",
       dataDeLancamento: CONFIG_APROVADA.dataLancamento.estado === "CONFIGURADO" ? String(CONFIG_APROVADA.dataLancamento.valor) : null,
@@ -160,6 +179,7 @@ export function blocoDeFatos(f: FatosDaPlataforma = fatosDaPlataforma()): string
     `  Premium: ${f.founders.premiumMeses} months, counted from the OFFICIAL END OF THE SALE (not from the purchase). Not lifetime.`,
     "  Transfer: the pass is a standard NFT that can be transferred or sold; premium and Founder status follow the CURRENT holder; "
       + "transferring does NOT restart or extend the premium window. Resale and resale price are not guaranteed.",
+    "  Founder status is a durable property of the pass. Rights linked to the status belong to the current holder under the applicable ownership policy. It does NOT guarantee lifetime Premium, future products or future ecosystem benefits.",
     `  Royalties on secondary sales go to the Z-SWAP treasury${f.founders.royaltyParaHolders ? " and are shared with holders" : " and are NOT distributed to holders"}.`,
     `  Available at launch — Pro: ${f.founders.disponiveis.pro.join(", ")}; Trader: ${f.founders.disponiveis.trader.join(", ")}; Pilot: ${f.founders.disponiveis.pilot.join(", ")}.`,
     `  Implemented but DISABLED (never present as available): Pro: ${f.founders.implementadosDesabilitados.pro.join(", ") || "none"}; Trader: ${f.founders.implementadosDesabilitados.trader.join(", ") || "none"}; Pilot: ${f.founders.implementadosDesabilitados.pilot.join(", ") || "none"}.`,
@@ -168,6 +188,7 @@ export function blocoDeFatos(f: FatosDaPlataforma = fatosDaPlataforma()): string
     `  Never promised: ${f.founders.excluidos.join(", ")}.`,
     "  Priority support starts at Trader: an asynchronous priority queue, with no hard SLA, no human 24/7 coverage, no concierge and no personal CEO support obligation.",
     "  Pilot advanced automation is only planned, subject to safety gates and certification. Never say it operates by itself for the customer.",
+    `  Sale rules: the allowlist lasts ${f.founders.venda.allowlistHoras} hours and gives priority, not extra supply. Allowlist limits are Pro ${f.founders.venda.limiteAllowlist.pro}, Trader ${f.founders.venda.limiteAllowlist.trader}, Pilot ${f.founders.venda.limiteAllowlist.pilot}; cumulative limits for the whole event are Pro ${f.founders.venda.limiteTotalEvento.pro}, Trader ${f.founders.venda.limiteTotalEvento.trader}, Pilot ${f.founders.venda.limiteTotalEvento.pilot}. Purchases in the allowlist count toward those totals. Unsold Pilot remains available in the public sale. The sale ends at real sold-out or ${f.founders.venda.duracaoMaximaDias} days, whichever comes first; unsold supply remains unminted.`,
     f.founders.nftEPlanoMensalSeparados ? "  The Founders pass and the monthly plans are separate products; monthly plans are open to non-holders." : "",
     `  Sale date: ${f.founders.dataDeLancamento ?? "not announced yet"}.`,
     "",

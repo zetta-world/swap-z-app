@@ -8,6 +8,7 @@ import {
   BENEFICIOS,
   ESTADOS_BENEFICIO,
   OFERTA_PADRAO_PILOT,
+  POLITICA_STATUS_FOUNDER,
   POLITICA_SUPORTE_PRIORITARIO,
   beneficioPodeSerVendidoComoDisponivel,
   beneficiosDisponiveisNoLancamento,
@@ -68,6 +69,18 @@ describe("Founders commercial truth — estado nunca é promovido", () => {
 });
 
 describe("Founders commercial truth — redes, fees e Pilot", () => {
+  it("status Founder é duradouro no passe sem prometer Premium ou produtos futuros", () => {
+    expect(POLITICA_STATUS_FOUNDER).toEqual({
+      natureza: "PROPRIEDADE_DURADOURA_DO_PASSE",
+      direitosPertencemAo: "HOLDER_ATUAL",
+      conformePoliticaOwnership: true,
+      premiumMeses: 36,
+      garanteBeneficiosFuturos: false,
+      garanteProdutosFuturos: false,
+    });
+    expect(BENEFICIOS.filter((b) => b.id.startsWith("founder_")).every((b) => b.duracao === "STATUS_ENQUANTO_HOLDER")).toBe(true);
+  });
+
   it("redes disponíveis e ZETTA Chain em breve são exatas", () => {
     expect(CHAINS.filter((c) => !c.comingSoon).map((c) => c.name)).toEqual([
       "Ethereum", "BNB Chain", "Polygon", "Base", "Arbitrum", "Optimism", "Avalanche", "Solana",
@@ -137,6 +150,22 @@ describe("Founders commercial truth — todas as superfícies derivam e rotulam"
       expect(catalog.founders.pg_ben_cex_autopilot, lang).toMatch(reDisabled);
       expect(catalog.founders.pg_ben_arb_scanner, lang).toMatch(reUnconfirmed);
       expect(catalog.founders.pg_ben_priority_support, lang).toMatch(reAsync);
+    }
+  });
+
+  it("pricing e FAQ distinguem status duradouro de Premium temporário em quatro línguas", () => {
+    const re36 = /36/;
+    const reFutureDisclaimer = /does not guarantee|não garante|no garantiza|不保证/iu;
+    const reCurrentHolder = /current holder|holder atual|holder actual|当前 holder/iu;
+    for (const lang of langs) {
+      const catalog = messages[lang] as unknown as {
+        pricing: Record<string, string>;
+        founders: Record<string, string>;
+      };
+      expect(catalog.pricing.layerABody, lang).toMatch(re36);
+      expect(catalog.pricing.layerBBody, lang).toMatch(reFutureDisclaimer);
+      expect(catalog.pricing.layerBBody, lang).toMatch(reCurrentHolder);
+      expect(catalog.founders.pg_heroSub, lang).toMatch(re36);
     }
   });
 });

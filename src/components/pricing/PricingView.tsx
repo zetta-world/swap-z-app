@@ -151,6 +151,9 @@ export default function PricingView({ modelo }: { modelo: string }) {
         <p className="font-sans text-sm sm:text-base text-ink-2 leading-relaxed">
           {t("pricing.heroSub")}
         </p>
+        <p className="font-mono text-[11px] text-gold/90 leading-relaxed">
+          {t("pricing.saleRules")}
+        </p>
       </div>
 
       {/* Tier comparison — 3 paid passes with their Access Pass artwork */}

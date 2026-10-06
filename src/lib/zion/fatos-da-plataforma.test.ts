@@ -19,7 +19,7 @@ import { TIER_FEE_BPS } from "@/lib/tier/fees";
 import { BANCADA_COTAS, TIER_DAILY_ANALYSES, ALL_TIERS } from "@/lib/tier/types";
 import { PLAN_TIERS, precoPublicoUsd, FOUNDERS_PRICE_STATUS } from "@/lib/pricing/plans";
 import { CONFIG_APROVADA } from "@/lib/founders-sale/config";
-import { OFERTA_PADRAO_PILOT, POLITICA_SUPORTE_PRIORITARIO, premiumAtivo, janelaPremium } from "@/lib/founders-sale/beneficios";
+import { OFERTA_PADRAO_PILOT, POLITICA_STATUS_FOUNDER, POLITICA_SUPORTE_PRIORITARIO, premiumAtivo, janelaPremium } from "@/lib/founders-sale/beneficios";
 import { orcamentoDiarioDeUnidades } from "@/lib/bancada/cotas";
 
 const BLOCO = blocoDeFatos();
@@ -88,6 +88,25 @@ describe("RM-09 · 1. cada fato do bloco É a constante do produto", () => {
     expect(j).toEqual({ estado: "DEFINIDA", inicio: enc, fim: Date.UTC(2030, 0, 1) });
     expect(janelaPremium.length).toBe(2);
     expect(BLOCO).toMatch(/follow the CURRENT holder; transferring does NOT restart or extend/);
+    expect(fatosDaPlataforma().founders.politicaStatusFounder).toEqual(POLITICA_STATUS_FOUNDER);
+    expect(BLOCO).toMatch(/durable property of the pass/);
+    expect(BLOCO).toMatch(/does NOT guarantee lifetime Premium, future products or future ecosystem benefits/);
+  });
+
+  it("Founders: venda usa allowlist 48h, limites cumulativos 2\/2\/1, Pilot público e 14 dias totais", () => {
+    const venda = fatosDaPlataforma().founders.venda;
+    expect(venda).toEqual({
+      allowlistHoras: 48,
+      limiteAllowlist: { pro: 1, trader: 1, pilot: 1 },
+      limiteTotalEvento: { pro: 2, trader: 2, pilot: 1 },
+      pilotNaVendaPublica: true,
+      duracaoMaximaDias: 14,
+      naoVendido: "UNMINTED",
+    });
+    expect(BLOCO).toMatch(/allowlist lasts 48 hours and gives priority, not extra supply/);
+    expect(BLOCO).toMatch(/Purchases in the allowlist count toward those totals/);
+    expect(BLOCO).toMatch(/Unsold Pilot remains available in the public sale/);
+    expect(BLOCO).toMatch(/real sold-out or 14 days/);
   });
 
   it("Founders: disponível × desabilitado × a confirmar × roadmap × excluído", () => {

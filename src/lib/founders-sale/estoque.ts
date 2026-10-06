@@ -13,8 +13,8 @@ import { TIERS, reservaEfetiva, type ConfigVenda, type TierVenda } from "./confi
  * Invariante provada em teste (500 pedidos concorrentes): minted + reserved + available = paid_supply e
  * minted + reserved ≤ paid_supply — OVERSOLD = 0.
  *
- * Tetos por carteira (OD-NFT-05): cumulativos por tier; allowlist 1, pública 2 (Pilot 1).
- * Pilot fora da allowlist (OD-NFT-06, princípio) é recusado com `tier_fora_da_fase`.
+ * Tetos por carteira: cumulativos entre as fases; allowlist 1/1/1 e evento inteiro 2/2/1.
+ * A pública recebe todo o supply pago remanescente de cada tier, inclusive Pilot.
  */
 export type FaseVenda = "allowlist" | "publica";
 
@@ -47,7 +47,6 @@ export class EstoqueDaVenda {
 
   reservar(p: { tier: string; carteira: string; unidades: number; chave: string; fase: FaseVenda; vendaAberta: boolean; elegivel: boolean; concedido?: number }): Promise<ResultadoEstoque> {
     if (!this.ehTier(p.tier)) return Promise.resolve({ ok: false, erro: "tier_invalido" });
-    if (p.fase === "publica" && p.tier === "PILOT" && this.cfg.pilotSomenteAllowlist) return Promise.resolve({ ok: false, erro: "tier_fora_da_fase" });
     // na allowlist o teto é o MENOR entre o da fase e o concedido no snapshot
     const teto = p.fase === "allowlist" ? Math.min(this.tetoDaFase(p.tier, "allowlist"), p.concedido ?? 0) : this.tetoDaFase(p.tier, "publica");
     return this.livros[p.tier].reservar({ chave: p.chave, carteira: p.carteira, unidades: p.unidades, vendaAberta: p.vendaAberta, elegivel: p.elegivel, teto });
