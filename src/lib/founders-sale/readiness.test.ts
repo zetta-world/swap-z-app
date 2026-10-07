@@ -130,7 +130,7 @@ describe("alocação: campos abstratos, nada inventado", () => {
 describe("admin: dois passos, frase exata, motivo, operador autorizado, auditoria encadeada", () => {
   const MOT = "motivo operacional registrado";
   const W = "1".repeat(43);
-  const cfgTeste = (): ConfigVenda => ({ ...CONFIG_APROVADA, horarios: { inscricaoAbre: 0, inscricaoFecha: 10, allowlistAbre: 20, publicaAbre: 20 + CONFIG_APROVADA.duracaoAllowlistMs, vendaFecha: 30 + CONFIG_APROVADA.duracaoAllowlistMs } });
+  const cfgTeste = (): ConfigVenda => ({ ...CONFIG_APROVADA, horarios: { inscricaoAbre: 0, inscricaoFecha: 10, allowlistAbre: 20, publicaAbre: 20 + CONFIG_APROVADA.duracaoAllowlistMs, vendaFecha: 20 + CONFIG_APROVADA.duracaoMaximaVendaMs } });
   const mk = (segundo = false) => {
     let t = 0;
     const ev = new CadeiaDeEvidencia();

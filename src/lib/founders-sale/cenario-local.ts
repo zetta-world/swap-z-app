@@ -35,7 +35,7 @@ export function configDeEnsaio(over: Partial<ConfigVenda> = {}): ConfigVenda {
     horarios: {
       inscricaoAbre: T0, inscricaoFecha: T0 + 24 * H, allowlistAbre,
       publicaAbre: allowlistAbre + CONFIG_APROVADA.duracaoAllowlistMs,
-      vendaFecha: allowlistAbre + CONFIG_APROVADA.duracaoAllowlistMs + 7 * 24 * H,
+      vendaFecha: allowlistAbre + CONFIG_APROVADA.duracaoMaximaVendaMs,
     },
     juridico: { ...CONFIG_APROVADA.juridico, paisesPermitidos: configurado(["ZZ"], "ENSAIO_LOCAL_SINTETICO") },
     ...over,

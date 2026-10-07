@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CONFIG_APROVADA, validarConfig, type TierVenda } from "./config";
 import { EstoqueDaVenda } from "./estoque";
-import { configDeEnsaio, T0 } from "./cenario-local";
+import { abrirAteAllowlist, abrirPublica, acompanharAte, carteiraSintetica, comprar, configDeEnsaio, inscricaoSintetica, montarEnsaio, T0 } from "./cenario-local";
 
 const H = 3_600_000;
 const D = 24 * H;
@@ -19,7 +19,7 @@ async function reservar(
 }
 
 describe("Founders sale — regras finais do evento", () => {
-  it("configura 48h, 1/1/1 na allowlist, teto cumulativo 2/2/1 e 14 dias no evento inteiro", () => {
+  it("configura 48h, 1/1/1 na allowlist, teto cumulativo 2/2/1 e deadline exato de 14 dias", () => {
     expect(CONFIG_APROVADA.tetos).toEqual({
       allowlist: { PRO: 1, TRADER: 1, PILOT: 1 },
       publica: { PRO: 2, TRADER: 2, PILOT: 1 },
@@ -30,8 +30,40 @@ describe("Founders sale — regras finais do evento", () => {
 
     const cfg = configDeEnsaio();
     expect(cfg.horarios.publicaAbre! - cfg.horarios.allowlistAbre!).toBe(48 * H);
-    expect(cfg.horarios.vendaFecha! - cfg.horarios.allowlistAbre!).toBeLessThanOrEqual(14 * D);
-    expect(validarConfig({ ...cfg, horarios: { ...cfg.horarios, vendaFecha: cfg.horarios.allowlistAbre! + 14 * D + 1 } })).toContain("janela_total_excede_a_aprovada");
+    const deadline = cfg.horarios.allowlistAbre! + 14 * D;
+    expect(cfg.horarios.vendaFecha).toBe(deadline);
+    expect(validarConfig({ ...cfg, horarios: { ...cfg.horarios, vendaFecha: deadline - 1 } })).toContain("janela_total_difere_da_aprovada");
+    expect(validarConfig({ ...cfg, horarios: { ...cfg.horarios, vendaFecha: deadline } })).not.toContain("janela_total_difere_da_aprovada");
+    expect(validarConfig({ ...cfg, horarios: { ...cfg.horarios, vendaFecha: deadline + 1 } })).toContain("janela_total_difere_da_aprovada");
+    expect(validarConfig({ ...cfg, horarios: { ...cfg.horarios, vendaFecha: cfg.horarios.allowlistAbre! + 48 * H + 7 * D } })).toContain("janela_total_difere_da_aprovada");
+  });
+
+  it("permite encerramento anterior somente pelo sold-out real do supply pago", async () => {
+    const m = montarEnsaio({ cfg: configDeEnsaio({ supplyPago: { PRO: 1, TRADER: 1, PILOT: 1 } }) });
+    await abrirAteAllowlist(m, [inscricaoSintetica(0, "PRO")]);
+    await abrirPublica(m);
+    expect(m.servico.autoridade.ler().publico).toBe("PUBLIC_SALE");
+
+    for (const [i, tier] of (["PRO", "TRADER", "PILOT"] as const).entries()) {
+      const compra = await comprar(m, carteiraSintetica(`sold-out-${tier}`), tier, `sold-out-${i}`);
+      expect(compra.ok, tier).toBe(true);
+      if (!compra.ok) continue;
+      expect(await acompanharAte(m, compra.assinatura), tier).toMatchObject({ status: "CONFIRMED" });
+    }
+
+    expect(m.relogio.t).toBeLessThan(m.cfg.horarios.vendaFecha!);
+    expect(m.servico.progresso()).toMatchObject({ esgotado: true, total: { minted: 3, available: 0, reserved: 0 } });
+    expect(m.servico.autoridade.ler().publico).toBe("SOLD_OUT");
+  });
+
+  it("sem sold-out permanece aberta até o milissegundo anterior e encerra no deadline", async () => {
+    const m = montarEnsaio();
+    await abrirAteAllowlist(m, [inscricaoSintetica(0, "PRO")]);
+    await abrirPublica(m);
+    m.relogio.ir(m.cfg.horarios.vendaFecha! - 1);
+    expect((await m.servico.autoridade.tick()).publico).toBe("PUBLIC_SALE");
+    m.relogio.ir(m.cfg.horarios.vendaFecha!);
+    expect((await m.servico.autoridade.tick()).publico).toBe("ENDED");
   });
 
   it.each(["PRO", "TRADER", "PILOT"] as const)("allowlist %s permite 1 e recusa a segunda unidade", async (tier) => {
