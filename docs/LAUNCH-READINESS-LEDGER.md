@@ -728,3 +728,13 @@
 - **Supply chain aberta:** medição atual: full 68 (1 critical/27 high/40 moderate); omit-dev 60 (1 critical/22 high/37 moderate). Nenhuma dependência foi alterada; disposição em campanha separada.
 - **Evidência:** `zswap-local/evidence/founders-final-sale-liability-20261006T215541Z/`; manifesto e pacote são fechados externamente após o commit de atestação para evitar circularidade de hash.
 - **Estado:** `IMPLEMENTATION_COMPLETE` + `EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED` + `READY_FOR_INDEPENDENT_AUDIT`; não é RC, release, publicação ou aprovação do preço. `RELEASE_CANDIDATE=NONE`; produção, Vercel, Supabase hospedado, push, deploy e dinheiro real intocados.
+
+### L-046 · 2026-10-06 · FOUNDERS FINAL MICRO-DELTA aberto após auditoria independente (lane B, NÃO release)
+
+- **Base medida antes de qualquer edição:** `PHASE_BASE_SHA=8f1849eb28a61f1a5f8b477386c3ce0940bc5e67`, tree `11cace84df18f4d8c8e9b72b31d9252bc8cea04a`; último código recertificado `8ef9bbe27ff1f74dd8d1f7f6e6f7abb180497150`.
+- **Airbag:** origem encontrada limpa; bundle e SHA-256 verificados em `zswap-local/recovery/founders-final-microdelta-20261007T020548Z/` antes da primeira edição.
+- **Worktree/branch:** `zswap-local/worktrees/founders-final-microdelta-20261006` · `founders-final-microdelta-20261006`, somente local e sem upstream.
+- **Plano:** `docs/PLANO-FOUNDERS-FINAL-MICRODELTA-CLOSURE.md`. Escopo exclusivo: exigir deadline configurado exatamente em `allowlistAbre + 14 dias`, preservar sold-out real como única saída antecipada normal e tornar inequívoco em EN/PT/ES/ZH que o status Founder duradouro está associado ao passe.
+- **Achados de abertura confirmados:** a validação aceitava qualquer janela menor que 14 dias; o cenário local ainda configurava 48h + 7 dias públicos; metadados, pricing e catálogos em quatro idiomas ainda usavam formulações equivalentes a status Founder permanente.
+- **Limites:** sem economia, service liability, suporte, pricing, referral, Pilot compute, ZION architecture, supply chain, migration, infra, produção, Vercel, Supabase hospedado, push, merge, deploy, venda real ou dinheiro real.
+- **Estado de abertura:** `IN_PROGRESS`; a recertificação exata, o relatório e o pacote de auditoria ainda não existem.

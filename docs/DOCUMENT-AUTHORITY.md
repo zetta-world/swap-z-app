@@ -109,6 +109,7 @@
 | `docs/NFT-BRIEFING.md` | SUPPORTING_REFERENCE | 6039e3a 2026-06-30 | — | trilha de produto/flywheel (fora da cadeia de release) | NÃO para estado de lançamento; reconferir no código antes de usar |
 | `docs/PLANO-FOUNDERS-SUPPORT-AND-ECONOMICS-CLOSURE.md` | HISTORICAL_EVIDENCE | `c2bfc4a`, 2026-10-06 | entregue; próximo passo auditoria independente | plano do round L-043/L-044 | NÃO executar novamente; SIM para rastreabilidade |
 | `docs/PLANO-FOUNDERS-FINAL-SALE-AND-LIABILITY-CLOSURE.md` | HISTORICAL_EVIDENCE | `8ef9bbe`, 2026-10-06, L-045 | implementado e recertificado; auditoria independente pendente | delta final pós-auditoria: venda, Founder status, treinamento e service liability | NÃO executar novamente; SIM para rastreabilidade |
+| `docs/PLANO-FOUNDERS-FINAL-MICRODELTA-CLOSURE.md` | ACTIVE_PLAN | criado sobre `8f1849e`, 2026-10-06, L-046 | current | AF-01 janela exata de 14 dias e AF-02 copy duradoura associada ao passe | SIM — somente para o micro-delta L-046; não autoriza publicação ou release |
 | `docs/OBSERVACAO-CELEIRO-23AGO.md` | SUPPORTING_REFERENCE | daea83a 2026-08-31 | — | trilha de produto/flywheel (fora da cadeia de release) | NÃO para estado de lançamento; reconferir no código antes de usar |
 | `docs/PENTEST-28-07.md` | HISTORICAL_EVIDENCE | 8cafbd3 2026-07-28 | — | rodada/relatório datado | NÃO |
 | `docs/PITCH-DECK.md` | HISTORICAL_EVIDENCE | b9e8852 2026-06-07 | — | rodada/relatório datado | NÃO |
