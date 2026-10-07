@@ -1,10 +1,15 @@
 # FOUNDERS FINAL MICRO-DELTA CLOSURE
 
-**Data:** 06/10/2026  
-**Base:** `8f1849eb28a61f1a5f8b477386c3ce0940bc5e67`  
-**Candidato de código recertificado:** `58bcf8e359ec209d65f45006d0f71c17cf1a53a5`  
-**Tree do candidato:** `835084a2ccb117e64a07376f9684d46196466c66`  
-**Status:** READY_FOR_INDEPENDENT_AUDIT  
+**Data:** 06/10/2026
+
+**Base:** `8f1849eb28a61f1a5f8b477386c3ce0940bc5e67`
+
+**Candidato de código recertificado:** `58bcf8e359ec209d65f45006d0f71c17cf1a53a5`
+
+**Tree do candidato:** `835084a2ccb117e64a07376f9684d46196466c66`
+
+**Status:** READY_FOR_INDEPENDENT_AUDIT
+
 **Release/publicação:** não autorizados
 
 ## 1. EXECUTIVE VERDICT
@@ -155,4 +160,3 @@ Auditar o delta `8f1849e..58bcf8e`, confirmar a árvore `835084a`, verificar o
 bundle e os manifests do pacote externo e repetir as provas de borda temporal,
 copy multilíngue e não regressão comercial. O candidato não foi enviado,
 mergeado, deployado ou aplicado a nenhum ambiente hospedado.
-
