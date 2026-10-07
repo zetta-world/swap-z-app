@@ -5,7 +5,7 @@ import { avaliar, cadeiaAtual } from "../../../scripts/release/lib/audit-gate.mj
 
 /**
  * R-03 — exceção ESTREITA do `npm audit` (decisão do dono 04/10/2026). Fixture = `npm audit --json` real da
- * lane B (lock 8e9b5227…, 25 high, todos do advisory braces 1240992). Cada teste muda UMA coisa e o portão
+ * lane B (lock 8969d550…, 25 high, todos do advisory braces 1240992). Cada teste muda UMA coisa e o portão
  * tem de reprovar — exceto o relatório idêntico ao registrado.
  */
 const RAIZ = process.cwd();
@@ -22,6 +22,8 @@ describe("portão R-03 do npm audit", () => {
 
   it("a exceção é temporária, marcada para revisão antes do RC e não diz que corrigiu", () => {
     expect(excecoes.status).toBe("TEMPORARIA");
+    expect(excecoes.revisado_em).toBe("2026-10-07");
+    expect(excecoes.lockfile_sha256_na_revisao).toBe("8969d5501b2e52f46ef0a1c2e14fe0b4dcaad9979448683fe507094ee8334f17");
     expect(excecoes.revisar_antes_do_rc).toBe(true);
     expect(excecoes.excecoes).toHaveLength(1);
     expect(excecoes.excecoes[0].corrigido).toBe(false);

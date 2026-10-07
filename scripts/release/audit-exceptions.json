@@ -48,6 +48,7 @@
             "node_modules/@jest/transform"
           ],
           "via": [
+            "babel-plugin-istanbul",
             "jest-haste-map",
             "micromatch"
           ]
@@ -148,7 +149,8 @@
             "node_modules/babel-jest"
           ],
           "via": [
-            "@jest/transform"
+            "@jest/transform",
+            "babel-plugin-istanbul"
           ]
         },
         {
@@ -326,5 +328,8 @@
         }
       ]
     }
-  ]
+  ],
+  "revisado_em": "2026-10-07",
+  "lockfile_sha256_na_revisao": "8969d5501b2e52f46ef0a1c2e14fe0b4dcaad9979448683fe507094ee8334f17",
+  "revisao": "Supply Chain disposition: CRITICAL removido; advisory HIGH braces preservado como exceção temporária e non-runtime candidate, sujeito à auditoria independente."
 }
