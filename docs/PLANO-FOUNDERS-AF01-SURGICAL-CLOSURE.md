@@ -1,9 +1,13 @@
 # PLANO — FOUNDERS AF-01 SURGICAL CLOSURE
 
-**Status:** IN_PROGRESS  
-**Data:** 07/10/2026  
-**PHASE_BASE_SHA:** `d08a1e3a221b5559630f53fb3318d538ee9c383f`  
-**Candidato reprovado preservado:** `58bcf8e359ec209d65f45006d0f71c17cf1a53a5`  
+**Status:** IN_PROGRESS
+
+**Data:** 07/10/2026
+
+**PHASE_BASE_SHA:** `d08a1e3a221b5559630f53fb3318d538ee9c383f`
+
+**Candidato reprovado preservado:** `58bcf8e359ec209d65f45006d0f71c17cf1a53a5`
+
 **Branch local:** `founders-af01-partial-schedule-fix-20261007`
 
 ## Objetivo
