@@ -45,6 +45,11 @@
 > **Revisão 9 (06/10/2026, L-047):** o micro-delta Founders foi entregue no
 > candidato exato `58bcf8e` e o plano virou histórico. O relatório de
 > fechamento é referência de auditoria; não autoriza publicação ou release.
+>
+> **Revisão 10 (07/10/2026, L-049):** o candidato `58bcf8e` permanece como
+> FAIL histórico de `IA-AF01-001`. A correção cirúrgica foi recertificada pelo
+> implementador no candidato `efdf6ee`; o plano AF-01 virou histórico e o novo
+> relatório é referência para auditoria independente, sem autorizar release.
 
 ## Classes
 
@@ -111,11 +116,12 @@
 | `docs/FOUNDERS-SUPPORT-ECONOMICS-MODEL.md` | SUPPORTING_REFERENCE | `8ef9bbe`, 2026-10-06 | current para L-045 | saída determinística do modelo econômico corrigido | SIM como cálculo implementer-reported; premissas exigem validação real |
 | `docs/FOUNDERS-FINAL-SALE-AND-LIABILITY-CLOSURE.md` | SUPPORTING_REFERENCE | `8ef9bbe`, 2026-10-06 | auditoria independente pendente | regra final da venda, copy de Founder status, treinamento e passivo dinâmico | SIM para auditar o candidato; NÃO autoriza publicação/preço final |
 | `docs/FOUNDERS-FINAL-MICRODELTA-CLOSURE.md` | SUPPORTING_REFERENCE | `THIS_CONTROL_PLANE_COMMIT`, 2026-10-06, L-047 | auditoria independente pendente | fechamento AF-01/AF-02, recertificação e handoff | SIM para auditar `58bcf8e`; NÃO autoriza publicação/release |
+| `docs/FOUNDERS-AF01-SURGICAL-CLOSURE.md` | SUPPORTING_REFERENCE | candidato `efdf6ee`, atestação L-049 | auditoria independente pendente | fechamento cirúrgico de `IA-AF01-001`, recertificação e handoff | SIM para auditar `efdf6ee`; NÃO autoriza publicação/release |
 | `docs/NFT-BRIEFING.md` | SUPPORTING_REFERENCE | 6039e3a 2026-06-30 | — | trilha de produto/flywheel (fora da cadeia de release) | NÃO para estado de lançamento; reconferir no código antes de usar |
 | `docs/PLANO-FOUNDERS-SUPPORT-AND-ECONOMICS-CLOSURE.md` | HISTORICAL_EVIDENCE | `c2bfc4a`, 2026-10-06 | entregue; próximo passo auditoria independente | plano do round L-043/L-044 | NÃO executar novamente; SIM para rastreabilidade |
 | `docs/PLANO-FOUNDERS-FINAL-SALE-AND-LIABILITY-CLOSURE.md` | HISTORICAL_EVIDENCE | `8ef9bbe`, 2026-10-06, L-045 | implementado e recertificado; auditoria independente pendente | delta final pós-auditoria: venda, Founder status, treinamento e service liability | NÃO executar novamente; SIM para rastreabilidade |
 | `docs/PLANO-FOUNDERS-FINAL-MICRODELTA-CLOSURE.md` | HISTORICAL_EVIDENCE | criado sobre `8f1849e`, concluído em L-047 | `FOUNDERS-FINAL-MICRODELTA-CLOSURE.md` | AF-01 janela exata de 14 dias e AF-02 copy duradoura associada ao passe | NÃO executar novamente; SIM para rastreabilidade |
-| `docs/PLANO-FOUNDERS-AF01-SURGICAL-CLOSURE.md` | ACTIVE_PLAN | criado sobre `d08a1e3`, 2026-10-07, L-048 | — | correção cirúrgica de agenda parcial após `IA-AF01-001` | SIM, somente para AF-01; não autoriza release/publicação |
+| `docs/PLANO-FOUNDERS-AF01-SURGICAL-CLOSURE.md` | HISTORICAL_EVIDENCE | criado sobre `d08a1e3`, concluído em L-049 | `FOUNDERS-AF01-SURGICAL-CLOSURE.md` | correção cirúrgica de agenda parcial após `IA-AF01-001` | NÃO executar novamente; SIM para rastreabilidade |
 | `docs/OBSERVACAO-CELEIRO-23AGO.md` | SUPPORTING_REFERENCE | daea83a 2026-08-31 | — | trilha de produto/flywheel (fora da cadeia de release) | NÃO para estado de lançamento; reconferir no código antes de usar |
 | `docs/PENTEST-28-07.md` | HISTORICAL_EVIDENCE | 8cafbd3 2026-07-28 | — | rodada/relatório datado | NÃO |
 | `docs/PITCH-DECK.md` | HISTORICAL_EVIDENCE | b9e8852 2026-06-07 | — | rodada/relatório datado | NÃO |

@@ -760,3 +760,14 @@
 - **Plano:** `docs/PLANO-FOUNDERS-AF01-SURGICAL-CLOSURE.md`. Escopo exclusivo: rejeitar as seis agendas parciais, preservar o estado pendente 000 e exigir 48h/14d no estado configurado 111; provar que `ServicoDaVenda` falha fechado.
 - **Limites:** nenhuma mudança de copy AF-02, economia, passivo, suporte, preços, referral, supply, Pilot, ZION, migration, dependência ou supply chain; sem produção, Vercel, Supabase hospedado, push, merge, deploy, venda ou dinheiro real.
 - **Estado de abertura:** `IN_PROGRESS`; ainda não há novo candidato nem recertificação.
+
+### L-049 · 2026-10-07 · FOUNDERS AF-01 SURGICAL CLOSURE entregue para nova auditoria independente (lane B, NÃO release)
+
+- **Falha histórica preservada:** `58bcf8e359ec209d65f45006d0f71c17cf1a53a5` continua reprovado por `IA-AF01-001`; nenhuma evidência anterior foi reclassificada.
+- **Implementação:** plano `8fff64f`; fix/testes `d2c565f`; higiene do plano `efdf6ee`. Candidato exato `efdf6ee5a64d4f5491b806da6258706615b6ffec`, tree `9021c273c1d2e790f3a09da25de8f230ba9ef46e`.
+- **Invariante fechada:** somente `000` (pendente) e `111` (configurada) são estados válidos das três datas; as seis combinações parciais falham com `agenda_da_venda_incompleta`. O caso `110` do auditor é rejeitado por `validarConfig` e pela construção de `ServicoDaVenda`.
+- **Regressões preservadas:** 48h; 14d−1ms rejeitado, 14d aceito, 14d+1ms rejeitado; 48h+7d rejeitado; sold-out real permitido; sem sold-out encerra exatamente no deadline; allowlist 1/1/1, cumulativo 2/2/1, Pilot público e copy AF-02 inalterados.
+- **Primeiras falhas preservadas:** executor direcionado com bind read-only (`FAIL_ENVIRONMENT`); candidato `d2c565f` com quatro linhas de trailing whitespace (`git diff --check` FAIL); dois builds interrompidos por reboot e dois builds `137` por cgroup. Nenhum deles foi reclassificado.
+- **Recertificação exata implementer-reported:** Node 24.21.0/npm 11.19.0; `npm ci` PASS e lock idêntico; alvo 11/11; domínio Founders 17 arquivos/254 testes; type-check PASS; lint 0 erros/145 avisos; suíte 314 arquivos/4.674 testes PASS; production build PASS; economia regenerada sem diff.
+- **Integridade:** package files, migrations, economics, copy AF-02 e restante do domínio Founders sem delta. Evidência em `zswap-local/evidence/founders-af01-surgical-20261007T093209Z/`.
+- **Estado:** `EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED` + `READY_FOR_INDEPENDENT_AUDIT`; não é certificação independente, RC, release ou publicação. `RELEASE_CANDIDATE=NONE`; produção, Vercel, Supabase hospedado, push, merge, deploy, venda e dinheiro real intocados.

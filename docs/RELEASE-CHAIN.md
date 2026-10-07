@@ -31,8 +31,8 @@
 >
 > `LAST_CERTIFIED_RUNTIME=0d21874b4147bb8a0b232aa0abc2302471a720e5` ·
 > `CERTIFIED_FEATURE_SHA=53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` (Fase 2, RECERT(C1)=PASS, 03/10, L-027; antes `f1b4ec1`, Fase 1, L-019) ·
-> `CONTROL_PLANE_HEAD` = `THIS_CONTROL_PLANE_COMMIT` da L-047 (só docs,
-> **não** CERTIFIED; filho do candidato Founders micro-delta `58bcf8e`).
+> `CONTROL_PLANE_HEAD` = `THIS_CONTROL_PLANE_COMMIT` da L-049 (só docs,
+> **não** CERTIFIED; filho do candidato Founders AF-01 `efdf6ee`).
 > C1 `f4af9764e4c773f1bba2821f6cbef9685cfeb59d`: **RECERT FAIL** (02/10, L-018).
 > `CERTIFIED_FEATURE_SHA` (o C1 recertificado) não é necessariamente o
 > `CONTROL_PLANE_HEAD` (o C2 de atestação, só docs, nunca CERTIFIED).
@@ -116,10 +116,16 @@
  8f1849e  atestação L-045                                           CONTROL_PLANE HISTÓRICO; DO NOT DEPLOY
     │  micro-delta AF-01/AF-02
     ▼
- 58bcf8e  candidato Founders final micro-delta                       EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED; AUDIT PENDING; DO NOT DEPLOY
+ 58bcf8e  candidato Founders final micro-delta                       INDEPENDENT AUDIT FAIL IA-AF01-001; HISTORICAL; DO NOT DEPLOY
     │  só docs (diff de produto vazio)
     ▼
- commit da L-047  CONTROL_PLANE_HEAD                               NÃO é CERTIFIED; DO NOT DEPLOY
+ d08a1e3  atestação/higiene pós-auditoria                           PHASE_BASE AF-01; DO NOT DEPLOY
+    │  correção cirúrgica de agenda parcial
+    ▼
+ efdf6ee  candidato Founders AF-01                                  EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED; AUDIT PENDING; DO NOT DEPLOY
+    │  só docs (diff de produto vazio)
+    ▼
+ commit da L-049  CONTROL_PLANE_HEAD                                NÃO é CERTIFIED; DO NOT DEPLOY
     ▼
  FINAL RELEASE CANDIDATE                                          NOT_STARTED
 ```
@@ -179,8 +185,11 @@ reafirmar ou remover a exceção. (Na lane de release, o passo de audit ainda é
 | 22b | candidato Founders final sale + liability | `8ef9bbe` | `8ef9bbe27ff1f74dd8d1f7f6e6f7abb180497150` | `d489e23e12004782f9620ac8bedf1f9f3a482ad4` | `founders-sale-rules-final-delta-20261006` (local, sem upstream) | `EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED` · `READY_FOR_INDEPENDENT_AUDIT` · DO NOT DEPLOY | Node 24; npm ci/build/lint/type-check PASS; alvo 18/270; suíte 314/4669 PASS; modelo determinístico | auditoria independente |
 | 22c | atestação docs-only Founders final (L-045) | `8f1849e` | `8f1849eb28a61f1a5f8b477386c3ce0940bc5e67` | `11cace84df18f4d8c8e9b72b31d9252bc8cea04a` | idem | control plane histórico · não CERTIFIED · DO NOT DEPLOY | diff de produto `8ef9bbe..8f1849e` vazio | micro-delta L-046/L-047 |
 | 23a | base do Founders final micro-delta | `8f1849e` | `8f1849eb28a61f1a5f8b477386c3ce0940bc5e67` | `11cace84df18f4d8c8e9b72b31d9252bc8cea04a` | `founders-final-microdelta-20261006` (base local) | PHASE_BASE · DO NOT DEPLOY | nenhuma certificação nova | `b2fb586` → `1ad14de` → `58bcf8e` |
-| 23b | candidato Founders final micro-delta | `58bcf8e` | `58bcf8e359ec209d65f45006d0f71c17cf1a53a5` | `835084a2ccb117e64a07376f9684d46196466c66` | `founders-final-microdelta-20261006` (local, sem upstream) | `EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED` · `READY_FOR_INDEPENDENT_AUDIT` · DO NOT DEPLOY | Node 24; build/lint/type-check PASS; comerciais 17/252; suíte 314/4672 PASS; economia sem diff | auditoria independente |
+| 23b | candidato Founders final micro-delta | `58bcf8e` | `58bcf8e359ec209d65f45006d0f71c17cf1a53a5` | `835084a2ccb117e64a07376f9684d46196466c66` | `founders-final-microdelta-20261006` (local, sem upstream) | **INDEPENDENT_AUDIT_FAIL `IA-AF01-001`** · HISTORICAL · DO NOT DEPLOY | recert do implementador passou, mas auditoria provou agenda parcial sem deadline | corrigido somente em novo candidato `efdf6ee` |
 | 23c | atestação docs-only Founders micro-delta (L-047) | `THIS_CONTROL_PLANE_COMMIT` | — | — | idem | `CONTROL_PLANE_HEAD` · não CERTIFIED · DO NOT DEPLOY | diff de produto `58bcf8e..HEAD` vazio | auditoria independente; `RELEASE_CANDIDATE=NONE` |
+| 24a | base cirúrgica AF-01 após FAIL independente | `d08a1e3` | `d08a1e3a221b5559630f53fb3318d538ee9c383f` | `84e1c04f4952e42888150f6472f79591b23672fc` | `founders-af01-partial-schedule-fix-20261007` (local, sem upstream) | PHASE_BASE · DO NOT DEPLOY | abertura L-048 | `8fff64f` → `d2c565f` → `efdf6ee` |
+| 24b | candidato Founders AF-01 surgical closure | `efdf6ee` | `efdf6ee5a64d4f5491b806da6258706615b6ffec` | `9021c273c1d2e790f3a09da25de8f230ba9ef46e` | idem | `EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED` · `READY_FOR_INDEPENDENT_AUDIT` · DO NOT DEPLOY | Node 24; npm ci/build/lint/type-check PASS; Founders 17/254; suíte 314/4674; economia sem diff | nova auditoria independente |
+| 24c | atestação docs-only Founders AF-01 (L-049) | `THIS_CONTROL_PLANE_COMMIT` | — | — | idem | `CONTROL_PLANE_ATTESTATION_COMMIT` · não CERTIFIED · DO NOT DEPLOY | diff de produto `efdf6ee..HEAD` vazio | auditoria independente; `RELEASE_CANDIDATE=NONE` |
 | ∞ | FINAL RELEASE CANDIDATE | — | — | — | — | NOT_STARTED | — | — |
 
 Provas rápidas:

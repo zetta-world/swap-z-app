@@ -29,6 +29,10 @@
 > filho do C2 `57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c`. Nenhuma worktree nem branch nova; working tree limpo.
 >
 > Revisão 8 (03/10/2026, L-030): HEAD = commit da L-030 (só docs), filho de `762224843fa8d7e340416d05ac2a99488945d541`.
+>
+> Revisão 9 (07/10/2026, L-049): a worktree atual é a correção AF-01 sobre
+> `d08a1e3`; candidato `efdf6ee` recertificado pelo implementador e aguardando
+> auditoria independente.
 > Estado atual: `START-HERE.md`, `CURRENT-STATE.md`, ledger e `RELEASE-CHAIN.md`.
 
 ---
@@ -37,7 +41,8 @@
 
 | caminho | HEAD (completo) | branch | classificação | papel |
 |---|---|---|---|---|
-| `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/founders-final-microdelta-20261006` | `THIS_CONTROL_PLANE_COMMIT` após candidato `58bcf8e359ec209d65f45006d0f71c17cf1a53a5` | `founders-final-microdelta-20261006` (sem upstream) | **CURRENT_CONTROL_PLANE** | Micro-delta L-047 implementado e recertificado localmente; auditoria independente pendente; não release. |
+| `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/founders-af01-partial-schedule-fix-20261007` | `THIS_CONTROL_PLANE_COMMIT` após candidato `efdf6ee5a64d4f5491b806da6258706615b6ffec` | `founders-af01-partial-schedule-fix-20261007` (sem upstream) | **CURRENT_CONTROL_PLANE** | AF-01 L-049 implementado e recertificado localmente; nova auditoria independente pendente; não release. |
+| `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/founders-final-microdelta-20261006` | `d08a1e3a221b5559630f53fb3318d538ee9c383f` após candidato falho `58bcf8e359ec209d65f45006d0f71c17cf1a53a5` | `founders-final-microdelta-20261006` (sem upstream) | **HISTORICAL_CONTROL_PLANE** | Micro-delta L-047 preservado; auditoria independente FAIL `IA-AF01-001`; não desenvolver aqui. |
 | `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/founders-final-sale-liability-20261006` | atestação L-045 após candidato `8ef9bbe27ff1f74dd8d1f7f6e6f7abb180497150` | `founders-sale-rules-final-delta-20261006` (sem upstream) | HISTORICAL_CONTROL_PLANE | Estado anterior ao micro-delta; preservado para auditoria. |
 | `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/early-access-phase2-email-doubleoptin-20261001` | o commit da L-030 (03/10, revisão 8; só docs; filho do commit da L-029 `7622248`, → C2 `57d78eb` → C1 `53cd85a`; SHA via `git rev-parse`) | `early-access-phase2-email-double-optin-20261001` | **CURRENT_WORK** (Fase 2 fechada) | Linha `9f2ddcb` → C1 `f4af976` (FAIL) → C1b `f1b4ec1` (CERTIFIED_EXACT_SHA, Fase 1) → C2 `74f37f5` → **C1 `53cd85a` (CERTIFIED_EXACT_SHA, Fase 2, L-027)** → C2 da Fase 2 `57d78eb` (só docs, não CERTIFIED) → commit da L-029 (só docs: ensaio + reconciliação ao vivo). Working tree **limpo**. **Única worktree onde se trabalha.** Tem `node_modules/` e `.next/` (gitignored). *(Linhas anteriores: revisão 4 HEAD `f1b4ec1`; revisão 5 HEAD `74f37f5` com a Fase 2 não commitada — histórico.)* |
 | `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/whitelist-fundraising-readiness-20261001` | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019` | `whitelist-fundraising-readiness-20261001` | **COMMITTED_FEATURE_CHECKPOINT** (Fase 1; recert de `9f2ddcb` BLOCKED) | Onde a Fase 1 foi feita e commitada. Congelar e não desenvolver aqui. A Fase 1 certificada é o C1b `f1b4ec1`, na worktree de trabalho. |
@@ -59,6 +64,8 @@ caminhos forem arquivadas.
 
 | branch | SHA | upstream | observação |
 |---|---|---|---|
+| `founders-af01-partial-schedule-fix-20261007` | `THIS_CONTROL_PLANE_COMMIT` após candidato `efdf6ee` | nenhum | CURRENT_CONTROL_PLANE; auditoria independente pendente; **não existe no GitHub** |
+| `founders-final-microdelta-20261006` | `d08a1e3` após candidato falho `58bcf8e` | nenhum | HISTORICAL_CONTROL_PLANE; preservar; **não existe no GitHub** |
 | `early-access-phase2-email-double-optin-20261001` | commit da L-030 (03/10, revisão 8; filho de `7622248`) | nenhum | CURRENT_WORK; **não existe no GitHub** |
 | `whitelist-fundraising-readiness-20261001` | `9f2ddcb` | nenhum | Fase 1; **não existe no GitHub** |
 | `preprod-final-closure-20260930T131123Z` | `43c484b` | `origin/…` 0/0 | PR #447 |
