@@ -22,6 +22,7 @@ const PROIBIDOS: Array<[string, RegExp]> = [
   ["whitelist garantida em coleções futuras", /Guaranteed allowlist on every future/i],
   ["benefícios futuros de todo o ecossistema", /keeps unlocking benefits across the whole|continua liberando benefícios em todo|sigue desbloqueando beneficios en todo|在整个\s*Zettaword\s*生态系统中持续解锁权益/i],
   ["acesso perpétuo a produto futuro", /perpetual beta access|acesso beta perpétuo|acceso beta perpetuo|永久 Beta 访问/i],
+  ["status Founder pessoal permanente", /permanent\s+Founder\s+status|Founder\s+status\s+(?:is\s+)?permanent|status\s+Founder\s+permanente|estatus\s+Founder\s+permanente|永久(?:的)?(?:创始人|Founder)\s*身份|(?:创始人|Founder)\s*身份永久/i],
   ["preço antigo em SOL como verdade", /Pro 1\.5 SOL|Trader 4 SOL|Pilot 30 SOL|30 SOL Pilot|Pilot de 30 SOL|30 SOL 的 Pilot|"1\.5 SOL"|"4 SOL"|"30 SOL"/],
   ["royalty de 5% exposto", /(?<![\d.,])5\s?%\s*(of every|de cada|of each)/i],
 ];
@@ -59,12 +60,16 @@ describe("Founders — copy proibida não volta", () => {
   });
 
   it("as 4 línguas publicam a mesma regra cumulativa da venda", () => {
+    const exato = /exactly|exatamente|exactamente|严格/iu;
     for (const lang of ["en", "pt", "es", "zh"] as const) {
       const catalog = messages[lang] as unknown as { pricing: Record<string, string>; founders: Record<string, string> };
       expect(catalog.pricing.saleRules, lang).toMatch(/48/);
       expect(catalog.pricing.saleRules, lang).toMatch(/14/);
+      expect(catalog.pricing.saleRules, lang).toMatch(exato);
       expect(catalog.founders.pg_faq7A, lang).toMatch(/1/);
       expect(catalog.founders.pg_faq7A, lang).toMatch(/2/);
+      expect(catalog.founders.pg_faq7A, lang).toMatch(/14/);
+      expect(catalog.founders.pg_faq7A, lang).toMatch(exato);
       expect(catalog.founders.pg_pilotPublicSale, lang).toMatch(/Pilot/i);
     }
   });

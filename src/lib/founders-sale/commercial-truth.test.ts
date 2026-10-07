@@ -75,6 +75,7 @@ describe("Founders commercial truth — redes, fees e Pilot", () => {
       direitosPertencemAo: "HOLDER_ATUAL",
       conformePoliticaOwnership: true,
       premiumMeses: 36,
+      transferenciaReiniciaPremium: false,
       garanteBeneficiosFuturos: false,
       garanteProdutosFuturos: false,
     });
@@ -157,6 +158,18 @@ describe("Founders commercial truth — todas as superfícies derivam e rotulam"
     const re36 = /36/;
     const reFutureDisclaimer = /does not guarantee|não garante|no garantiza|不保证/iu;
     const reCurrentHolder = /current holder|holder atual|holder actual|当前 holder/iu;
+    const reAttachedToPass = {
+      en: /durable Founder status.*(?:with|attached to) the pass/iu,
+      pt: /status Founder duradouro.*(?:com o passe|associado ao passe)/iu,
+      es: /estatus Founder duradero.*(?:con el pase|vinculado al pase)/iu,
+      zh: /Founder 身份.*(?:通行证.*持久|持久.*通行证)|通行证.*持久.*Founder 身份/iu,
+    } as const;
+    const reTransferDoesNotRestart = {
+      en: /transfer does not restart the 36-month period/iu,
+      pt: /transferência não reinicia o período de 36 meses/iu,
+      es: /transferencia no reinicia el período de 36 meses/iu,
+      zh: /转让不会重新开始 36 个月期限/iu,
+    } as const;
     for (const lang of langs) {
       const catalog = messages[lang] as unknown as {
         pricing: Record<string, string>;
@@ -165,7 +178,12 @@ describe("Founders commercial truth — todas as superfícies derivam e rotulam"
       expect(catalog.pricing.layerABody, lang).toMatch(re36);
       expect(catalog.pricing.layerBBody, lang).toMatch(reFutureDisclaimer);
       expect(catalog.pricing.layerBBody, lang).toMatch(reCurrentHolder);
+      expect(catalog.pricing.heroTitleB, lang).toMatch(reAttachedToPass[lang]);
+      expect(catalog.pricing.faq1A, lang).toMatch(reAttachedToPass[lang]);
+      expect(catalog.pricing.faq3A, lang).toMatch(reTransferDoesNotRestart[lang]);
       expect(catalog.founders.pg_heroSub, lang).toMatch(re36);
+      expect(catalog.founders.pg_heroSub, lang).toMatch(reAttachedToPass[lang]);
+      expect(catalog.founders.pg_thesis2, lang).toMatch(reAttachedToPass[lang]);
     }
   });
 });

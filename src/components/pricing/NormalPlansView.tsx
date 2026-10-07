@@ -112,7 +112,7 @@ export default function NormalPlansView({ modelo }: { modelo: string }) {
           <p className="font-sans text-[13px] text-ink-2 leading-snug">
             <b className="text-gold">Comprou no Panteão? Você é um Deus.</b> Os Access Pass NFT
             (Freyr / Thor / Odin) dão 36 meses de premium, contados do encerramento da venda, num
-            pagamento único + status Founder permanente. <span className="text-cyan whitespace-nowrap">Ver o Panteão →</span>
+            pagamento único + status Founder duradouro associado ao passe. <span className="text-cyan whitespace-nowrap">Ver o Panteão →</span>
           </p>
         </div>
       </Link>

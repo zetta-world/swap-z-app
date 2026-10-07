@@ -78,6 +78,7 @@ export const POLITICA_STATUS_FOUNDER = {
   direitosPertencemAo: "HOLDER_ATUAL" as const,
   conformePoliticaOwnership: true,
   premiumMeses: 36,
+  transferenciaReiniciaPremium: false,
   garanteBeneficiosFuturos: false,
   garanteProdutosFuturos: false,
 };
