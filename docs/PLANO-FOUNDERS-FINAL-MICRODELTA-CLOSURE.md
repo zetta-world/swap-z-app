@@ -1,10 +1,14 @@
 # PLANO — FOUNDERS FINAL MICRO-DELTA CLOSURE
 
 **Status:** HISTORICAL_EVIDENCE — executado; ver `FOUNDERS-FINAL-MICRODELTA-CLOSURE.md`
-**Data:** 06/10/2026  
-**PHASE_BASE_SHA:** `8f1849eb28a61f1a5f8b477386c3ce0940bc5e67`  
-**Último código recertificado:** `8ef9bbe27ff1f74dd8d1f7f6e6f7abb180497150`  
-**Branch local:** `founders-final-microdelta-20261006`  
+**Data:** 06/10/2026
+
+**PHASE_BASE_SHA:** `8f1849eb28a61f1a5f8b477386c3ce0940bc5e67`
+
+**Último código recertificado:** `8ef9bbe27ff1f74dd8d1f7f6e6f7abb180497150`
+
+**Branch local:** `founders-final-microdelta-20261006`
+
 **Publicação/deploy/produção:** proibidos neste round
 
 ## 1. Objetivo fechado
