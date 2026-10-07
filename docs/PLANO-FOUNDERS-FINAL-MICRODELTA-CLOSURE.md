@@ -1,6 +1,6 @@
 # PLANO — FOUNDERS FINAL MICRO-DELTA CLOSURE
 
-**Status:** ACTIVE_PLAN  
+**Status:** HISTORICAL_EVIDENCE — executado; ver `FOUNDERS-FINAL-MICRODELTA-CLOSURE.md`
 **Data:** 06/10/2026  
 **PHASE_BASE_SHA:** `8f1849eb28a61f1a5f8b477386c3ce0940bc5e67`  
 **Último código recertificado:** `8ef9bbe27ff1f74dd8d1f7f6e6f7abb180497150`  
@@ -55,3 +55,11 @@ As primeiras falhas ficam preservadas. Correções de executor não podem altera
 ## 5. Saída
 
 Criar `docs/FOUNDERS-FINAL-MICRODELTA-CLOSURE.md`, candidato local C1 recertificado no SHA exato, atestação C2 apenas documental e pacote externo `Z-SWAP-FOUNDERS-FINAL-MICRODELTA-AUDIT-20261006/`. O próximo passo é auditoria independente; não é release nem autorização de publicação.
+
+## 6. Fechamento
+
+Executado no candidato `58bcf8e359ec209d65f45006d0f71c17cf1a53a5`,
+tree `835084a2ccb117e64a07376f9684d46196466c66`. Recertificação local
+implementer-reported: alvo 17/252, suíte 314/4.672, type-check, lint e build
+PASS; regeneração econômica sem diff. O plano não deve ser reexecutado. A
+próxima ação é auditoria independente do pacote.

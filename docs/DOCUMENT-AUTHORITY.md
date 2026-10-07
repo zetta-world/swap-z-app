@@ -41,6 +41,10 @@
 >
 > **Revisão 8 (03/10/2026, L-030):** novo `ACTIVE_PLAN` `PLANO-STRATEGY-INTELLIGENCE-FORENSIC-LEARNING.md`
 > (trilha documentada; nenhuma mudança de estratégia em execução).
+>
+> **Revisão 9 (06/10/2026, L-047):** o micro-delta Founders foi entregue no
+> candidato exato `58bcf8e` e o plano virou histórico. O relatório de
+> fechamento é referência de auditoria; não autoriza publicação ou release.
 
 ## Classes
 
@@ -73,7 +77,7 @@
 | `CLAUDE.md` (raiz) | AUTHORITATIVE (só o bloco "Claude Code Entry Point"); o resto é SUPPORTING_REFERENCE (mapa do código) | 01/10, revisão 2 (commitado em `f4af976`) | current | entrada automática do Claude Code → START-HERE | **SIM** (o bloco de entrada) |
 | `AGENTS.md` (raiz) | AUTHORITATIVE | 01/10, revisão 2 (commitado em `f4af976`) | current | entrada vendor-neutral para outros agentes → START-HERE | **SIM** |
 
-## 2. Documentos existentes em `docs/` (116 arquivos em 06/10/2026)
+## 2. Documentos existentes em `docs/` (118 arquivos em 06/10/2026)
 
 `VALID_FROM` = o último commit que tocou o arquivo na linha atual
 (`git log -1 9f2ddcb -- <arquivo>`).
@@ -106,10 +110,11 @@
 | `docs/FOUNDERS-SUPPORT-AND-ECONOMICS-CLOSURE.md` | HISTORICAL_EVIDENCE | `c2bfc4a`, 2026-10-06 | regras finais e passivo → `FOUNDERS-FINAL-SALE-AND-LIABILITY-CLOSURE.md` | fechamento comercial/econômico anterior | NÃO para regra final da venda; SIM como histórico |
 | `docs/FOUNDERS-SUPPORT-ECONOMICS-MODEL.md` | SUPPORTING_REFERENCE | `8ef9bbe`, 2026-10-06 | current para L-045 | saída determinística do modelo econômico corrigido | SIM como cálculo implementer-reported; premissas exigem validação real |
 | `docs/FOUNDERS-FINAL-SALE-AND-LIABILITY-CLOSURE.md` | SUPPORTING_REFERENCE | `8ef9bbe`, 2026-10-06 | auditoria independente pendente | regra final da venda, copy de Founder status, treinamento e passivo dinâmico | SIM para auditar o candidato; NÃO autoriza publicação/preço final |
+| `docs/FOUNDERS-FINAL-MICRODELTA-CLOSURE.md` | SUPPORTING_REFERENCE | `THIS_CONTROL_PLANE_COMMIT`, 2026-10-06, L-047 | auditoria independente pendente | fechamento AF-01/AF-02, recertificação e handoff | SIM para auditar `58bcf8e`; NÃO autoriza publicação/release |
 | `docs/NFT-BRIEFING.md` | SUPPORTING_REFERENCE | 6039e3a 2026-06-30 | — | trilha de produto/flywheel (fora da cadeia de release) | NÃO para estado de lançamento; reconferir no código antes de usar |
 | `docs/PLANO-FOUNDERS-SUPPORT-AND-ECONOMICS-CLOSURE.md` | HISTORICAL_EVIDENCE | `c2bfc4a`, 2026-10-06 | entregue; próximo passo auditoria independente | plano do round L-043/L-044 | NÃO executar novamente; SIM para rastreabilidade |
 | `docs/PLANO-FOUNDERS-FINAL-SALE-AND-LIABILITY-CLOSURE.md` | HISTORICAL_EVIDENCE | `8ef9bbe`, 2026-10-06, L-045 | implementado e recertificado; auditoria independente pendente | delta final pós-auditoria: venda, Founder status, treinamento e service liability | NÃO executar novamente; SIM para rastreabilidade |
-| `docs/PLANO-FOUNDERS-FINAL-MICRODELTA-CLOSURE.md` | ACTIVE_PLAN | criado sobre `8f1849e`, 2026-10-06, L-046 | current | AF-01 janela exata de 14 dias e AF-02 copy duradoura associada ao passe | SIM — somente para o micro-delta L-046; não autoriza publicação ou release |
+| `docs/PLANO-FOUNDERS-FINAL-MICRODELTA-CLOSURE.md` | HISTORICAL_EVIDENCE | criado sobre `8f1849e`, concluído em L-047 | `FOUNDERS-FINAL-MICRODELTA-CLOSURE.md` | AF-01 janela exata de 14 dias e AF-02 copy duradoura associada ao passe | NÃO executar novamente; SIM para rastreabilidade |
 | `docs/OBSERVACAO-CELEIRO-23AGO.md` | SUPPORTING_REFERENCE | daea83a 2026-08-31 | — | trilha de produto/flywheel (fora da cadeia de release) | NÃO para estado de lançamento; reconferir no código antes de usar |
 | `docs/PENTEST-28-07.md` | HISTORICAL_EVIDENCE | 8cafbd3 2026-07-28 | — | rodada/relatório datado | NÃO |
 | `docs/PITCH-DECK.md` | HISTORICAL_EVIDENCE | b9e8852 2026-06-07 | — | rodada/relatório datado | NÃO |

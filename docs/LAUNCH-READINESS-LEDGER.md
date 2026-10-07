@@ -738,3 +738,15 @@
 - **Achados de abertura confirmados:** a validação aceitava qualquer janela menor que 14 dias; o cenário local ainda configurava 48h + 7 dias públicos; metadados, pricing e catálogos em quatro idiomas ainda usavam formulações equivalentes a status Founder permanente.
 - **Limites:** sem economia, service liability, suporte, pricing, referral, Pilot compute, ZION architecture, supply chain, migration, infra, produção, Vercel, Supabase hospedado, push, merge, deploy, venda real ou dinheiro real.
 - **Estado de abertura:** `IN_PROGRESS`; a recertificação exata, o relatório e o pacote de auditoria ainda não existem.
+
+### L-047 · 2026-10-06 · FOUNDERS FINAL MICRO-DELTA entregue para auditoria independente (lane B, NÃO release)
+
+- **Base e candidato:** base `8f1849eb28a61f1a5f8b477386c3ce0940bc5e67`; candidato exato `58bcf8e359ec209d65f45006d0f71c17cf1a53a5`, tree `835084a2ccb117e64a07376f9684d46196466c66`.
+- **AF-01 fechado:** a configuração exige `vendaFecha = allowlistAbre + 14 dias` exatamente. 14d−1ms REJECTED, 14d ACCEPTED, 14d+1ms REJECTED e 48h+7d REJECTED. Sold-out real segue como única saída normal antecipada; sem sold-out, a venda permanece aberta até o deadline.
+- **AF-02 fechado:** EN/PT/ES/ZH dizem que o status Founder é duradouro e associado ao passe; Premium dura 36 meses; transferência não reinicia a janela. Guardas rejeitam Premium vitalício/permanente e entitlement futuro automático.
+- **Regras preservadas:** allowlist 48h e 1/1/1; cumulativo 2/2/1; Pilot na public sale; unsold unminted; preços provisórios. Nenhum arquivo econômico, migration, dependência ou caminho financeiro mudou.
+- **Primeira falha preservada:** a primeira execução pré-candidato dos testes novos falhou 3/102 por duas fixtures inválidas e uma regex PT estreita; os testes foram corrigidos e passaram 102/102 antes do candidato. Não foi reclassificada como PASS.
+- **Recertificação exata implementer-reported:** sale 9/9; copy 35/35; comerciais 17 arquivos/252 testes; type-check PASS; lint 0 erros/145 avisos; suíte 314 arquivos/4.672 testes PASS; production build PASS; economia regenerada sem diff.
+- **Supply chain:** omit-dev 1 critical/22 high/37 moderate, sem correção; campanha separada.
+- **Relatório/evidência:** `docs/FOUNDERS-FINAL-MICRODELTA-CLOSURE.md`; `zswap-local/evidence/founders-final-microdelta-20261007T020548Z/`.
+- **Estado:** `READY_FOR_INDEPENDENT_AUDIT`; não é RC, release, publicação ou aprovação de preço. `RELEASE_CANDIDATE=NONE`; produção, Vercel, Supabase hospedado, push, merge, deploy, venda e dinheiro real intocados.

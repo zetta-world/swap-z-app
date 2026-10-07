@@ -31,8 +31,8 @@
 >
 > `LAST_CERTIFIED_RUNTIME=0d21874b4147bb8a0b232aa0abc2302471a720e5` ·
 > `CERTIFIED_FEATURE_SHA=53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` (Fase 2, RECERT(C1)=PASS, 03/10, L-027; antes `f1b4ec1`, Fase 1, L-019) ·
-> `CONTROL_PLANE_HEAD` = `THIS_CONTROL_PLANE_COMMIT` da L-045 (só docs,
-> **não** CERTIFIED; filho do candidato Founders final `8ef9bbe`).
+> `CONTROL_PLANE_HEAD` = `THIS_CONTROL_PLANE_COMMIT` da L-047 (só docs,
+> **não** CERTIFIED; filho do candidato Founders micro-delta `58bcf8e`).
 > C1 `f4af9764e4c773f1bba2821f6cbef9685cfeb59d`: **RECERT FAIL** (02/10, L-018).
 > `CERTIFIED_FEATURE_SHA` (o C1 recertificado) não é necessariamente o
 > `CONTROL_PLANE_HEAD` (o C2 de atestação, só docs, nunca CERTIFIED).
@@ -113,7 +113,13 @@
  8ef9bbe  candidato Founders final sale + liability                 EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED; AUDIT PENDING; DO NOT DEPLOY
     │  só docs (diff de produto vazio)
     ▼
- commit da L-045  CONTROL_PLANE_HEAD                               NÃO é CERTIFIED; DO NOT DEPLOY
+ 8f1849e  atestação L-045                                           CONTROL_PLANE HISTÓRICO; DO NOT DEPLOY
+    │  micro-delta AF-01/AF-02
+    ▼
+ 58bcf8e  candidato Founders final micro-delta                       EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED; AUDIT PENDING; DO NOT DEPLOY
+    │  só docs (diff de produto vazio)
+    ▼
+ commit da L-047  CONTROL_PLANE_HEAD                               NÃO é CERTIFIED; DO NOT DEPLOY
     ▼
  FINAL RELEASE CANDIDATE                                          NOT_STARTED
 ```
@@ -171,7 +177,10 @@ reafirmar ou remover a exceção. (Na lane de release, o passo de audit ainda é
 | 21c | atestação docs-only Founders (L-044) | `30366d0` | `30366d0e95bcf3222f47fb9ef955a2a1bf294096` | `94cc97656ca84be3a21d8b8b3a0cb305bc174fbc` | `founders-commercial-economics-closure-20261006` (local) | control plane histórico · não CERTIFIED · DO NOT DEPLOY | diff de produto `c2bfc4a..30366d0` vazio | substituído pelo delta L-045; `RELEASE_CANDIDATE=NONE` |
 | 22a | base do delta final Founders | `30366d0` | `30366d0e95bcf3222f47fb9ef955a2a1bf294096` | `94cc97656ca84be3a21d8b8b3a0cb305bc174fbc` | `founders-sale-rules-final-delta-20261006` (base local) | PHASE_BASE · DO NOT DEPLOY | nenhuma certificação nova | `3a3f659` → `6c638ac` → `167816b` → `1cc619d` → `8ef9bbe` |
 | 22b | candidato Founders final sale + liability | `8ef9bbe` | `8ef9bbe27ff1f74dd8d1f7f6e6f7abb180497150` | `d489e23e12004782f9620ac8bedf1f9f3a482ad4` | `founders-sale-rules-final-delta-20261006` (local, sem upstream) | `EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED` · `READY_FOR_INDEPENDENT_AUDIT` · DO NOT DEPLOY | Node 24; npm ci/build/lint/type-check PASS; alvo 18/270; suíte 314/4669 PASS; modelo determinístico | auditoria independente |
-| 22c | atestação docs-only Founders final (L-045) | `THIS_CONTROL_PLANE_COMMIT` | — | — | idem | `CONTROL_PLANE_HEAD` · não CERTIFIED · DO NOT DEPLOY | diff de produto `8ef9bbe..HEAD` vazio | auditoria independente; `RELEASE_CANDIDATE=NONE` |
+| 22c | atestação docs-only Founders final (L-045) | `8f1849e` | `8f1849eb28a61f1a5f8b477386c3ce0940bc5e67` | `11cace84df18f4d8c8e9b72b31d9252bc8cea04a` | idem | control plane histórico · não CERTIFIED · DO NOT DEPLOY | diff de produto `8ef9bbe..8f1849e` vazio | micro-delta L-046/L-047 |
+| 23a | base do Founders final micro-delta | `8f1849e` | `8f1849eb28a61f1a5f8b477386c3ce0940bc5e67` | `11cace84df18f4d8c8e9b72b31d9252bc8cea04a` | `founders-final-microdelta-20261006` (base local) | PHASE_BASE · DO NOT DEPLOY | nenhuma certificação nova | `b2fb586` → `1ad14de` → `58bcf8e` |
+| 23b | candidato Founders final micro-delta | `58bcf8e` | `58bcf8e359ec209d65f45006d0f71c17cf1a53a5` | `835084a2ccb117e64a07376f9684d46196466c66` | `founders-final-microdelta-20261006` (local, sem upstream) | `EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED` · `READY_FOR_INDEPENDENT_AUDIT` · DO NOT DEPLOY | Node 24; build/lint/type-check PASS; comerciais 17/252; suíte 314/4672 PASS; economia sem diff | auditoria independente |
+| 23c | atestação docs-only Founders micro-delta (L-047) | `THIS_CONTROL_PLANE_COMMIT` | — | — | idem | `CONTROL_PLANE_HEAD` · não CERTIFIED · DO NOT DEPLOY | diff de produto `58bcf8e..HEAD` vazio | auditoria independente; `RELEASE_CANDIDATE=NONE` |
 | ∞ | FINAL RELEASE CANDIDATE | — | — | — | — | NOT_STARTED | — | — |
 
 Provas rápidas:

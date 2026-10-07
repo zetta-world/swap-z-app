@@ -7,7 +7,7 @@
 > Planos antigos são histórico, mesmo quando dizem "status 🟢" ou "vivo".
 > O estado atual é definido AQUI e em `docs/CURRENT-STATE.md`.
 
-**Revisão 11 (06/10/2026, ledger L-045): Founders Final Sale + Liability Closure fechado localmente no candidato `8ef9bbe`, recertificação exata implementer-reported PASS, aguardando auditoria independente; não é release nem publicação.** Revisão 10 (L-043/L-044): Founders Economics + Commercial Truth. Revisão 9 (03/10/2026, ledger L-028/L-029): ensaio de release em PROD-CLONE local CLOSED_PASS e reconciliação AO VIVO só-leitura CLOSED; bloqueadores externos R-01 (Vercel) e R-02 (`CEX_RECOVERY_HMAC_KEY`). Revisão 8 (L-027): Fase 2 CERTIFIED_EXACT_SHA no C1 e atestada no C2. Revisão 7 (L-026, EA2-IA10): este arquivo foi
+**Revisão 12 (06/10/2026, ledger L-047): Founders Final Micro-Delta fechado localmente no candidato `58bcf8e`, recertificação exata implementer-reported PASS, aguardando auditoria independente; não é release nem publicação.** Revisão 11 (L-045): Founders Final Sale + Liability Closure. Revisão 10 (L-043/L-044): Founders Economics + Commercial Truth. Revisão 9 (03/10/2026, ledger L-028/L-029): ensaio de release em PROD-CLONE local CLOSED_PASS e reconciliação AO VIVO só-leitura CLOSED; bloqueadores externos R-01 (Vercel) e R-02 (`CEX_RECOVERY_HMAC_KEY`). Revisão 8 (L-027): Fase 2 CERTIFIED_EXACT_SHA no C1 e atestada no C2. Revisão 7 (L-026, EA2-IA10): este arquivo foi
 reescrito para descrever SÓ o estado atual nas seções operacionais (§1–§10).
 Tudo o que valia antes da implementação da Fase 2 está no §11, marcado como
 HISTÓRICO. Revisões 1–6 (01–02/10): ver §11 e o ledger L-011…L-019.
@@ -29,10 +29,10 @@ plane — `CLAUDE.md`, `AGENTS.md`, `docs/**` — o movem legitimamente).
 | | |
 |---|---|
 | PRODUCT_BASE_SHA | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019` · tree `6cd43386ab1f1a1d3181e61d1fec36c251a27b8b` (Early Access Fase 1, último commit de produto) |
-| PHASE_BASE_SHA (Founders final delta) | `30366d0e95bcf3222f47fb9ef955a2a1bf294096` (registrado na L-045 antes do código) |
-| HEAD atual | `THIS_CONTROL_PLANE_COMMIT`, somente docs, filho do candidato `8ef9bbe27ff1f74dd8d1f7f6e6f7abb180497150` |
-| EXPECTED_BRANCH | `founders-sale-rules-final-delta-20261006` (só local, sem upstream) |
-| WORKING TREE | **limpo** após a atestação L-045 |
+| PHASE_BASE_SHA (Founders micro-delta) | `8f1849eb28a61f1a5f8b477386c3ce0940bc5e67` (registrado na L-046 antes do código) |
+| HEAD atual | `THIS_CONTROL_PLANE_COMMIT`, somente docs, filho do candidato `58bcf8e359ec209d65f45006d0f71c17cf1a53a5` |
+| EXPECTED_BRANCH | `founders-final-microdelta-20261006` (só local, sem upstream) |
+| WORKING TREE | **limpo** após a atestação L-047 |
 
 ## 3. Certificação
 
@@ -46,13 +46,13 @@ plane — `CLAUDE.md`, `AGENTS.md`, `docs/**` — o movem legitimamente).
 | CERTIFIED_FEATURE_SHA (atual) | **`53cd85a2a86cc2f34d4234965ef3cf519ce7adc1`** (C1 da Fase 2; L-027). O anterior era `f1b4ec1` (Fase 1) |
 | CONTROL_PLANE_HEAD | o commit da L-030 (`THIS_CONTROL_PLANE_COMMIT`; só docs; **não** CERTIFIED, não deployável). Anteriores: L-029 `762224843fa8d7e340416d05ac2a99488945d541` · C2 `57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c` |
 | EARLY_ACCESS_PHASE2 | **CERTIFIED_EXACT_SHA** em `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` · tree `010a448c774247406cc9cc80cba34e8744426557` (C1; recert `recert-c1-53cd85a-v31-20261003T182216Z` PASS, L-027) — **não** deployado; gate CLOSED |
-| FOUNDERS_CLOSURE_CANDIDATE | `8ef9bbe27ff1f74dd8d1f7f6e6f7abb180497150` · tree `d489e23e12004782f9620ac8bedf1f9f3a482ad4` · recert local exata PASS reportada pelo implementador · auditoria independente pendente |
+| FOUNDERS_CLOSURE_CANDIDATE | `58bcf8e359ec209d65f45006d0f71c17cf1a53a5` · tree `835084a2ccb117e64a07376f9684d46196466c66` · recert local exata PASS reportada pelo implementador · auditoria independente pendente |
 | RELEASE_CANDIDATE | **NONE** · `RC_SELECTION_READY=NO` |
 
 ## 4. Qual worktree usar?
 
 ```
-/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/founders-final-sale-liability-20261006
+/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/founders-final-microdelta-20261006
 ```
 
 ⚠️ **`/home/zetta/swap-z-app` NÃO é o estado atual** (está em
@@ -63,9 +63,9 @@ plane — `CLAUDE.md`, `AGENTS.md`, `docs/**` — o movem legitimamente).
 
 | campo | valor |
 |---|---|
-| CURRENT_WORK | **FOUNDERS FINAL SALE + LIABILITY CLOSURE — READY_FOR_INDEPENDENT_AUDIT** (L-045); não release, não publicado |
-| FOUNDERS_RECERT | candidato `8ef9bbe`: npm ci/build/lint/type-check PASS; alvo 18 arquivos / 270 testes; suíte 314 arquivos / 4.669 testes PASS; modelo determinístico |
-| FOUNDERS_OPEN | auditoria independente; preço final; telemetria real; disposição da supply chain (1 critical/27 high/40 moderate full); jurídico/publicação |
+| CURRENT_WORK | **FOUNDERS FINAL MICRO-DELTA — READY_FOR_INDEPENDENT_AUDIT** (L-047); não release, não publicado |
+| FOUNDERS_RECERT | candidato `58bcf8e`: build/lint/type-check PASS; comerciais 17 arquivos / 252 testes; suíte 314 arquivos / 4.672 testes PASS; economia sem diff |
+| FOUNDERS_OPEN | auditoria independente; preço final; telemetria real; disposição da supply chain (omit-dev 1 critical/22 high/37 moderate); jurídico/publicação |
 | LOCAL_PRODCLONE_REHEARSAL | **CLOSED_PASS** (suíte 4204/4204; efeitos externos reais 0) — L-028 |
 | LIVE_READONLY_RECONCILIATION | **CLOSED** — produção `25fc4b0` fora do ar (402), banco sem drift desde 28/09 (55 linhas, 0068/0069 ausentes) — L-029 |
 | INC-RR-01 | `HOST_OPERATIONAL_REBOOT` · `AGENT_INDUCED_OOM` · `PRODUCT_DEFECT=NO` (reconhecido pelo dono, permanente) |
@@ -136,7 +136,7 @@ Lista completa: `docs/CURRENT-STATE.md` → OPEN_BLOCKERS.
 ## 9. Qual é o próximo passo exato?
 
 Nada é automático. A próxima ação desta lane é a **auditoria independente do
-candidato `8ef9bbe` e do pacote de fechamento**. `RELEASE_CANDIDATE=NONE` ·
+candidato `58bcf8e` e do pacote de micro-delta**. `RELEASE_CANDIDATE=NONE` ·
 `RC_SELECTION_READY=NO`. Publicação e preço final continuam bloqueados.
 
 A seleção de RC da linha geral continua pendente até, no mínimo:
@@ -152,13 +152,13 @@ Separado: abrir o early access (§6) e modos de dinheiro real (NO-GO). Próxima 
 Conhecido e separado (não é da Fase 2): o timeout de carga de
 `src/lib/zion/playbook-backtest.test.ts` (ZION-PLAYBOOK-TIMEOUT-LOCAL) — passou na recert do C1 e no ensaio.
 
-## 10. Como provar que estou no lugar certo? (estado ATUAL: atestação L-045 sobre candidato Founders)
+## 10. Como provar que estou no lugar certo? (estado ATUAL: atestação L-047 sobre candidato Founders)
 
 ```bash
-cd /home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/founders-final-sale-liability-20261006
-CANDIDATE=8ef9bbe27ff1f74dd8d1f7f6e6f7abb180497150
-git branch --show-current                      # founders-sale-rules-final-delta-20261006
-git rev-parse HEAD HEAD^{tree} HEAD^           # HEAD = atestação L-045; HEAD^ = candidato
+cd /home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/founders-final-microdelta-20261006
+CANDIDATE=58bcf8e359ec209d65f45006d0f71c17cf1a53a5
+git branch --show-current                      # founders-final-microdelta-20261006
+git rev-parse HEAD HEAD^{tree} HEAD^           # HEAD = atestação L-047; HEAD^ = candidato
 git merge-base --is-ancestor "$CANDIDATE" HEAD && echo OK-ANCESTOR-CANDIDATE
 git status --short                             # vazio
 git diff --stat "$CANDIDATE"..HEAD -- . ':!docs/**' ':!CLAUDE.md' ':!AGENTS.md'  # vazio
