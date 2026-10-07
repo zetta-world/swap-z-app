@@ -1,8 +1,8 @@
 # Z-SWAP — SUPPLY CHAIN RUNTIME REACHABILITY
 
-Candidate: `63326edb6d4cd3f6f95be8fc77b9d0382db91dc0`  
-Tree: `3cb3affc8da4472b360984274d459157c2faec44`  
-Build runtime: Node 24.21.0 / npm 11.19.0  
+Candidate: `63326edb6d4cd3f6f95be8fc77b9d0382db91dc0`
+Tree: `3cb3affc8da4472b360984274d459157c2faec44`
+Build runtime: Node 24.21.0 / npm 11.19.0
 Evidence: `zswap-local/evidence/supply-chain-disposition-20261007T153104Z/`
 
 ## Method

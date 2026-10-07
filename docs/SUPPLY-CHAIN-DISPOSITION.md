@@ -1,10 +1,10 @@
 # Z-SWAP — SUPPLY CHAIN DISPOSITION
 
-Data de referência: 07/10/2026  
-Start HEAD: `35b7c727802343c5b6ba55dffa18da6fad19191e`  
-Base Founders aceita: `efdf6ee5a64d4f5491b806da6258706615b6ffec`  
-Candidato de código desta campanha: `63326edb6d4cd3f6f95be8fc77b9d0382db91dc0`  
-Tree: `3cb3affc8da4472b360984274d459157c2faec44`  
+Data de referência: 07/10/2026
+Start HEAD: `35b7c727802343c5b6ba55dffa18da6fad19191e`
+Base Founders aceita: `efdf6ee5a64d4f5491b806da6258706615b6ffec`
+Candidato de código desta campanha: `63326edb6d4cd3f6f95be8fc77b9d0382db91dc0`
+Tree: `3cb3affc8da4472b360984274d459157c2faec44`
 Package-lock final: `8969d5501b2e52f46ef0a1c2e14fe0b4dcaad9979448683fe507094ee8334f17`
 
 ## Executive verdict
