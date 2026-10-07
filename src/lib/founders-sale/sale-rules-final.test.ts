@@ -19,6 +19,51 @@ async function reservar(
 }
 
 describe("Founders sale — regras finais do evento", () => {
+  it("aceita somente agenda totalmente pendente ou totalmente configurada", () => {
+    const cfg = configDeEnsaio();
+    const allowlistAbre = cfg.horarios.allowlistAbre!;
+    const combinacoes = [
+      [false, false, false],
+      [false, false, true],
+      [false, true, false],
+      [false, true, true],
+      [true, false, false],
+      [true, false, true],
+      [true, true, false],
+      [true, true, true],
+    ] as const;
+
+    let parciaisRecusadas = 0;
+    for (const [temAllowlist, temPublica, temFechamento] of combinacoes) {
+      const candidato = {
+        ...cfg,
+        horarios: {
+          ...cfg.horarios,
+          allowlistAbre: temAllowlist ? allowlistAbre : null,
+          publicaAbre: temPublica ? allowlistAbre + 48 * H : null,
+          vendaFecha: temFechamento ? allowlistAbre + 14 * D : null,
+        },
+      };
+      const erros = validarConfig(candidato);
+      const quantidade = Number(temAllowlist) + Number(temPublica) + Number(temFechamento);
+      if (quantidade === 0 || quantidade === 3) {
+        expect(erros, `${Number(temAllowlist)}${Number(temPublica)}${Number(temFechamento)}`).not.toContain("agenda_da_venda_incompleta");
+      } else {
+        expect(erros, `${Number(temAllowlist)}${Number(temPublica)}${Number(temFechamento)}`).toContain("agenda_da_venda_incompleta");
+        parciaisRecusadas++;
+      }
+    }
+    expect(parciaisRecusadas).toBe(6);
+  });
+
+  it("recusa no gate canônico do serviço a agenda ativa sem deadline", () => {
+    const cfg = configDeEnsaio();
+    const semDeadline = { ...cfg, horarios: { ...cfg.horarios, vendaFecha: null } };
+
+    expect(validarConfig(semDeadline)).toContain("agenda_da_venda_incompleta");
+    expect(() => montarEnsaio({ cfg: semDeadline })).toThrow("config_invalida:agenda_da_venda_incompleta");
+  });
+
   it("configura 48h, 1/1/1 na allowlist, teto cumulativo 2/2/1 e deadline exato de 14 dias", () => {
     expect(CONFIG_APROVADA.tetos).toEqual({
       allowlist: { PRO: 1, TRADER: 1, PILOT: 1 },
@@ -36,6 +81,7 @@ describe("Founders sale — regras finais do evento", () => {
     expect(validarConfig({ ...cfg, horarios: { ...cfg.horarios, vendaFecha: deadline } })).not.toContain("janela_total_difere_da_aprovada");
     expect(validarConfig({ ...cfg, horarios: { ...cfg.horarios, vendaFecha: deadline + 1 } })).toContain("janela_total_difere_da_aprovada");
     expect(validarConfig({ ...cfg, horarios: { ...cfg.horarios, vendaFecha: cfg.horarios.allowlistAbre! + 48 * H + 7 * D } })).toContain("janela_total_difere_da_aprovada");
+    expect(validarConfig({ ...cfg, horarios: { ...cfg.horarios, publicaAbre: cfg.horarios.publicaAbre! + 1 } })).toContain("janela_allowlist_difere_da_aprovada");
   });
 
   it("permite encerramento anterior somente pelo sold-out real do supply pago", async () => {

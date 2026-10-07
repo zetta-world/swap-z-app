@@ -246,8 +246,13 @@ export function validarConfig(cfg: ConfigVenda): string[] {
     if (v <= anterior) e.push(`horario_fora_de_ordem:${nome}`);
     anterior = v;
   }
-  if (h.allowlistAbre !== null && h.publicaAbre !== null && h.publicaAbre - h.allowlistAbre !== cfg.duracaoAllowlistMs) e.push("janela_allowlist_difere_da_aprovada");
-  if (h.allowlistAbre !== null && h.vendaFecha !== null && h.vendaFecha - h.allowlistAbre !== cfg.duracaoMaximaVendaMs) e.push("janela_total_difere_da_aprovada");
+  const datasDaVenda = [h.allowlistAbre, h.publicaAbre, h.vendaFecha];
+  const datasConfiguradas = datasDaVenda.filter((v) => v !== null).length;
+  if (datasConfiguradas !== 0 && datasConfiguradas !== datasDaVenda.length) e.push("agenda_da_venda_incompleta");
+  if (h.allowlistAbre !== null && h.publicaAbre !== null && h.vendaFecha !== null) {
+    if (h.publicaAbre - h.allowlistAbre !== cfg.duracaoAllowlistMs) e.push("janela_allowlist_difere_da_aprovada");
+    if (h.vendaFecha - h.allowlistAbre !== cfg.duracaoMaximaVendaMs) e.push("janela_total_difere_da_aprovada");
+  }
   return e;
 }
 
