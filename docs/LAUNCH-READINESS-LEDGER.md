@@ -750,3 +750,13 @@
 - **Supply chain:** omit-dev 1 critical/22 high/37 moderate, sem correção; campanha separada.
 - **Relatório/evidência:** `docs/FOUNDERS-FINAL-MICRODELTA-CLOSURE.md`; `zswap-local/evidence/founders-final-microdelta-20261007T020548Z/`.
 - **Estado:** `READY_FOR_INDEPENDENT_AUDIT`; não é RC, release, publicação ou aprovação de preço. `RELEASE_CANDIDATE=NONE`; produção, Vercel, Supabase hospedado, push, merge, deploy, venda e dinheiro real intocados.
+
+### L-048 · 2026-10-07 · FOUNDERS AF-01 SURGICAL CLOSURE aberto após auditoria independente FAIL (lane B, NÃO release)
+
+- **Falha independente preservada:** candidato `58bcf8e359ec209d65f45006d0f71c17cf1a53a5`, tree `835084a2ccb117e64a07376f9684d46196466c66`, reprovado por `IA-AF01-001`: agenda ativa com `vendaFecha = null` passava na validação e podia permanecer em `PUBLIC_SALE` depois de 30 dias. O SHA não foi alterado.
+- **Base medida antes do código:** `PHASE_BASE_SHA=d08a1e3a221b5559630f53fb3318d538ee9c383f`, tree `84e1c04f4952e42888150f6472f79591b23672fc`, control plane docs-only sobre o candidato falho e já contendo a correção documental de trailing whitespace.
+- **Airbag:** origem limpa; bundle e SHA-256 verificados em `zswap-local/recovery/founders-af01-20261007T092823Z/` antes da worktree nova.
+- **Worktree/branch:** `zswap-local/worktrees/founders-af01-partial-schedule-fix-20261007` · `founders-af01-partial-schedule-fix-20261007`, somente local e sem upstream.
+- **Plano:** `docs/PLANO-FOUNDERS-AF01-SURGICAL-CLOSURE.md`. Escopo exclusivo: rejeitar as seis agendas parciais, preservar o estado pendente 000 e exigir 48h/14d no estado configurado 111; provar que `ServicoDaVenda` falha fechado.
+- **Limites:** nenhuma mudança de copy AF-02, economia, passivo, suporte, preços, referral, supply, Pilot, ZION, migration, dependência ou supply chain; sem produção, Vercel, Supabase hospedado, push, merge, deploy, venda ou dinheiro real.
+- **Estado de abertura:** `IN_PROGRESS`; ainda não há novo candidato nem recertificação.
