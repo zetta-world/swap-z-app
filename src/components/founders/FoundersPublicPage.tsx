@@ -106,11 +106,11 @@ export default function FoundersPublicPage({ facts }: { facts: FoundersPublicFac
           <div aria-hidden className="absolute inset-0 -z-20 bg-[radial-gradient(circle_at_18%_18%,rgba(0,232,255,0.16),transparent_35%),radial-gradient(circle_at_78%_18%,rgba(159,95,255,0.18),transparent_38%),radial-gradient(circle_at_50%_95%,rgba(245,166,35,0.08),transparent_40%)]" />
           <div aria-hidden className="grid-bg absolute inset-0 -z-10 opacity-60" />
           <div className="mx-auto grid min-h-[720px] max-w-7xl items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:py-24">
-            <div>
+            <div className="min-w-0">
               <div className="inline-flex items-center gap-2 rounded-full border border-gold/30 bg-gold/[0.06] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-gold"><Sparkles aria-hidden className="h-3.5 w-3.5" />{copy.hero.eyebrow}</div>
-              <h1 className="mt-6 max-w-4xl font-display text-[clamp(2.5rem,7vw,5.8rem)] font-extrabold leading-[0.95] tracking-[-0.045em] text-ink"><span className="text-grad-cyan">Z-SWAP.</span> {copy.hero.title}</h1>
+              <h1 className="mt-6 max-w-4xl break-words font-display text-[clamp(2.5rem,7vw,5.8rem)] font-extrabold leading-[0.95] tracking-[-0.045em] text-ink"><span className="text-grad-cyan">Z-SWAP.</span> {copy.hero.title}</h1>
               <p className="mt-6 max-w-2xl text-base leading-8 text-ink-2 sm:text-lg">{copy.hero.body}</p>
-              <p className="mt-5 inline-flex items-center gap-2 rounded-xl border border-violet/25 bg-violet/[0.05] px-3 py-2 font-mono text-[11px] text-violet"><Clock3 aria-hidden className="h-4 w-4" />{copy.hero.saleClosed}</p>
+              <p className="mt-5 flex w-fit max-w-full items-start gap-2 rounded-xl border border-violet/25 bg-violet/[0.05] px-3 py-2 font-mono text-[11px] text-violet"><Clock3 aria-hidden className="h-4 w-4 flex-shrink-0" /><span className="break-words">{copy.hero.saleClosed}</span></p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                 <Link href="/" onClick={() => trackFoundersPublicEvent("platform_click", { locale })} className="btn btn-primary min-h-12">{copy.hero.primary}<ArrowRight aria-hidden className="h-4 w-4" /></Link>
                 <a href="#tiers" onClick={() => trackFoundersPublicEvent("tier_compare", { locale })} className="btn btn-secondary min-h-12">{copy.hero.secondary}</a>
