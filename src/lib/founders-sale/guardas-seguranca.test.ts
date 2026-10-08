@@ -36,7 +36,11 @@ const DOCS_NOVOS = ["docs/FOUNDERS-TREASURY-AND-CAPITAL-POLICY.md", "docs/FOUNDE
 describe("Founders — nada real pode ser acionado", () => {
   it("há código para varrer", () => expect(CODIGO.length).toBeGreaterThan(15));
   it("sem conexão a mainnet / RPC real / URL de rede", () => {
-    expect(achados(/mainnet-beta|api\.mainnet|devnet\.solana\.com|helius-rpc|rpc\.ankr|quiknode|https?:\/\/[a-z0-9.-]+\.(com|io|net|org|xyz)/i)).toEqual([]);
+    // `schema.org` is a static JSON-LD vocabulary identifier, not a runtime
+    // endpoint. It is the sole URL allowed in this isolated public route.
+    const endpoint = /mainnet-beta|api\.mainnet|devnet\.solana\.com|helius-rpc|rpc\.ankr|quiknode|https?:\/\/[a-z0-9.-]+\.(com|io|net|org|xyz)/i;
+    const reais = CODIGO.filter((f) => endpoint.test(f.s.replaceAll("https://schema.org", ""))).map((f) => f.p);
+    expect(reais).toEqual([]);
   });
   it("sem SDK de chain, provedor de mint real, oráculo de produção ou chave", () => {
     expect(achados(/@solana\/web3\.js|@metaplex|@solana\/spl|umi-bundle|pyth|switchboard|Keypair|secretKey|fromSecretKey|PRIVATE KEY|mnemonic|seed phrase/i)).toEqual([]);

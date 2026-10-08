@@ -4,7 +4,8 @@ import { join } from "node:path";
 
 /**
  * NFT_REAL_SALE=OFF · MAINNET_MINT=OFF · PUBLIC_SALE=OFF como TRAVA, não como promessa:
- * as fundações da venda não falam com rede/chain, e nenhuma rota/página as usa ainda.
+ * as fundações da venda não falam com rede/chain. A página pública usa apenas
+ * uma projeção informativa; o simulador continua fechado pela flag local.
  * Quando o dono decidir (docs/PLANO-FOUNDERS-NFT-SALE-READINESS.md §2), esta trava muda junto
  * com a decisão — conscientemente.
  */
@@ -36,25 +37,27 @@ describe("founders-sale: isolado de rede, chain e rotas", () => {
   });
 
   /**
-   * Única exceção permitida: a rota de PRÉVIA LOCAL atrás de `FOUNDERS_SALE_PREVIEW=1` (decisão de 04/10: a
-   * experiência completa precisa existir localmente; produção não tem a flag → 404). Qualquer outra rota/página
-   * que importe a venda reprova.
+   * Uma URL canônica serve a experiência pública. A mesma rota só troca para o
+   * simulador operacional quando `FOUNDERS_SALE_PREVIEW=1` no servidor.
    */
   const PREVIA = join("src", "app", "(previa)", "founders-pass");
-  it("só a rota de prévia (com porta) importa founders-sale ou o painel", () => {
+  it("só a rota canônica importa founders-sale ou os painéis Founders", () => {
     const usos = arquivos(join(RAIZ, "src/app"))
       .filter((p) => /founders-sale|components\/founders/.test(readFileSync(p, "utf8")))
       .map((p) => p.replace(RAIZ + "/", ""));
     expect(usos).toEqual([join(PREVIA, "page.tsx")]);
     const page = readFileSync(join(RAIZ, PREVIA, "page.tsx"), "utf8");
-    expect(page).toMatch(/if \(!previaHabilitada\(\)\) notFound\(\);/);
+    expect(page).toMatch(/if \(previaHabilitada\(\)\)/);
+    expect(page).toMatch(/<FoundersSalePage/);
+    expect(page).toMatch(/<FoundersPublicPage/);
+    expect(page).not.toMatch(/notFound\(/);
     expect(readFileSync(join(RAIZ, PREVIA, "gate.ts"), "utf8")).toMatch(/process\.env\.FOUNDERS_SALE_PREVIEW === "1"/);
-    // HTTP 404 de verdade: nenhuma fronteira de loading acima da porta (senão o status sai 200 — L-038)
+    // Sem loading boundary: a escolha entre página pública e simulador ocorre antes do streaming.
     expect(existsSync(join(RAIZ, "src", "app", "(previa)", "loading.tsx"))).toBe(false);
     expect(existsSync(join(RAIZ, PREVIA, "loading.tsx"))).toBe(false);
   });
 
-  it("a porta fica FECHADA sem a flag e só abre com o valor exato \"1\"", async () => {
+  it("o simulador fica fechado sem a flag e só abre com o valor exato \"1\"", async () => {
     const { previaHabilitada } = await import("../../app/(previa)/founders-pass/gate");
     const antes = process.env.FOUNDERS_SALE_PREVIEW;
     try {

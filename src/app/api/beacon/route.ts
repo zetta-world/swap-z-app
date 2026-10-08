@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import { getSession } from "@/lib/auth/session";
 import { recordEvent } from "@/lib/admin/track";
+import { validateFoundersPublicEvent } from "@/lib/founders-public/telemetry";
 
 export const runtime  = "nodejs";
 export const dynamic  = "force-dynamic";
@@ -61,6 +62,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "";
     const ua = h.get("user-agent") ?? "";
     const cid = createHash("sha256").update(`${ip}|${ua}`).digest("hex").slice(0, 16);
+
+    // Founders interactions reuse the existing beacon with a closed, PII-free
+    // envelope. FAQ search text is never accepted or persisted.
+    if (body?.event !== undefined) {
+      const event = validateFoundersPublicEvent(body);
+      if (event) await recordEvent(event.event, { path, meta: { cid, ...event.meta } });
+      return new NextResponse(null, { status: 204 });
+    }
 
     // Dwell ping: the client sends how long it stayed on a page when leaving.
     // Recorded as its own lightweight event so we can answer "which page holds

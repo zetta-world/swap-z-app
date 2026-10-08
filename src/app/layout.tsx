@@ -37,7 +37,7 @@ const SITE_URL =
 
 const TITLE       = "Z-SWAP — The Liquidity Nexus";
 const DESCRIPTION =
-  "Solana-native DEX aggregator with ZION AI advisory, autopilot trading, and CEX-bridged arbitrage. Solana plus 10 EVM chains, 132 functions, one intelligent liquidity layer.";
+  "Multi-chain trading tools for supported swaps, market analysis, strategy backtests, paper simulation and portfolio operations, with ZION advisory guidance.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -51,7 +51,7 @@ export const metadata: Metadata = {
   generator: "Next.js",
   keywords: [
     "dex", "swap", "z-swap", "zetta", "zion ai", "liquidity",
-    "cross-chain", "defi", "multi-chain", "autopilot", "arbitrage",
+    "cross-chain", "defi", "multi-chain", "backtesting", "paper trading",
     "metamask", "phantom", "uniswap", "0x", "lifi", "pix", "onramp",
   ],
 

@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { motion, useMotionValue, useSpring, useReducedMotion } from "framer-motion";
 import { Check, Wallet, Loader2, BadgeCheck } from "lucide-react";
 import { useT, type MessageKey } from "@/lib/i18n";
@@ -90,9 +91,9 @@ const ACCENT: Record<TierAccent, {
 
 const TILT_DEG = 3;
 
-export default function PricingCard({ tier, onMint, admin }: {
+export default function PricingCard({ tier, publicHref, admin }: {
   tier: TierConfig;
-  onMint: () => void;
+  publicHref: string;
   admin?: AdminSelectState;
 }) {
   const t = useT();
@@ -197,8 +198,8 @@ export default function PricingCard({ tier, onMint, admin }: {
           ))}
         </ul>
 
-        {/* CTA — waitlist modal for visitors; live plan switch for the admin
-            test wallet (source='admin' in tier_cache) */}
+        {/* Public visitors get an informational route only. The sale and mint
+            controls remain absent; admins retain the local tier test switch. */}
         <div className="mt-5">
           {admin ? (
             admin.isCurrent ? (
@@ -221,9 +222,8 @@ export default function PricingCard({ tier, onMint, admin }: {
               </button>
             )
           ) : (
-            <button
-              type="button"
-              onClick={onMint}
+            <Link
+              href={publicHref}
               className={cn(
                 "w-full inline-flex items-center justify-center gap-1.5 rounded-lg py-2.5 font-mono text-[11px] tracking-widest uppercase transition-all",
                 a.cta,
@@ -231,7 +231,7 @@ export default function PricingCard({ tier, onMint, admin }: {
             >
               <Wallet className="w-3.5 h-3.5" />
               {t("pricing.ctaMint")}
-            </button>
+            </Link>
           )}
         </div>
       </div>

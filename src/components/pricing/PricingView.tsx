@@ -3,10 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import * as Dialog from "@radix-ui/react-dialog";
 import {
-  Sparkles, X, Mail, ArrowRight, CheckCircle2, Loader2, Check, Crown,
-  ShieldCheck, CalendarClock, ChevronDown, Clock, Infinity as InfinityIcon,
+  Sparkles, Loader2, Crown, ShieldCheck, ChevronDown, Clock, Infinity as InfinityIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { richText } from "@/lib/i18n/rich-text";
@@ -77,11 +75,8 @@ const FAQ: { q: MessageKey; a: MessageKey }[] = [
   { q: "pricing.faq6Q", a: "pricing.faq6A" },
 ];
 
-const WAITLIST_KEY = "zswap_pricing_mint_waitlist";
-
 export default function PricingView({ modelo }: { modelo: string }) {
   const t = useT();
-  const [mintOpen, setMintOpen] = useState(false);
   const { authenticated, source, tier: currentTier, refresh } = useTier();
   const [selecting, setSelecting] = useState<Tier | null>(null);
   // USD-pegged pricing: fetch the live SOL/USD once so each card shows its fixed
@@ -195,7 +190,7 @@ export default function PricingView({ modelo }: { modelo: string }) {
             >
               <PricingCard
                 tier={priced(tier)}
-                onMint={() => setMintOpen(true)}
+                publicHref="/founders-pass"
                 admin={adminFor(tier.id as Tier)}
               />
             </div>
@@ -272,97 +267,6 @@ export default function PricingView({ modelo }: { modelo: string }) {
         {t("pricing.legalDisclaimer")}
       </p>
 
-      <MintModal open={mintOpen} onOpenChange={setMintOpen} />
     </div>
-  );
-}
-
-/* ── Mint waitlist modal (placeholder until FASE 5.4 mint is live) ──────── */
-
-function MintModal({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const t = useT();
-  const [email, setEmail] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    try { return !!window.localStorage.getItem(WAITLIST_KEY); } catch { return false; }
-  });
-
-  const onJoin = (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = email.trim().toLowerCase();
-    if (!/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(trimmed)) return;
-    setSubmitting(true);
-    try {
-      window.localStorage.setItem(WAITLIST_KEY, JSON.stringify({ email: trimmed, at: Date.now() }));
-      setSubmitted(true);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-bg/60 backdrop-blur-sm animate-fade-in" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 outline-none">
-          <div className="glass-strong border border-gold/20 rounded-2xl p-6 space-y-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-gold/10 border border-gold/30 flex items-center justify-center flex-shrink-0">
-                  <CalendarClock className="w-4 h-4 text-gold" />
-                </div>
-                <Dialog.Title className="font-display font-bold text-base text-ink">
-                  {t("pricing.mintModalTitle")}
-                </Dialog.Title>
-              </div>
-              <Dialog.Close asChild>
-                <button aria-label={t("common.close")} className="w-8 h-8 rounded-md flex items-center justify-center text-ink-3 hover:text-ink hover:bg-white/5">
-                  <X className="w-4 h-4" />
-                </button>
-              </Dialog.Close>
-            </div>
-
-            <p className="font-sans text-sm text-ink-2 leading-relaxed">
-              {t("pricing.mintModalBody")}
-            </p>
-
-            {submitted ? (
-              <div className="rounded-lg border border-green/30 bg-green/[0.05] px-3 py-3 flex items-start gap-2.5">
-                <CheckCircle2 className="w-4 h-4 text-green flex-shrink-0 mt-0.5" />
-                <div className="font-mono text-[11px] text-ink-2 leading-relaxed">
-                  <b className="text-green">{t("pricing.mintDoneHL")}</b> {t("pricing.mintDoneBody")}
-                </div>
-              </div>
-            ) : (
-              <form onSubmit={onJoin} className="flex items-stretch gap-2">
-                <div className="flex-1 flex items-center gap-2 rounded-lg border border-white/10 bg-bg-2 px-3 focus-within:border-gold/40">
-                  <Mail className="w-3.5 h-3.5 text-ink-3 flex-shrink-0" />
-                  <input
-                    type="email"
-                    inputMode="email"
-                    autoComplete="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder={t("teaser.emailPersonal")}
-                    maxLength={120}
-                    className="flex-1 min-w-0 bg-transparent outline-none font-mono text-sm text-ink placeholder:text-ink-4 py-2.5"
-                    required
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={submitting || !email.trim()}
-                  className="px-4 py-2.5 rounded-lg border border-gold/40 bg-gold/15 text-gold font-mono text-[11px] tracking-widest uppercase hover:bg-gold/25 disabled:opacity-50 inline-flex items-center gap-1.5"
-                >
-                  {submitting ? <Loader2 className="w-3 h-3 animate-spin" /> : <ArrowRight className="w-3 h-3" />}
-                  {t("teaser.enter")}
-                </button>
-              </form>
-            )}
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
   );
 }
