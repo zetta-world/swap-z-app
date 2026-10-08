@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { foundersPublicFacts } from "./facts";
+import { foundersPublicFacts, PUBLIC_PRODUCT_CERTIFICATION } from "./facts";
 
 describe("Founders public facts", () => {
   const facts = foundersPublicFacts();
@@ -53,5 +53,25 @@ describe("Founders public facts", () => {
       candle: "4h",
       deskModeIncluded: false,
     });
+  });
+
+  it("projects every public product from the audited certification matrix", () => {
+    expect(Object.fromEntries(facts.products.map(({ id, status }) => [id, status]))).toEqual({
+      swap: "AVAILABLE",
+      zion: "AVAILABLE",
+      workbench: "AVAILABLE",
+      paper: "AVAILABLE",
+      dashboard: "AVAILABLE",
+      portfolio: "PARTIAL",
+      orders: "PARTIAL",
+      pools: "AVAILABLE",
+    });
+    expect(facts.products).toEqual(
+      PUBLIC_PRODUCT_CERTIFICATION.map(({ id, href, status }) => ({ id, href, status })),
+    );
+    for (const product of PUBLIC_PRODUCT_CERTIFICATION) {
+      expect(product.certifiedAt).toMatch(/^2026-10-0[78]$/);
+      expect(product.evidence.length).toBeGreaterThan(30);
+    }
   });
 });

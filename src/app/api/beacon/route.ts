@@ -63,8 +63,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const ua = h.get("user-agent") ?? "";
     const cid = createHash("sha256").update(`${ip}|${ua}`).digest("hex").slice(0, 16);
 
-    // Founders interactions reuse the existing beacon with a closed, PII-free
-    // envelope. FAQ search text is never accepted or persisted.
+    // Founders interactions reuse the existing beacon with a closed schema.
+    // Raw IP and FAQ search text are not stored; the route derives a
+    // pseudonymous visitor id from IP/User-Agent for aggregate counting.
     if (body?.event !== undefined) {
       const event = validateFoundersPublicEvent(body);
       if (event) await recordEvent(event.event, { path, meta: { cid, ...event.meta } });

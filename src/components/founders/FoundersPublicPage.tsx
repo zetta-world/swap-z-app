@@ -134,7 +134,7 @@ export default function FoundersPublicPage({ facts }: { facts: FoundersPublicFac
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {facts.products.map((product) => {
                 const Icon = PRODUCT_ICON[product.id]; const text = copy.productCopy[product.id];
-                return <Link key={product.id} href={product.href} onClick={() => trackFoundersPublicEvent("platform_click", { locale })} className="group rounded-3xl border border-white/[0.07] bg-bg-1/70 p-5 transition hover:-translate-y-1 hover:border-cyan/25 hover:bg-cyan/[0.025]">
+                return <Link key={product.id} href={product.href} data-product-id={product.id} data-product-status={product.status} onClick={() => trackFoundersPublicEvent("platform_click", { locale })} className="group rounded-3xl border border-white/[0.07] bg-bg-1/70 p-5 transition hover:-translate-y-1 hover:border-cyan/25 hover:bg-cyan/[0.025]">
                   <div className="flex items-start justify-between gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan/20 bg-cyan/[0.06]"><Icon aria-hidden className="h-5 w-5 text-cyan" /></span><StatusBadge status={product.status} label={productStatus(product.status)} /></div>
                   <h3 className="mt-5 font-display text-lg font-bold text-ink">{text.title}</h3><p className="mt-2 text-sm leading-6 text-ink-2">{text.body}</p><span className="mt-4 inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-cyan">{copy.hero.primary}<ChevronRight aria-hidden className="h-3 w-3" /></span>
                 </Link>;

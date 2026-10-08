@@ -1,6 +1,6 @@
 # Z-SWAP — PUBLIC SOURCE OF TRUTH
 
-Verified on: 2026-10-07
+Verified on: 2026-10-08
 Public route: `/founders-pass`
 Purpose: reusable public facts for the sales page, presentations, partners, FAQ and a future Community ZION round.
 
@@ -27,7 +27,25 @@ This document is a public projection. Operational security, credentials, inciden
 | ZION | `PUBLIC_WITH_QUALIFIER` | Advisory analysis and platform guidance. | It does not autonomously move funds, guarantee profit or replace financial advice. | `src/lib/founders-commercial-truth.ts`, `src/lib/tier/types.ts` | 2026-10-07 |
 | Workbench | `PUBLIC_WITH_QUALIFIER` | Configure strategies, backtest historical data and compare measured outcomes. | Historical or simulated performance does not guarantee future results. | `src/lib/tier/types.ts` | 2026-10-07 |
 | Paper simulation | `PUBLIC_WITH_QUALIFIER` | Follow strategies with simulated capital before considering real execution. | It does not use real money; modeled execution can differ from live execution. | `src/lib/tier/types.ts` | 2026-10-07 |
-| Dashboard, Portfolio, Orders and Pools | `PUBLIC_WITH_QUALIFIER` | Real navigation surfaces for platform context and operations. | Their data and actions depend on the connected session, wallet, network and provider. | current routes under `src/app/(plataforma)` | 2026-10-07 |
+| Dashboard | `PUBLIC_WITH_QUALIFIER` | Available consolidated view of real local, wallet and platform activity. | Empty state and navigation are usable without a connected wallet; individual data sources retain their own provider/session limits. | `/dashboard`, `PUBLIC_PRODUCT_CERTIFICATION` | 2026-10-08 |
+| Portfolio | `PUBLIC_WITH_QUALIFIER` | Partially available tracking for the curated assets currently supported. | Coverage is not wallet-wide, and RPC/price failures are not yet distinguished from an empty balance. | `/portfolio`, `PUBLIC_PRODUCT_CERTIFICATION` | 2026-10-08 |
+| Orders | `PUBLIC_WITH_QUALIFIER` | Partially available preparation and browser-local review of order plans. | It is not a durable unified DEX/CEX order history. | `/orders`, `PUBLIC_PRODUCT_CERTIFICATION` | 2026-10-08 |
+| Pools | `PUBLIC_WITH_QUALIFIER` | Available read-only discovery of supported liquidity pools and live provider data. | No LP deposit, withdrawal or liquidity-management action is offered on this surface. | `/pools`, `PUBLIC_PRODUCT_CERTIFICATION` | 2026-10-08 |
+
+### Public product status matrix
+
+| Product | Public status | Certified scope | Canonical source |
+|---|---|---|---|
+| Swap | `AVAILABLE` | Supported route preparation and execution with network/provider qualifiers. | `src/lib/founders-public/facts.ts` |
+| ZION | `AVAILABLE` | Advisory analysis within quota; no autonomous fund movement. | `src/lib/founders-public/facts.ts` |
+| Workbench | `AVAILABLE` | Strategy configuration, backtest and measured comparison. | `src/lib/founders-public/facts.ts` |
+| Paper simulation | `AVAILABLE` | Simulated capital only; not live execution. | `src/lib/founders-public/facts.ts` |
+| Dashboard | `AVAILABLE` | Consolidated real platform/wallet/local activity with usable empty state. | `src/lib/founders-public/facts.ts` |
+| Portfolio | `PARTIAL` | Curated connected-wallet assets; incomplete coverage and error distinction. | `src/lib/founders-public/facts.ts` |
+| Orders | `PARTIAL` | Browser-local order-plan preparation/review; no unified durable history. | `src/lib/founders-public/facts.ts` |
+| Pools | `AVAILABLE` | Read-only live discovery, filtering and provider failure handling. | `src/lib/founders-public/facts.ts` |
+
+Changing a public badge requires updating `PUBLIC_PRODUCT_CERTIFICATION`, its dated evidence and the product-status regression test. A route existing by itself is not certification.
 
 ## Founder Pass and Premium
 
@@ -104,3 +122,7 @@ Sources: `src/lib/tier/types.ts`, `src/lib/founders-commercial-truth.ts`.
 | Internal security controls and exploitable detail | `DO_NOT_DISCLOSE` | Describe safety outcomes only. | Do not publish bypass conditions, internal thresholds or incident mechanics. | security boundary | 2026-10-07 |
 | Internal costs, salaries, stress models and treasury operations | `DO_NOT_DISCLOSE` | Not public product facts. | Economic policy remains in controlled documents. | economics boundary | 2026-10-07 |
 | Internal infrastructure, host identities and release metadata | `DO_NOT_DISCLOSE` | Not public product facts. | Do not publish IPs, environment layout, branches or SHAs. | operational boundary | 2026-10-07 |
+
+## Public analytics wording
+
+Founder events do not store raw IP addresses or FAQ search text. The existing beacon derives a pseudonymous identifier from request IP/User-Agent for aggregate visitor counting. This is pseudonymous telemetry and must not be described generically as "PII-free".

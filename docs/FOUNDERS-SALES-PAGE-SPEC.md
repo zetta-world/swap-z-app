@@ -20,9 +20,9 @@ The page is an informational product and sales experience. It does not open the 
 ## 2. Explore the platform
 
 - **PURPOSE:** show concrete product surfaces rather than generic crypto claims.
-- **PUBLIC COPY:** Swap, ZION, Workbench, paper simulation, Dashboard, Portfolio, Orders and Pools, each with a visible status.
-- **FACT SOURCE:** route inventory plus `src/lib/chains.ts`.
-- **STATUS:** implemented with current network list and ZETTA Chain roadmap separation.
+- **PUBLIC COPY:** Swap, ZION, Workbench, paper simulation, Dashboard, Portfolio, Orders and Pools, each with a visible certified status. Dashboard and read-only Pools are `AVAILABLE`; Portfolio and Orders are `PARTIAL` within the exact scopes recorded in the public source of truth.
+- **FACT SOURCE:** `PUBLIC_PRODUCT_CERTIFICATION`, route/user-flow evidence and `src/lib/chains.ts`; route existence alone is insufficient.
+- **STATUS:** implemented with a canonical, dated status matrix, current network list and ZETTA Chain roadmap separation.
 - **COMPONENT:** product card grid.
 - **CTA:** opens the corresponding platform route.
 - **TRACKING:** `platform_click`.
@@ -151,4 +151,4 @@ The page is an informational product and sales experience. It does not open the 
 
 ## Public analytics schema
 
-The existing `/api/beacon` accepts only a closed Founders event vocabulary: `founders_page_view`, `tier_view`, `tier_compare`, `faq_open`, `faq_search`, `community_click`, `platform_click`, `price_view`, `sale_mechanics_view`. It rejects unknown fields and never accepts FAQ query text.
+The existing `/api/beacon` accepts only a closed Founders event vocabulary: `founders_page_view`, `tier_view`, `tier_compare`, `faq_open`, `faq_search`, `community_click`, `platform_click`, `price_view`, `sale_mechanics_view`. It rejects unknown fields and never accepts FAQ query text. No raw IP is stored in a Founder event; the shared beacon derives a pseudonymous visitor identifier from IP/User-Agent for aggregate counting.

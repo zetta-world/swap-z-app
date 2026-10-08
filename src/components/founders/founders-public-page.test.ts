@@ -33,4 +33,13 @@ describe("FoundersPublicPage", () => {
       expect(html).not.toMatch(/\{[a-zA-Z]+\}/);
     }
   });
+
+  it("renders the canonical status on every public product card", () => {
+    const facts = foundersPublicFacts();
+    const html = renderToStaticMarkup(createElement(FoundersPublicPage, { facts }));
+    for (const product of facts.products) {
+      expect(html).toContain(`data-product-id=\"${product.id}\"`);
+      expect(html).toContain(`data-product-status=\"${product.status}\"`);
+    }
+  });
 });

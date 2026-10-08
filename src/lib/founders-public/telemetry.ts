@@ -21,7 +21,11 @@ export interface FoundersPublicEventPayload {
   };
 }
 
-/** Closed, PII-free public analytics envelope. Search text is never accepted. */
+/**
+ * Closed public analytics envelope. It never accepts raw IP or FAQ search
+ * text; the shared beacon derives a pseudonymous visitor id from request
+ * metadata for aggregate counting.
+ */
 export function validateFoundersPublicEvent(value: unknown): FoundersPublicEventPayload | null {
   if (!value || typeof value !== "object") return null;
   const input = value as Record<string, unknown>;
