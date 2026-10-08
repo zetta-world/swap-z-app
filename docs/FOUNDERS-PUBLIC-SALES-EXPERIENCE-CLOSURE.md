@@ -1,9 +1,9 @@
 # Z-SWAP — FOUNDERS PUBLIC SALES EXPERIENCE CLOSURE
 
-Reference date: 2026-10-07  
-Start HEAD: `dd04b7b66ac025c04a0ee4347adcdd8e5ce3b1f4`  
-Recertified code candidate: `acd44d2c85b0568022af49d4e3ebdff286fcc92c`  
-Candidate tree: `ee72bc9bdb28575780914ff4ad5e1b824d02deae`  
+Reference date: 2026-10-07
+Start HEAD: `dd04b7b66ac025c04a0ee4347adcdd8e5ce3b1f4`
+Recertified code candidate: `acd44d2c85b0568022af49d4e3ebdff286fcc92c`
+Candidate tree: `ee72bc9bdb28575780914ff4ad5e1b824d02deae`
 Campaign: `founders-public-sales-page-20261007T215055Z`
 
 ## 1. EXECUTIVE VERDICT
