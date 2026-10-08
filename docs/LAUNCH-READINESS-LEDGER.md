@@ -771,3 +771,23 @@
 - **Recertificação exata implementer-reported:** Node 24.21.0/npm 11.19.0; `npm ci` PASS e lock idêntico; alvo 11/11; domínio Founders 17 arquivos/254 testes; type-check PASS; lint 0 erros/145 avisos; suíte 314 arquivos/4.674 testes PASS; production build PASS; economia regenerada sem diff.
 - **Integridade:** package files, migrations, economics, copy AF-02 e restante do domínio Founders sem delta. Evidência em `zswap-local/evidence/founders-af01-surgical-20261007T093209Z/`.
 - **Estado:** `EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED` + `READY_FOR_INDEPENDENT_AUDIT`; não é certificação independente, RC, release ou publicação. `RELEASE_CANDIDATE=NONE`; produção, Vercel, Supabase hospedado, push, merge, deploy, venda e dinheiro real intocados.
+
+### L-050 · 2026-10-07 · SUPPLY CHAIN CRITICAL/HIGH DISPOSITION entregue de forma condicional (lane B, NÃO release)
+
+- **Base e commits:** start `35b7c727802343c5b6ba55dffa18da6fad19191e`; código/lock/gate `63326edb6d4cd3f6f95be8fc77b9d0382db91dc0`, tree `3cb3affc8da4472b360984274d459157c2faec44`; documentação final local `dd04b7b66ac025c04a0ee4347adcdd8e5ce3b1f4`.
+- **Remediações suportadas:** `shell-quote` 1.10.0→1.12.0, `sharp` 0.35.4→0.35.5 e `source-map-js` 1.2.1→1.2.2; nenhuma major, override, remoção de wallet, feature ou mudança financeira.
+- **Medição da campanha:** full 1 critical/27 high/40 moderate → 0/25/40; omit-dev 1 critical/22 high/37 moderate → 0/20/37. O residual medido derivava de `braces` sem versão corrigida e foi disposto como `NOT_RUNTIME_REACHABLE` no web artifact, condicionado à auditoria independente.
+- **Validação implementer-reported:** npm ci, type-check, lint 0 erros/145 avisos, wallet/security 187/187, Founders 287/287, suíte 314 arquivos/4.674 testes, build, economia sem diff, migration/secret scan e artifact reachability PASS.
+- **Relatórios:** `docs/SUPPLY-CHAIN-DISPOSITION.md` e `docs/SUPPLY-CHAIN-RUNTIME-REACHABILITY.md`; evidência `zswap-local/evidence/supply-chain-disposition-20261007T153104Z/`.
+- **Estado:** `CONDITIONAL`; não é release ready. Produção, Vercel, Supabase hospedado, push, merge, deploy, venda e dinheiro real intocados.
+
+### L-051 · 2026-10-07 · FOUNDERS PUBLIC SALES EXPERIENCE entregue para auditoria independente (lane B, NÃO release)
+
+- **Base e candidato:** start `dd04b7b66ac025c04a0ee4347adcdd8e5ce3b1f4`; candidato de código exato `acd44d2c85b0568022af49d4e3ebdff286fcc92c`, tree `ee72bc9bdb28575780914ff4ad5e1b824d02deae`; branch local `founders-public-sales-page-20261007`, sem upstream.
+- **Experiência pública:** `/founders-pass` passa a explicar plataforma, produtos, Founder/Premium, tiers, fees, redes, venda, custody e risco; 59 FAQs em EN/PT/ES/ZH; nenhum buy/mint/checkout ativo. O simulador anterior exige `FOUNDERS_SALE_PREVIEW=1` e não é o comportamento público padrão.
+- **Verdade e pendências:** `ZSWAP-PUBLIC-SOURCE-OF-TRUTH.md` é a projeção pública segura; data, supply final, preço final, payment e itens legais continuam explicitamente pendentes em `FOUNDERS-SALES-PAGE-OPEN-DECISIONS.md`. Nenhuma decisão foi inventada.
+- **Validação implementer-reported no candidato exato:** alvo final 3 arquivos/10 testes; suíte completa 318 arquivos/4.689 testes PASS; type-check PASS; lint 0 erros/145 avisos; production build PASS; economia regenerada com hashes idênticos; package-lock e migrations sem delta. Browser HTTP 200 em 390/412/768/1440, sem overflow/erro/controle de compra; Axe 0 violações em mobile/desktop; i18n, FAQ search e beacon 204 PASS.
+- **Falha ambiental preservada:** a primeira execução final de type-check recebeu heap V8 de 1,2 GiB no executor e terminou 134/OOM antes de qualquer diagnóstico TypeScript; o executor corrigido para o limite previamente validado de 1,7 GiB passou sem mudança de código.
+- **Drift externo de supply chain:** lock inalterado, porém o feed do registry em 07/10 passou a reportar omit-dev 0 critical/21 high/37 moderate. A linha adicional é o HIGH direto de Next.js `GHSA-cjq9-62q9-8jv4`, com fix disponível. Fica `OPEN — SEPARATE DISPOSITION CAMPAIGN` e bloqueia release/publicação; não foi corrigido neste round.
+- **Relatório/evidência:** `docs/FOUNDERS-PUBLIC-SALES-EXPERIENCE-CLOSURE.md`; `zswap-local/evidence/founders-public-sales-page-20261007T215055Z/`.
+- **Estado:** `IMPLEMENTATION_COMPLETE` + `EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED` + `READY_FOR_INDEPENDENT_AUDIT`; não é publicação, RC, release, venda ou deploy. Produção, Vercel, Supabase hospedado, push, merge e dinheiro real intocados.

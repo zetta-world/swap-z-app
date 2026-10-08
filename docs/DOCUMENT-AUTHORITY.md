@@ -50,6 +50,13 @@
 > FAIL histórico de `IA-AF01-001`. A correção cirúrgica foi recertificada pelo
 > implementador no candidato `efdf6ee`; o plano AF-01 virou histórico e o novo
 > relatório é referência para auditoria independente, sem autorizar release.
+>
+> **Revisão 11 (07/10/2026, L-050/L-051):** a campanha de supply chain
+> remediou o CRITICAL e registrou a disposição condicional dos HIGHs no HEAD
+> `dd04b7b`. A experiência pública Founders foi implementada e recertificada
+> localmente no candidato `acd44d2`; a fonte pública, especificação e decisões
+> abertas passam a ser as referências atuais para apresentação pública. Isso
+> não autoriza publicação, venda, deploy ou release.
 
 ## Classes
 
@@ -117,6 +124,13 @@
 | `docs/FOUNDERS-FINAL-SALE-AND-LIABILITY-CLOSURE.md` | SUPPORTING_REFERENCE | `8ef9bbe`, 2026-10-06 | auditoria independente pendente | regra final da venda, copy de Founder status, treinamento e passivo dinâmico | SIM para auditar o candidato; NÃO autoriza publicação/preço final |
 | `docs/FOUNDERS-FINAL-MICRODELTA-CLOSURE.md` | SUPPORTING_REFERENCE | `THIS_CONTROL_PLANE_COMMIT`, 2026-10-06, L-047 | auditoria independente pendente | fechamento AF-01/AF-02, recertificação e handoff | SIM para auditar `58bcf8e`; NÃO autoriza publicação/release |
 | `docs/FOUNDERS-AF01-SURGICAL-CLOSURE.md` | SUPPORTING_REFERENCE | candidato `efdf6ee`, atestação L-049 | auditoria independente pendente | fechamento cirúrgico de `IA-AF01-001`, recertificação e handoff | SIM para auditar `efdf6ee`; NÃO autoriza publicação/release |
+| `docs/ZSWAP-PUBLIC-SOURCE-OF-TRUTH.md` | AUTHORITATIVE | candidato `acd44d2`, 2026-10-07, L-051 | current | fatos públicos seguros, status, wording e qualifiers | **SIM** para apresentação pública; decisões abertas continuam pendentes |
+| `docs/FOUNDERS-SALES-PAGE-SPEC.md` | SUPPORTING_REFERENCE | candidato `acd44d2`, 2026-10-07, L-051 | current | especificação da página pública `/founders-pass` | SIM para a experiência pública; NÃO abre venda/checkout |
+| `docs/FOUNDERS-SALES-PAGE-OPEN-DECISIONS.md` | AUTHORITATIVE | candidato `acd44d2`, 2026-10-07, L-051 | current | decisões não inventadas antes da publicação/venda | **SIM** como registro de pendências |
+| `docs/FOUNDERS-PUBLIC-SALES-EXPERIENCE-CLOSURE.md` | SUPPORTING_REFERENCE | atestação L-051, 2026-10-07 | auditoria independente pendente | fechamento, recertificação e handoff da experiência pública | SIM para auditar `acd44d2`; NÃO autoriza publicação/release |
+| `docs/PLANO-FOUNDERS-PUBLIC-SALES-EXPERIENCE.md` | HISTORICAL_EVIDENCE | candidato `acd44d2`, 2026-10-07 | entregue por `FOUNDERS-PUBLIC-SALES-EXPERIENCE-CLOSURE.md` | plano executado da experiência pública | NÃO executar novamente; SIM para rastreabilidade |
+| `docs/SUPPLY-CHAIN-DISPOSITION.md` | SUPPORTING_REFERENCE | `dd04b7b`, 2026-10-07, L-050 | novo advisory Next observado em L-051 requer campanha separada | disposição CRITICAL/HIGH da campanha de supply chain | SIM para a campanha medida; NÃO tratar a contagem como imutável |
+| `docs/SUPPLY-CHAIN-RUNTIME-REACHABILITY.md` | SUPPORTING_REFERENCE | `dd04b7b`, 2026-10-07, L-050 | revisão obrigatória antes de RC | reachability dos advisories medidos naquela campanha | SIM como evidência revision-specific |
 | `docs/NFT-BRIEFING.md` | SUPPORTING_REFERENCE | 6039e3a 2026-06-30 | — | trilha de produto/flywheel (fora da cadeia de release) | NÃO para estado de lançamento; reconferir no código antes de usar |
 | `docs/PLANO-FOUNDERS-SUPPORT-AND-ECONOMICS-CLOSURE.md` | HISTORICAL_EVIDENCE | `c2bfc4a`, 2026-10-06 | entregue; próximo passo auditoria independente | plano do round L-043/L-044 | NÃO executar novamente; SIM para rastreabilidade |
 | `docs/PLANO-FOUNDERS-FINAL-SALE-AND-LIABILITY-CLOSURE.md` | HISTORICAL_EVIDENCE | `8ef9bbe`, 2026-10-06, L-045 | implementado e recertificado; auditoria independente pendente | delta final pós-auditoria: venda, Founder status, treinamento e service liability | NÃO executar novamente; SIM para rastreabilidade |

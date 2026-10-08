@@ -4,10 +4,11 @@
 > `docs/LAUNCH-READINESS-LEDGER.md`. Ao mudar de estado, **substitua** as seções
 > atuais e **acrescente** uma entrada no ledger.
 >
-> **Medido em:** 07/10/2026 (revisão 13, ledger L-049: o candidato histórico
-> `58bcf8e` foi reprovado por `IA-AF01-001`; o novo candidato `efdf6ee`
-> corrige agenda parcial, foi recertificado localmente e aguarda auditoria
-> independente; não release). Revisão 12, ledger L-047: micro-delta entregue
+> **Medido em:** 07/10/2026 (revisão 14, ledger L-050/L-051: supply chain
+> fechada de forma condicional no estado então medido; experiência pública
+> Founders recertificada localmente no candidato `acd44d2`, aguardando auditoria
+> independente; nenhum deploy/publicação/venda). Revisão 13, ledger L-049:
+> correção AF-01 no candidato `efdf6ee`. Revisão 12, ledger L-047: micro-delta entregue
 > e depois reprovado pela auditoria independente. Revisão 11, ledger L-045:
 > Founders Final Sale + Liability Closure. Revisão 10, ledger
 > L-043/L-044: Founders Economics + Commercial Truth. Revisão 9, ledger L-028/L-029: ensaio de release em PROD-CLONE local
@@ -23,20 +24,20 @@
 
 | campo | valor | fonte |
 |---|---|---|
-| CURRENT_WORKTREE | `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/founders-af01-partial-schedule-fix-20261007` | `git worktree list` |
-| CURRENT_BRANCH | `founders-af01-partial-schedule-fix-20261007`, **só local**, sem upstream | Git |
+| CURRENT_WORKTREE | `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/founders-public-sales-page-20261007` | `git worktree list` |
+| CURRENT_BRANCH | `founders-public-sales-page-20261007`, **só local**, sem upstream | Git |
 | PRODUCT_BASE_SHA | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019`, "feat: add closed-by-default early access foundation", 01/10 17:08 −03 | Git |
 | PRODUCT_BASE_TREE | `6cd43386ab1f1a1d3181e61d1fec36c251a27b8b` | Git |
-| PHASE_BASE_SHA | `d08a1e3a221b5559630f53fb3318d538ee9c383f` (atestação docs-only anterior à L-048) | ledger L-048 |
-| HEAD | `THIS_CONTROL_PLANE_COMMIT`, atestação docs-only da L-049; pai candidato `efdf6ee5a64d4f5491b806da6258706615b6ffec`, tree `9021c273c1d2e790f3a09da25de8f230ba9ef46e` | Git |
-| WORKING_TREE | **limpo** após a atestação docs-only; candidato exato e FAIL histórico preservados | `git status --short` |
+| PHASE_BASE_SHA | `dd04b7b66ac025c04a0ee4347adcdd8e5ce3b1f4` (fechamento documental local da supply chain) | ledger L-050 |
+| HEAD | `THIS_CONTROL_PLANE_COMMIT`, atestação docs-only da L-051; pai candidato `acd44d2c85b0568022af49d4e3ebdff286fcc92c`, tree `ee72bc9bdb28575780914ff4ad5e1b824d02deae` | Git |
+| WORKING_TREE | **limpo** após a atestação docs-only; candidato público exato e evidências anteriores preservados | `git status --short` |
 | LAST_CERTIFIED_RUNTIME | `0d21874b4147bb8a0b232aa0abc2302471a720e5` (tree `62ad70e36a8bcc57331297d8ce929f232fadad2c`): **CERTIFIED_EXACT_SHA** — RUNTIME RECERTIFICATION: PASS (local). Último runtime certificado; o outro SHA com `CERTIFIED_EXACT_SHA` é o C1b `f1b4ec1` (feature) | `reports/recert-0d21874-20261001T010514Z/FINAL-RUNTIME-RECERTIFICATION.md`; `docs/RELEASE-RUNBOOK.md` |
 | EARLY_ACCESS_PHASE1 | **CERTIFIED_EXACT_SHA** em `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` (= produto de `9f2ddcb` + control plane + 1 arquivo de teste). `9f2ddcbe45f9f93c9a33c331e31e32c45d410019` segue **COMMITTED_FEATURE_CHECKPOINT** (histórico: o dono o designou "certified feature checkpoint", L-009) | ledger L-009, L-016, L-019 |
 | CERTIFIED_FEATURE_SHA | **`53cd85a2a86cc2f34d4234965ef3cf519ce7adc1`** · tree `010a448c774247406cc9cc80cba34e8744426557` · **CERTIFIED_EXACT_SHA** (C1 da Fase 2; antes: `f1b4ec1`, Fase 1) | ledger L-027 |
-| CONTROL_PLANE_HEAD | `THIS_CONTROL_PLANE_COMMIT`, somente docs, filho de `efdf6ee`; não foi recertificado e não é deployável | `AI-OPERATING-RULES.md` §5.1; L-049 |
-| CURRENT_WORK | **FOUNDERS AF-01 SURGICAL CLOSURE: READY_FOR_INDEPENDENT_AUDIT.** Agenda 000/111 e fail-closed das seis combinações parciais implementados e recertificados localmente; publicação, preço final e lançamento continuam bloqueados | L-049 |
-| FOUNDERS_CLOSURE_CANDIDATE | `efdf6ee5a64d4f5491b806da6258706615b6ffec` · tree `9021c273c1d2e790f3a09da25de8f230ba9ef46e` · `EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED` · 314/314 arquivos, 4.674/4.674 testes; `58bcf8e` permanece `INDEPENDENT_AUDIT_FAIL` | L-049 |
-| FOUNDERS_CLOSURE_EVIDENCE | `zswap-local/evidence/founders-af01-surgical-20261007T093209Z/`; manifesto externo fechado depois da atestação docs-only | L-049 |
+| CONTROL_PLANE_HEAD | `THIS_CONTROL_PLANE_COMMIT`, somente docs, filho de `acd44d2`; não foi recertificado e não é deployável | `AI-OPERATING-RULES.md` §5.1; L-051 |
+| CURRENT_WORK | **FOUNDERS PUBLIC SALES EXPERIENCE: READY_FOR_INDEPENDENT_AUDIT.** Página, FAQ, verdade pública, i18n, acessibilidade e SEO implementados e recertificados localmente; publicação, preço final, supply final, data e lançamento continuam bloqueados | L-051 |
+| FOUNDERS_CLOSURE_CANDIDATE | `acd44d2c85b0568022af49d4e3ebdff286fcc92c` · tree `ee72bc9bdb28575780914ff4ad5e1b824d02deae` · `EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED` · 318/318 arquivos, 4.689/4.689 testes | L-051 |
+| FOUNDERS_CLOSURE_EVIDENCE | `zswap-local/evidence/founders-public-sales-page-20261007T215055Z/`; pacote e manifesto externos fechados depois da atestação docs-only | L-051 |
 | LOCAL_PRODCLONE_REHEARSAL | **CLOSED_PASS** (`release-rehearsal-20261003T194816Z`): baseline, backup, restauração, 1º forward, migrations até 0069, boot, saúde, E2E do early access, smoke core, chaos, rollback, 2º forward, equivalência final, reconciliação, type-check, lint, build — todos PASS; suíte completa **4204/4204**; SQL T15/T16/T16b/O2/T14 PASS; RLS/ACL PASS; efeitos externos reais **0** | L-028 |
 | LIVE_READONLY_RECONCILIATION | **CLOSED** (`live-readonly-reconciliation-20261003T221654Z`) | L-029 |
 | INC-RR-01 | reboot do host Acer durante o ensaio: `HOST_OPERATIONAL_REBOOT` · `AGENT_INDUCED_OOM` · `PRODUCT_DEFECT=NO` · ensaio recuperado · **reconhecido pelo dono (OD-01), registro permanente** | L-028, L-029 |
@@ -83,8 +84,8 @@ quatro primeiros (no C1); **não** está deployada e o gate público está **fec
 | **AP-LOCK hosted** | fechar a disposição do PostgREST | OWNER_AUTH_REQUIRED (PASS local em PostgREST 14.17) |
 | **GATE-OPEN** | abrir o gate (além do F-01 certificado) — **não** bloqueia o release com gate fechado | passos do dono, todos já decididos ou externos: textos de Termos e Privacidade aprovados (inclui D-9: Resend e transferência na Política), domínio remetente (D-2), segredos (HMAC, Resend, webhook) por mecanismo autorizado, aplicar 0068/0069, agendar o cron (D-8), gravar `disable_early_access=false` |
 | **REAL-AUTOMATION** | DCA, Pilot e Autopilot reais | NO-GO até os gates finais (`LEDGER-MESTRE-RELEASE.md` §0.5) |
-| **FOUNDERS-INDEPENDENT-AUDIT** | publicar/finalizar a oferta Founders | PENDING — `58bcf8e` reprovado; novo candidato `efdf6ee` entregue para auditoria independente |
-| **FOUNDERS-SUPPLY-CHAIN** | aceitação de risco do candidato | OPEN — omit-dev 1 critical/22 high/37 moderate; campanha separada |
+| **FOUNDERS-INDEPENDENT-AUDIT** | publicar/finalizar a experiência pública Founders | PENDING — candidato `acd44d2` entregue para auditoria independente; nenhuma publicação autorizada |
+| **FOUNDERS-SUPPLY-CHAIN** | release/publicação do candidato | OPEN — lock inalterado, mas o registry passou a reportar 0 critical/21 high/37 moderate; o HIGH direto `GHSA-cjq9-62q9-8jv4` em Next.js precisa de disposição separada |
 
 ## EXTERNAL_GATES (recalculados ao vivo, L-029)
 
