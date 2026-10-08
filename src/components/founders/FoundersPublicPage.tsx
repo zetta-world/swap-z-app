@@ -108,7 +108,7 @@ export default function FoundersPublicPage({ facts }: { facts: FoundersPublicFac
           <div className="mx-auto grid min-h-[720px] max-w-7xl items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:py-24">
             <div className="min-w-0">
               <div className="inline-flex items-center gap-2 rounded-full border border-gold/30 bg-gold/[0.06] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-gold"><Sparkles aria-hidden className="h-3.5 w-3.5" />{copy.hero.eyebrow}</div>
-              <h1 className="mt-6 max-w-4xl break-words font-display text-[clamp(2.5rem,7vw,5.8rem)] font-extrabold leading-[0.95] tracking-[-0.045em] text-ink"><span className="text-grad-cyan">Z-SWAP.</span> {copy.hero.title}</h1>
+              <h1 className="mt-6 max-w-4xl font-display text-[2.1rem] font-extrabold leading-[0.95] tracking-[-0.045em] text-ink sm:text-[clamp(3rem,6vw,4.8rem)]"><span className="text-grad-cyan">Z-SWAP.</span> {copy.hero.title}</h1>
               <p className="mt-6 max-w-2xl text-base leading-8 text-ink-2 sm:text-lg">{copy.hero.body}</p>
               <p className="mt-5 flex w-fit max-w-full items-start gap-2 rounded-xl border border-violet/25 bg-violet/[0.05] px-3 py-2 font-mono text-[11px] text-violet"><Clock3 aria-hidden className="h-4 w-4 flex-shrink-0" /><span className="break-words">{copy.hero.saleClosed}</span></p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
