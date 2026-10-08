@@ -1,9 +1,9 @@
 # Z-SWAP — FOUNDERS PUBLIC SALES FINAL BLOCKERS CLOSURE
 
-Date: 2026-10-08  
-Start HEAD: `4db8f78ae67fb6634427f48c92a856d1f81f7cfb`  
-Base sales-page candidate: `acd44d2c85b0568022af49d4e3ebdff286fcc92c`  
-Final code candidate: `fd68c4f663ced81c3e040367c62697e473b5d542`  
+Date: 2026-10-08
+Start HEAD: `4db8f78ae67fb6634427f48c92a856d1f81f7cfb`
+Base sales-page candidate: `acd44d2c85b0568022af49d4e3ebdff286fcc92c`
+Final code candidate: `fd68c4f663ced81c3e040367c62697e473b5d542`
 Final code tree: `aea9a29aa766304a80dc6394d40377632966ce1f`
 
 This is an implementer closure for independent audit. It is not a release, publication, deployment or authorization to open the Founder sale.
