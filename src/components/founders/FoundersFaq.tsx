@@ -76,7 +76,7 @@ export default function FoundersFaq({ copy, locale }: { copy: FoundersPublicCopy
                 <ChevronDown aria-hidden className="h-4 w-4 flex-shrink-0 text-ink-3 transition-transform group-open:rotate-180" />
               </summary>
               <p className="border-t border-white/5 pb-4 pt-3 text-sm leading-7 text-ink-2">{item.answer}</p>
-              <a href={`#faq-${item.id}`} className="mb-4 inline-block font-mono text-[10px] uppercase tracking-wider text-cyan hover:underline" aria-label={`${item.question} — ${copy.labels.directLink}`}>
+              <a href={`#faq-${item.id}`} className="mb-2 inline-flex min-h-11 items-center font-mono text-[10px] uppercase tracking-wider text-cyan hover:underline" aria-label={`${item.question} — ${copy.labels.directLink}`}>
                 #{item.id}
               </a>
             </details>

@@ -87,12 +87,12 @@ export default function FoundersPublicPage({ facts }: { facts: FoundersPublicFac
       <a href="#main" className="skip-link">{copy.labels.skip}</a>
       <header className="sticky top-0 z-40 border-b border-white/[0.07] bg-bg/85 backdrop-blur-xl">
         <div className="mx-auto flex min-h-16 max-w-7xl items-center gap-3 px-4 sm:px-6">
-          <Link href="/" className="flex items-center gap-2.5" onClick={() => trackFoundersPublicEvent("platform_click", { locale })}>
+          <Link href="/" className="flex min-h-11 items-center gap-2.5" onClick={() => trackFoundersPublicEvent("platform_click", { locale })}>
             <Image src="/brand/yggdrasil-z-transparent.png" alt="Z-SWAP" width={42} height={42} priority className="h-10 w-10 object-contain" />
             <span className="font-display text-sm font-extrabold tracking-wide text-ink">Z-SWAP</span>
           </Link>
           <nav aria-label="Founders" className="ml-auto hidden items-center gap-5 lg:flex">
-            {(["products", "founder", "tiers", "sale", "faq"] as const).map((item) => <a key={item} href={`#${item}`} className="text-xs text-ink-2 hover:text-cyan">{copy.nav[item]}</a>)}
+            {(["products", "founder", "tiers", "sale", "faq"] as const).map((item) => <a key={item} href={`#${item}`} className="inline-flex min-h-11 items-center text-xs text-ink-2 hover:text-cyan">{copy.nav[item]}</a>)}
           </nav>
           <div className="ml-auto flex items-center gap-1 lg:ml-5" role="group" aria-label={copy.labels.language}>
             <Languages aria-hidden className="mr-1 hidden h-4 w-4 text-ink-3 sm:block" />
@@ -202,7 +202,7 @@ export default function FoundersPublicPage({ facts }: { facts: FoundersPublicFac
       </main>
 
       <footer className="border-t border-white/[0.07] bg-black/20">
-        <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-10 sm:px-6 md:flex-row md:items-center md:justify-between"><div><p className="font-display font-extrabold text-ink">Z-SWAP</p><p className="mt-1 max-w-xl text-xs leading-6 text-ink-3">{copy.footer}</p></div><div className="flex flex-wrap gap-3"><Link href="/" className="text-sm text-cyan hover:underline">{copy.hero.primary}</Link><a href={facts.links.community} target="_blank" rel="noopener noreferrer" onClick={() => trackFoundersPublicEvent("community_click", { locale })} className="text-sm text-gold hover:underline">{copy.hero.community}</a></div></div>
+        <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-10 sm:px-6 md:flex-row md:items-center md:justify-between"><div><p className="font-display font-extrabold text-ink">Z-SWAP</p><p className="mt-1 max-w-xl text-xs leading-6 text-ink-3">{copy.footer}</p></div><div className="flex flex-wrap gap-3"><Link href="/" className="inline-flex min-h-11 items-center text-sm text-cyan hover:underline">{copy.hero.primary}</Link><a href={facts.links.community} target="_blank" rel="noopener noreferrer" onClick={() => trackFoundersPublicEvent("community_click", { locale })} className="inline-flex min-h-11 items-center text-sm text-gold hover:underline">{copy.hero.community}</a></div></div>
       </footer>
     </div>
   );
