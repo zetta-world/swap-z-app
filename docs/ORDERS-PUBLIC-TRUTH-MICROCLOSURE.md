@@ -1,10 +1,10 @@
 # Z-SWAP — Orders Public Truth Micro-Closure
 
-Data de referência: 08/10/2026  
-Finding: `IA-PUBLIC-ORDERS-001`  
-Start HEAD: `56241b2833a41f988dd7dd3108d1e8d6595ffa92`  
-Base code SHA: `fd68c4f663ced81c3e040367c62697e473b5d542`  
-Final code SHA: `2e50b1d0c04108586066d24c8c3bdde880f01e8f`  
+Data de referência: 08/10/2026
+Finding: `IA-PUBLIC-ORDERS-001`
+Start HEAD: `56241b2833a41f988dd7dd3108d1e8d6595ffa92`
+Base code SHA: `fd68c4f663ced81c3e040367c62697e473b5d542`
+Final code SHA: `2e50b1d0c04108586066d24c8c3bdde880f01e8f`
 Final code tree: `f414c9fad97494addce2e911f307f20eb48e12af`
 
 ## 1. Independent finding
