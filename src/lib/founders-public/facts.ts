@@ -18,7 +18,7 @@ export const PUBLIC_PRODUCT_CERTIFICATION = [
   { id: "paper", href: "/laboratorio", status: "AVAILABLE", certifiedAt: "2026-10-07", evidence: "Simulation is usable within the declared paper scope and never presented as live execution." },
   { id: "dashboard", href: "/dashboard", status: "AVAILABLE", certifiedAt: "2026-10-08", evidence: "Route, anonymous empty state, real local/on-chain data projection, navigation and responsive rendering were exercised." },
   { id: "portfolio", href: "/portfolio", status: "PARTIAL", certifiedAt: "2026-10-08", evidence: "Connected-wallet balances are real, but tracked-asset coverage is curated and RPC/price failures are not yet surfaced separately from an empty balance." },
-  { id: "orders", href: "/orders", status: "PARTIAL", certifiedAt: "2026-10-08", evidence: "Order-plan creation and browser-local review work, but the surface is not a durable unified DEX/CEX order history." },
+  { id: "orders", href: "/orders", status: "PARTIAL", certifiedAt: "2026-10-08", evidence: "Order-plan creation, supported-trigger alerts and browser-local review work; saved plans require explicit user confirmation and the surface is not a durable unified DEX/CEX order history." },
   { id: "pools", href: "/pools", status: "AVAILABLE", certifiedAt: "2026-10-08", evidence: "Read-only live pool discovery, filters, loading, empty, upstream-error and retry states are implemented and exercised." },
 ] as const satisfies ReadonlyArray<PublicProductFact & {
   certifiedAt: string;

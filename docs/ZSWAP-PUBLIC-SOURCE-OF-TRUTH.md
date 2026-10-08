@@ -29,7 +29,7 @@ This document is a public projection. Operational security, credentials, inciden
 | Paper simulation | `PUBLIC_WITH_QUALIFIER` | Follow strategies with simulated capital before considering real execution. | It does not use real money; modeled execution can differ from live execution. | `src/lib/tier/types.ts` | 2026-10-07 |
 | Dashboard | `PUBLIC_WITH_QUALIFIER` | Available consolidated view of real local, wallet and platform activity. | Empty state and navigation are usable without a connected wallet; individual data sources retain their own provider/session limits. | `/dashboard`, `PUBLIC_PRODUCT_CERTIFICATION` | 2026-10-08 |
 | Portfolio | `PUBLIC_WITH_QUALIFIER` | Partially available tracking for the curated assets currently supported. | Coverage is not wallet-wide, and RPC/price failures are not yet distinguished from an empty balance. | `/portfolio`, `PUBLIC_PRODUCT_CERTIFICATION` | 2026-10-08 |
-| Orders | `PUBLIC_WITH_QUALIFIER` | Partially available preparation and browser-local review of order plans. | It is not a durable unified DEX/CEX order history. | `/orders`, `PUBLIC_PRODUCT_CERTIFICATION` | 2026-10-08 |
+| Orders | `PUBLIC_WITH_QUALIFIER` | Partially available preparation, supported-trigger alerts and browser-local review of order plans. | Saved plans do not execute autonomously: the user explicitly confirms execution and signs the wallet when an on-chain transaction requires it. It is not a durable unified DEX/CEX order history. | `/orders`, `PUBLIC_PRODUCT_CERTIFICATION` | 2026-10-08 |
 | Pools | `PUBLIC_WITH_QUALIFIER` | Available read-only discovery of supported liquidity pools and live provider data. | No LP deposit, withdrawal or liquidity-management action is offered on this surface. | `/pools`, `PUBLIC_PRODUCT_CERTIFICATION` | 2026-10-08 |
 
 ### Public product status matrix
@@ -42,7 +42,7 @@ This document is a public projection. Operational security, credentials, inciden
 | Paper simulation | `AVAILABLE` | Simulated capital only; not live execution. | `src/lib/founders-public/facts.ts` |
 | Dashboard | `AVAILABLE` | Consolidated real platform/wallet/local activity with usable empty state. | `src/lib/founders-public/facts.ts` |
 | Portfolio | `PARTIAL` | Curated connected-wallet assets; incomplete coverage and error distinction. | `src/lib/founders-public/facts.ts` |
-| Orders | `PARTIAL` | Browser-local order-plan preparation/review; no unified durable history. | `src/lib/founders-public/facts.ts` |
+| Orders | `PARTIAL` | Browser-local order-plan preparation/review with explicit user confirmation; no unified durable history. | `src/lib/founders-public/facts.ts` |
 | Pools | `AVAILABLE` | Read-only live discovery, filtering and provider failure handling. | `src/lib/founders-public/facts.ts` |
 
 Changing a public badge requires updating `PUBLIC_PRODUCT_CERTIFICATION`, its dated evidence and the product-status regression test. A route existing by itself is not certification.
