@@ -83,4 +83,3 @@ The public page is intentionally able to publish while these items remain open. 
 - **CURRENT EVIDENCE:** Canonical state is `A_CONFIRMAR`.
 - **PUBLICATION BLOCKER:** NO; the page labels the uncertainty.
 - **OWNER DECISION REQUIRED:** YES.
-

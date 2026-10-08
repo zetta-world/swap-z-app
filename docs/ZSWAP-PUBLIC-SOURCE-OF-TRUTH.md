@@ -1,7 +1,7 @@
 # Z-SWAP — PUBLIC SOURCE OF TRUTH
 
-Verified on: 2026-10-07  
-Public route: `/founders-pass`  
+Verified on: 2026-10-07
+Public route: `/founders-pass`
 Purpose: reusable public facts for the sales page, presentations, partners, FAQ and a future Community ZION round.
 
 This document is a public projection. Operational security, credentials, incident details, internal economics and release mechanics are deliberately excluded. Code remains authoritative for executable limits; this table records the wording that may be published.
@@ -104,4 +104,3 @@ Sources: `src/lib/tier/types.ts`, `src/lib/founders-commercial-truth.ts`.
 | Internal security controls and exploitable detail | `DO_NOT_DISCLOSE` | Describe safety outcomes only. | Do not publish bypass conditions, internal thresholds or incident mechanics. | security boundary | 2026-10-07 |
 | Internal costs, salaries, stress models and treasury operations | `DO_NOT_DISCLOSE` | Not public product facts. | Economic policy remains in controlled documents. | economics boundary | 2026-10-07 |
 | Internal infrastructure, host identities and release metadata | `DO_NOT_DISCLOSE` | Not public product facts. | Do not publish IPs, environment layout, branches or SHAs. | operational boundary | 2026-10-07 |
-

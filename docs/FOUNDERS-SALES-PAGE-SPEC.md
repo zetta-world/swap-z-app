@@ -1,7 +1,7 @@
 # Z-SWAP — FOUNDERS SALES PAGE SPEC
 
-Canonical URL: `/founders-pass`  
-Public facts: `docs/ZSWAP-PUBLIC-SOURCE-OF-TRUTH.md`  
+Canonical URL: `/founders-pass`
+Public facts: `docs/ZSWAP-PUBLIC-SOURCE-OF-TRUTH.md`
 Implementation: `src/app/(previa)/founders-pass/page.tsx`
 
 The page is an informational product and sales experience. It does not open the sale, create a lead database, mint a pass or activate checkout. The audited local simulator remains behind `FOUNDERS_SALE_PREVIEW=1` on the same route and is not public behavior.
@@ -152,4 +152,3 @@ The page is an informational product and sales experience. It does not open the 
 ## Public analytics schema
 
 The existing `/api/beacon` accepts only a closed Founders event vocabulary: `founders_page_view`, `tier_view`, `tier_compare`, `faq_open`, `faq_search`, `community_click`, `platform_click`, `price_view`, `sale_mechanics_view`. It rejects unknown fields and never accepts FAQ query text.
-

@@ -1,7 +1,7 @@
 # PLANO — FOUNDERS PUBLIC SALES EXPERIENCE
 
-Data de referência: 07/10/2026  
-Branch: `founders-public-sales-page-20261007`  
+Data de referência: 07/10/2026
+Branch: `founders-public-sales-page-20261007`
 Base: `dd04b7b66ac025c04a0ee4347adcdd8e5ce3b1f4`
 
 ## Objetivo
