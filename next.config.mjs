@@ -160,11 +160,6 @@ const securityHeaders = [
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,                  // Hide X-Powered-By: Next.js
-  images: {
-    remotePatterns: [
-      { protocol: "https", hostname: "**" },
-    ],
-  },
   experimental: {
     optimizePackageImports: [
       "lucide-react",
