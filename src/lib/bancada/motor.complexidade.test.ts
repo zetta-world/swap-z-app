@@ -18,6 +18,14 @@
  * amostras de `a` e `b` são INTERCALADAS (a mesma carga para as duas) e vale o MÍNIMO (o tempo
  * sem interferência, o estimador padrão contra ruído de agendamento). O limite (3,2×) e o teto
  * (1,5 s) NÃO mudaram: um O(N²) continua dando ~4× e falhando.
+ *
+ * ⚠️ RELEASE 13/10/2026: no runner do GitHub (Node 22, 2 vCPU compartilhadas) o rsi14 — o caso mais
+ * leve, poucos ms em 20 mil velas — deu razão 5,0 em N→2N sem o motor mudar (no Acer, isolado:
+ * 5/5 PASS; medição N=10k…160k: 16× mais velas ≈ 35× mais tempo, contra ~256× de um O(N²)).
+ * Com N→2N a folga era estreita (linear ~2×, limite 3,2×, quadrático ~4×) e alguns ms de GC
+ * decidiam o resultado. Agora a razão é N→4N: linear dá ~4–6×, um O(N²) dá ~16×, o limite é 10×
+ * — a separação entre os dois lados AUMENTA. O teto absoluto (40 mil velas < 1,5 s) continua igual.
+ * A trava é provada nos dois sentidos (quadrático injetado reprova; motor real aprova) no último teste.
  */
 import { describe, it, expect } from "vitest";
 import { rodar } from "@/lib/bancada/motor";
@@ -52,6 +60,9 @@ const e = (entrada: Entrada): EstrategiaDoCliente => ({
   entrada, direcao: "compra", alvoPct: 0.3, stopPct: 0.3, horasLimite: 24 * 30, praca: "futuros_gate", papel: "taker",
 });
 
+/** N→4N: linear ~4–6×, quadrático ~16×. */
+const RAZAO_MAXIMA_4N = 10;
+
 describe("motor da bancada: linear em N (trava de regressão CE-01)", () => {
   const casos: Array<[string, Entrada]> = [
     ["rsi14", { tipo: "rsi", n: 14, nivel: 45 }],
@@ -60,13 +71,27 @@ describe("motor da bancada: linear em N (trava de regressão CE-01)", () => {
   ];
   for (const [nome, entrada] of casos) {
     it(`${nome}: dobrar N não quadruplica o tempo, e 40 mil velas ficam abaixo de 1,5 s`, { timeout: 60_000 }, () => {
-      const a = serie(20_000), b = serie(40_000);
+      const a = serie(20_000), b = serie(40_000), c = serie(80_000);
       const est = e(entrada);
       expect(rodar(b, est).operacoes.length).toBeGreaterThan(0);
-      const [ta, tb] = minimosIntercalados(() => { rodar(a, est); }, () => { rodar(b, est); });
-      expect(tb).toBeLessThan(1_500);
+      // teto absoluto: 40 mil velas abaixo de 1,5 s (igual ao original)
+      expect(minimosIntercalados(() => { rodar(b, est); }, () => { rodar(b, est); })[0]).toBeLessThan(1_500);
+      const [ta, tc] = minimosIntercalados(() => { rodar(a, est); }, () => { rodar(c, est); });
       // Abaixo de ~2 ms o ruído do relógio domina a razão; o teto acima já cobre.
-      if (ta > 2) expect(tb / ta).toBeLessThan(3.2);
+      if (ta > 2) expect(tc / ta).toBeLessThan(RAZAO_MAXIMA_4N);
     });
   }
+
+  it("a trava reprova um O(N²) injetado e aprova o motor real (prova nos dois sentidos)", { timeout: 60_000 }, () => {
+    const a = serie(4_000), c = serie(16_000);
+    const est = e({ tipo: "rsi", n: 14, nivel: 45 });
+    // quadrático de verdade: para cada vela, varre todas as anteriores
+    const quadratico = (v: VelaComTempo[]) => { let acc = 0; for (let i = 0; i < v.length; i++) for (let j = 0; j < i; j++) acc += v[j].close; return acc; };
+    let sink = 0;
+    const [qa, qc] = minimosIntercalados(() => { sink += quadratico(a); }, () => { sink += quadratico(c); }, 3);
+    expect(sink).toBeGreaterThan(0);
+    expect(qc / qa).toBeGreaterThan(RAZAO_MAXIMA_4N);
+    const [ta, tc] = minimosIntercalados(() => { rodar(serie(20_000), est); }, () => { rodar(serie(80_000), est); }, 3);
+    expect(tc / ta).toBeLessThan(RAZAO_MAXIMA_4N);
+  });
 });
