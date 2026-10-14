@@ -52,6 +52,7 @@ export const NAV_ITEMS: NavItem[] = [
   // Two distinct plan surfaces — kept as SEPARATE nav entries so users see the
   // launch offer (NFT, one-time, the gods) apart from the recurring monthly
   // offer (the warriors, +30%). /plans was previously orphaned (no nav link).
+  { href: "/founders-pass", labelKey: "nav.foundersPass", icon: Gem,         group: "build" },
   { href: "/pricing",   labelKey: "nav.pricing",    icon: Crown,           group: "build", badgeKey: "nav.badgeLimited", badgeTone: "soon" },
   { href: "/plans",     labelKey: "nav.plans",      icon: CreditCard,      group: "build", badgeKey: "nav.badgeMonthly", badgeTone: "new" },
   { href: "/enterprise", labelKey: "nav.enterprise", icon: Building2,       group: "build" },
