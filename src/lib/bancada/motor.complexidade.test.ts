@@ -78,6 +78,7 @@ describe("motor da bancada: linear em N (trava de regressão CE-01)", () => {
       expect(minimosIntercalados(() => { rodar(b, est); }, () => { rodar(b, est); })[0]).toBeLessThan(1_500);
       const [ta, tc] = minimosIntercalados(() => { rodar(a, est); }, () => { rodar(c, est); });
       // Abaixo de ~2 ms o ruído do relógio domina a razão; o teto acima já cobre.
+      console.info(`CE-01 ${nome} razao N->4N=${(tc / ta).toFixed(2)} (ta=${ta.toFixed(2)}ms)`);
       if (ta > 2) expect(tc / ta).toBeLessThan(RAZAO_MAXIMA_4N);
     });
   }
@@ -91,7 +92,10 @@ describe("motor da bancada: linear em N (trava de regressão CE-01)", () => {
     const [qa, qc] = minimosIntercalados(() => { sink += quadratico(a); }, () => { sink += quadratico(c); }, 3);
     expect(sink).toBeGreaterThan(0);
     expect(qc / qa).toBeGreaterThan(RAZAO_MAXIMA_4N);
-    const [ta, tc] = minimosIntercalados(() => { rodar(serie(20_000), est); }, () => { rodar(serie(80_000), est); }, 3);
-    expect(tc / ta).toBeLessThan(RAZAO_MAXIMA_4N);
+    // controle positivo: o motor real, séries prontas FORA da medição, mesmas 7 rodadas dos casos acima
+    const ra = serie(20_000), rc = serie(80_000);
+    const [ta, tc] = minimosIntercalados(() => { rodar(ra, est); }, () => { rodar(rc, est); });
+    console.info(`CE-01 razao N->4N: quadratico=${(qc / qa).toFixed(2)} motor=${(tc / ta).toFixed(2)} limite=${RAZAO_MAXIMA_4N}`);
+    if (ta > 2) expect(tc / ta).toBeLessThan(RAZAO_MAXIMA_4N);
   });
 });
