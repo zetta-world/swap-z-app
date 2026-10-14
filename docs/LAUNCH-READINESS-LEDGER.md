@@ -803,3 +803,46 @@
 - **Verdade pública preservada:** Founders, 59 FAQs, sale mechanics, Premium 36 meses, data/supply pendentes, preços provisórios ocultos, economics, fees e quotas não mudaram. Telemetria passou a ser descrita precisamente como pseudônima; beacon/arquitetura não mudaram.
 - **Relatório/evidência:** `docs/FOUNDERS-PUBLIC-SALES-FINAL-BLOCKERS-CLOSURE.md`; `zswap-local/evidence/founders-sales-final-blockers-20261008T100038Z/`; pacote externo `Z-SWAP-FOUNDERS-SALES-FINAL-BLOCKERS-AUDIT-20261008/` fechado depois da atestação docs-only para evitar circularidade.
 - **Estado:** `IMPLEMENTATION_COMPLETE` + `EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED` + `READY_FOR_INDEPENDENT_AUDIT`; não é publicação, RC, release, venda ou deploy. Produção, Vercel, Supabase hospedado, push, merge e dinheiro real intocados.
+
+### L-053 · 2026-10-14 · Release de produção 13–14/10 (código `6d1295b`) e reconciliação de governança pós-release (só docs)
+
+> Registro escrito **depois** do release, na rodada docs-only "POST-RELEASE GOVERNANCE RECONCILIATION" autorizada pelo dono
+> em 14/10. Esta entrada não é prova retroativa de autorização: as autorizações citadas abaixo têm fonte própria.
+
+- **Autorização original:** missão do dono "Z-SWAP — PRODUCTION RELEASE / TOTAL RECONCILIATION / VERCEL DEPLOY · MISSÃO
+  AUTORIZADA PELO DONO · DATA: 13/10/2026" (sessão Claude Code `bf97bae1`, mensagem de 2026-10-13T22:59:56Z): autorizou
+  reconciliação, branch de release, correções, push da branch, CI, preview, migrations comprovadamente necessárias, merge em
+  `main`, deploy e rollback; vedou trade/ordem/dinheiro real, ativação de Autopilot/DCA real, force-push e "secret
+  inventado". **R-02:** o dono autorizou explicitamente gerar `CEX_RECOVERY_HMAC_KEY` (resposta de 2026-10-13T23:12:17Z).
+  Trechos preservados fora do repo (`evidence/post-release-governance-*/04-authorization-excerpts.txt`).
+- **Seleção do SHA:** feita durante a execução (topo do trabalho aprovado `e2f61d1` + 2 commits só de teste). **Não** houve
+  registro `RELEASE_CANDIDATE` nem autorização para o SHA específico no ledger antes do deploy (`RELEASE-CHAIN.md` §3 item 7) —
+  divergência entre os documentos então vigentes e o release executado. Política de deploy inalterada; não é precedente.
+- **Cronologia (UTC, fontes Vercel/GitHub/Supabase/transcript):** 13/10 23:50:14 `CEX_RECOVERY_HMAC_KEY` criada (`sensitive`,
+  production+preview) · branch `release/production-20261013` com `e2f61d1`; CI falhou na trava CE-01 (5,0×); correções
+  `2352fe1` e `6d1295b` (só `src/lib/bancada/motor.complexidade.test.ts`); CI 38488966914 success; preview
+  `dpl_J6K54QHL9xgiQe9CPPLyhu73DKbR` READY · 14/10 ~00:25:33–00:25:50 migrations 0059–0076 no hospedado (versões
+  `20261014002533`…`20261014002550`) · 00:26:37 `main` fast-forward `25fc4b0` → `6d1295b` (PR #447 marcado MERGED) ·
+  00:26:41 deployment de produção `dpl_A5PDW653HtRyH4HN6CUdhGC7LLrC` (READY).
+- **Gates medidos (pacote `release/production-20261013`, MANIFEST 60/60):** reconciliação de 202 commits (0 UNKNOWN); npm ci,
+  secret scan, economia e arneses SQL 01–23 + concorrência em `e2f61d1`/migrations idênticas; lint 0 erros/145 avisos,
+  type-check, suíte 321/4716 e CI no SHA exato; build local em `2352fe1` (recusado em `6d1295b` pelo guarda INC-RR-01) e build
+  Vercel no SHA exato; `npm audit` 0 critical/25 high/40 moderate (snapshot), exceção R-03 revisada e mantida.
+  Classificação: **não** `CERTIFIED_EXACT_SHA` (desvios acima).
+- **Banco (leitura `read only` de 14/10):** 73 linhas de histórico, head `20261014002550`; RLS 53/53, 0 policies;
+  `disable_early_access=true`; `dca_real_liberado`/`autopilot_cex_liberado` ausentes; 0 sessões, 0 conexões CEX, 0 intents,
+  0 fills, 0 planos DCA não simulados. Migrations aplicadas **sem** `pg_dump` + restauração validada (runbook R2.3 item 6 não
+  cumprido); rollback A provado (`25fc4b0` servindo 200 sobre o schema novo).
+- **R-01 CLOSED · R-02 CLOSED** (presença por nome; caminho autenticado não exercitado) · **AP-LOCK hosted PASS** (sonda
+  comportamental) · Autopilot e DCA real **DISABLED**.
+- **Smoke histórico:** 2 linhas FAIL conciliadas como expectativa errada do script (`/api/cex/order` anônimo → 401;
+  `GET /api/radar` → 405) e uma linha de log pós-processada (`AUDIT-RECONCILIATION.md` §5.7, SMOKE-HIST-01/02). Logs originais
+  preservados.
+- **Abertos:** ACL-DEFAULT-GRANTS · CE-01-MARGIN (monitorar) · BUILD-WARNINGS · R-03 (exceção) · REL-GOV-GAP · GATE-OPEN ·
+  REAL-AUTOMATION NO-GO · auditoria independente Founders.
+- **Documentos reconciliados neste commit (só docs):** `AGENTS.md`, `docs/START-HERE.md` (rev. 14), `docs/CURRENT-STATE.md`
+  (rev. 16), `docs/RELEASE-CHAIN.md` (nós 25–28), `docs/RELEASE-RUNBOOK.md` (R2.0), `docs/AUDIT-RECONCILIATION.md` (§5.7),
+  `docs/AI-OPERATING-RULES.md` (§3 e nota em §6.1), `docs/GIT-AND-WORKTREE-MAP.md`, `docs/DOCUMENT-AUTHORITY.md`,
+  `docs/EXTERNAL-GATES-PREP.md` (banner), este ledger. SHA do commit, CI, deployment e readback: evidência externa
+  `evidence/post-release-governance-*` (não cabem no próprio commit).
+- **Estado:** release de código concluído em `6d1295b`; nenhum release candidate novo; nenhuma fase aberta.

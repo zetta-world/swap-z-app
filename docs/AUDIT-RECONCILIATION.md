@@ -431,3 +431,24 @@ nenhuma correção de código. Achados:
 | CP-09 (review round 2, 01/10) | registrar o resultado da recert gera um delta que precisa de commit; o ciclo não dizia qual | FIXED_NOT_RECERTIFIED (revisão 4: C1 candidato → recert exata → C2 atestação só docs; `AI-OPERATING-RULES.md` §5.1/§5.2) |
 | CP-10 (review round 2) | "CERTIFIED" sem qualificação para SHAs sem recert exata (`43c484b`, R9, PC-B1/B2) | FIXED_NOT_RECERTIFIED (revisão 4: CERTIFIED_EXACT_SHA / CERTIFIED_RUNTIME_ANCESTOR / HISTORICAL_CERTIFICATION_LEGACY) |
 | GOV-ENTRY, CP-01…CP-10 (02/10, C1b) | correções acima já commitadas antes da recert e presentes na árvore exata do C1b (`f1b4ec1`, tree `ab814e3`); não foram reauditadas, só ficaram cobertas pela recert exata que passou. `CERTIFIED_FEATURE_SHA=f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` · `RECERT_CAMPAIGN=recert-c1b-f1b4ec1-20261002T095819Z` · `RECERT_VERDICT=PASS` (ledger L-019) | **FIXED_CERTIFIED (`CERTIFIED_EXACT_SHA` `f1b4ec1`)** · RECERTIFIED_BY_C1B_PASS. As linhas anteriores ficam como histórico |
+
+### 5.7 Release de produção (13–14/10) e reconciliação pós-release (14/10, L-053)
+
+Fonte: `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/release/production-20261013/` (MANIFEST 60/60) e
+`/home/zetta/Documentos/ZETTA_WORLD/zswap-local/evidence/post-release-governance-*` (leituras de 14/10). Código do release:
+`6d1295bf43f4967b7e15498f1496c132fc09fa7a`. As linhas AP-LOCK e VERCEL de §5.4 ficam como estavam (append-only); o status atual é este:
+
+| id | severidade | o quê | correção / disposição | prova | status |
+|---|---|---|---|---|---|
+| VERCEL (R-01) | — | deploy e check do PR | conta `pro`/`active`; preview e produção implantados | deployments `dpl_J6K54QHL9xgiQe9CPPLyhu73DKbR` (preview) e `dpl_A5PDW653HtRyH4HN6CUdhGC7LLrC` (produção) READY no SHA exato; produção 200 | CLOSED |
+| R-02 | — | `CEX_RECOVERY_HMAC_KEY` exigida pelo alvo | gerada e gravada na Vercel com autorização do dono (13/10), tipo `sensitive`, production+preview, valor nunca exibido | listagem de nomes da Vercel (14/10) | CLOSED (presença); caminho autenticado NÃO exercitado |
+| AP-LOCK | — | `tryLockSession` morto em PostgREST 12–13 (`42703`) | nenhuma mudança de código | sonda anônima com o padrão exato (`or=(locked_until…)` + `select=id`) no PostgREST hospedado → 200 `[]`, sem `42703` (antes e depois das migrations) | PASS (comportamental; cron real não exercitado, 0 sessões) |
+| ACL-DEFAULT-GRANTS | a definir na revisão própria | 35/53 tabelas `public` com privilégios de tabela padrão para `anon`/`authenticated` (ex.: `autopilot_sessions` aceitou PATCH anônimo que alterou 0 linhas); 0067/0070 cobrem só 8 tabelas | nenhuma nesta linha; revisão de privilégios/exposição e eventual REVOKE em rodada própria | medição SQL `read only` de 14/10 + sonda | OPEN — exploração **não** confirmada; contenção completa **não** provada (RLS não cobre todos os privilégios/caminhos) |
+| CE-01-MARGIN | LOW | trava de complexidade do motor da bancada media N→2N e falhou no runner com motor inalterado (5,0×) | `2352fe1`/`6d1295b`: N→4N, limite 10×, prova nos dois sentidos | CI 38488966914: motor 5,4–7,1× vs quadrático 14,8× | FIXED (teste); margem do runner em MONITORAMENTO |
+| BUILD-WARNINGS | LOW | `middleware` → `proxy`; Edge runtime deprecado; cache da llama.fi > 2 MB | — | log de build do release | OPEN_NONBLOCKING |
+| R-03 | — | `braces` GHSA-vfj7-8cjw-p6xm sem correção upstream | exceção estreita revisada no release e **mantida** | `npm audit` + `audit-gate.mjs` no release (snapshot 0 critical/25 high/40 moderate) | ACCEPTED_EXCEPTION (não corrigido) |
+| SMOKE-HIST-01 | — | smoke do release: `POST /api/cex/order` `{}` → 401 vs esperado 400 | expectativa do script (M1 do runbook pressupõe sessão) | código: gate de plano antes da confirmação; mesmo 401 no app anterior | RESOLVED WITH QUALIFICATION (não é defeito; caminho autenticado não exercitado) |
+| SMOKE-HIST-02 | — | smoke do release: `GET /api/radar` marcado FAIL | expectativa do script (401 para GET) + linha de `prod-smoke.txt` pós-processada (`want` reescrito, FAIL mantido) | rota só exporta POST → 405; `POST` sem segredo → 401 | RESOLVED WITH QUALIFICATION (expectativa e registro; não é defeito) |
+| REL-GOV-GAP | — | release executado sem a marcação `RELEASE_CANDIDATE` prévia e sem backup `pg_dump` + restauração validada (runbook R2.3 itens 2 e 6) | registrado em L-053; política de deploy inalterada | este registro | OPEN (lacuna de processo registrada; não é precedente) |
+
+`KNOWN_MISSING_CORRECTIONS=0` e `UNKNOWN_FINDINGS=4` (A08/A09/A10/A17) não mudaram com o release.

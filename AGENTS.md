@@ -18,11 +18,13 @@ and which document to trust is in `docs/DOCUMENT-AUTHORITY.md`.
    explained in the ledger / `RELEASE-CHAIN.md`, and there is no unauthorized
    **product** delta:
    `git diff --stat "$PRODUCT_BASE_SHA"..HEAD -- . ':!docs/**' ':!CLAUDE.md' ':!AGENTS.md'`.
-   **Current state (L-029):** Early Access Phase 2 is CLOSED — C1
-   `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` is CERTIFIED_EXACT_SHA; its docs-only C2 attestation is
-   `57d78ebf42866a53f16ef5f0a5cc24bc3ac97c9c`; HEAD is the latest docs-only control-plane commit (L-030, on top of the
-   L-029 commit `762224843fa8d7e340416d05ac2a99488945d541`, on top of C2) (local PROD-CLONE rehearsal CLOSED_PASS, live read-only reconciliation CLOSED, release blockers
-   R-01 Vercel / R-02 `CEX_RECOVERY_HMAC_KEY`); `RELEASE_CANDIDATE=NONE`; the working tree is expected CLEAN. Details: `docs/START-HERE.md` §2 and §10. On mismatch,
+   **Current state (L-053, post-release reconciliation, 14/10/2026):** the production release of 13–14/10
+   shipped release code SHA `6d1295bf43f4967b7e15498f1496c132fc09fa7a` (`main` fast-forwarded from `25fc4b0`;
+   original production deployment `dpl_A5PDW653HtRyH4HN6CUdhGC7LLrC`; hosted DB migrations 0059–0076 applied,
+   head `20261014002550`). R-01 (Vercel) and R-02 (`CEX_RECOVERY_HMAC_KEY` present by name) are CLOSED. `main`
+   now carries a docs-only control-plane commit (L-053) on top of that code; **no** new release candidate is in
+   progress. Autopilot and real DCA remain DISABLED. The working tree is expected CLEAN. Details, evidence and
+   open findings: `docs/START-HERE.md` §2–§10 and `docs/CURRENT-STATE.md`. On mismatch,
    **STOP** and report. Do not "fix" it with checkout, reset, stash
    or rebase.
 2. **GitHub-dependent task?** Run `git fetch origin --tags --prune` first.

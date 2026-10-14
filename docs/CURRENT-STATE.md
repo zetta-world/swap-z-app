@@ -4,6 +4,99 @@
 > `docs/LAUNCH-READINESS-LEDGER.md`. Ao mudar de estado, **substitua** as seções
 > atuais e **acrescente** uma entrada no ledger.
 >
+> **Medido em:** 14/10/2026 (revisão 16, ledger L-053: **reconciliação de governança depois do release de
+> produção de 13–14/10**). Estado medido nesta revisão por leitura (GitHub, CI, Vercel, banco hospedado em
+> transação `read only`); evidência fora do repo em `zswap-local/evidence/post-release-governance-*`. A revisão 15
+> (08/10, L-052) e anteriores estão em **HISTÓRICO**, inalteradas.
+> As seções atuais abaixo descrevem só o estado de hoje.
+
+---
+
+## Estado atual
+
+| campo | valor | fonte |
+|---|---|---|
+| RELEASE_CODE_SHA | `6d1295bf43f4967b7e15498f1496c132fc09fa7a` · tree `22a3a409e6f43d2b5bb8f7e727ef4c8bba0e364a` (= `e2f61d1` + 2 commits que só mudam `src/lib/bancada/motor.complexidade.test.ts`) | Git; L-053 |
+| MAIN | `origin/main` avançada por fast-forward `25fc4b0` → `6d1295b` em 14/10 ~00:26 UTC (PR #447 marcado MERGED pelo GitHub às 00:26:37 UTC porque seu head ficou alcançável); depois disso, o commit **só de docs** da L-053 (`THIS_CONTROL_PLANE_COMMIT`), pai `6d1295b` | Git, `gh pr view 447`; L-053 |
+| CI | `6d1295b`: run 38488966914 (branch `release/production-20261013`) e 38490205461 (`main`) — success. O CI do commit da L-053 está registrado na evidência externa da L-053 | GitHub Actions |
+| PRODUCTION | deployment original do release `dpl_A5PDW653HtRyH4HN6CUdhGC7LLrC` (`6d1295b`, READY, criado 2026-10-14T00:26:41Z; aliases `swap-z-app.vercel.app`, `swap-z-app-jose-carlos-projects-dd9e3e78.vercel.app`, `swap-z-app-git-main-jose-carlos-projects-dd9e3e78.vercel.app`). O push da L-053 pode gerar um deployment novo do mesmo código: ID e SHA servidos ficam na evidência externa da L-053 | Vercel API, 14/10 |
+| ROLLBACK_CANDIDATE | `dpl_C1AgJfvQQt38iMTcbDvNVi7aqCQJ` (`25fc4b0fa55db72472c7ae00af42596209d7c362`), servido com sucesso sobre o schema 0076 antes do merge (rotas 200) | `release/production-20261013/evidence` |
+| DATABASE | Supabase `vuvvftdsfmagmtbovzgq`: `schema_migrations` 73 linhas, head `20261014002550`; 0059–0076 aplicadas em 14/10 (18 linhas, versões `20261014002533`…`20261014002550`); 53 tabelas, RLS 53/53, 0 policies | SQL `read only`, 14/10 |
+| FLAGS | `disable_cex=false`, `disable_swap=false`, `maintenance_mode=false`, `disable_early_access=true`; `dca_real_liberado`, `autopilot_cex_liberado`, `pause_dca` **ausentes** | SQL `read only`, 14/10 |
+| REAL_MONEY_STATE | autopilot_sessions 0 · cex_conexoes 0 · cex_execution_intents 0 · cex_fills 0 · dca_planos não simulados 0 · dca_ciclos 3 (todos `simulado`, 25–26/08) — **leitura de 14/10; não prova ausência de atividade fora dessas tabelas** | SQL `read only`, 14/10 |
+| AUTOPILOT | IMPLEMENTED · **DISABLED** | flags acima |
+| DCA_REAL | **DISABLED** | flags acima |
+| R-01 VERCEL | **CLOSED** — time `pro`/`active`, sem softBlock; deploys de preview e produção concluídos; produção 200 | Vercel API/HTTP, 14/10 |
+| R-02 CEX_RECOVERY_HMAC_KEY | **CLOSED** pelo critério do runbook (presença do nome): tipo `sensitive`, targets production+preview, criada 2026-10-13T23:50:14Z, valor nunca exibido. Caminho autenticado que a usa **não exercitado** em produção | Vercel API (nomes), 14/10; L-053 |
+| AP-LOCK_HOSTED | **PASS** (sonda comportamental: PATCH anônimo com o filtro `or=(locked_until…)` + `select=id` do `tryLockSession` → HTTP 200 `[]`, sem `42703`). Não exercitou o cron real (0 sessões) | transcript da rodada; evidência L-053 |
+| P0-SKEW (`creds_cipher`) | o código `6d1295b` não usa mais a coluna em `autopilot_sessions` (credencial em `cex_conexoes`, 0063); sem sessões para exercitar | Git |
+| PUBLIC_GATE | **CLOSED** (`disable_early_access=true`; smoke: `POST /api/early-access` → 503 `closed`) | L-053 |
+| CERTIFICATION | `LAST_CERTIFIED_RUNTIME=0d21874b4147bb8a0b232aa0abc2302471a720e5` e `CERTIFIED_FEATURE_SHA=53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` (ancestrais). `6d1295b` **não** é `CERTIFIED_EXACT_SHA`: gates medidos com desvios documentados (`RELEASE-CHAIN.md` nó 27) | L-053 |
+| RELEASE_CANDIDATE | **nenhum candidato novo em andamento**; o de 13–14/10 (`6d1295b`) foi executado sem marcação prévia nos documentos (lacuna registrada) | `RELEASE-CHAIN.md` |
+| DEPLOY_POLICY | **inalterada:** regra de 31/08 SUSPENSA; deploy só com SHA explícito + `RELEASE_CANDIDATE` + certificação PASS + autorização explícita do dono | `AI-OPERATING-RULES.md` §6 |
+| NPM_AUDIT | **snapshot do release** (`e2f61d1`/`6d1295b`, 13/10): 0 critical / 25 high / 40 moderate / 0 low; `--omit=dev` 0/20/37; portão R-03 OK com exceção **mantida, não corrigida** (`braces`, GHSA-vfj7-8cjw-p6xm). Não é contagem atual | `release/production-20261013/evidence/audit*.txt` |
+| INC-RR-01 | reconhecido pelo dono, permanente; no release o guarda de memória recusou um build local (funcionou como projetado) | L-028, L-053 |
+| AUDIT_RECONCILIATION | `KNOWN_MISSING_CORRECTIONS=0` · `UNKNOWN_FINDINGS=4` (A08/A09/A10/A17) · findings pós-release em §5.7 | `docs/AUDIT-RECONCILIATION.md` |
+
+## OPEN_BLOCKERS
+
+| id | bloqueia | estado |
+|---|---|---|
+| **ACL-DEFAULT-GRANTS** | defesa em profundidade das tabelas | **OPEN** — 35/53 tabelas com privilégios de tabela padrão para `anon`/`authenticated`; PATCH anônimo testado em `autopilot_sessions` alterou 0 linhas. **Não** prova contenção completa (RLS não cobre todos os privilégios/caminhos). Revisão própria + eventual REVOKE em rodada separada |
+| **CE-01-MARGIN** | estabilidade do CI | MONITOR — runner: motor 5,4–7,1× vs quadrático 14,8× (limite 10×) |
+| **BUILD-WARNINGS** | — | OPEN_NONBLOCKING — `middleware` → `proxy`; Edge runtime deprecado; cache da llama.fi > 2 MB |
+| **R-03** | futuro RC | exceção `npm audit` mantida, revisada no release; não corrigida |
+| **EVIDENCE-QUALIFICATIONS** | — | OPEN — smoke histórico com 2 FAIL conciliados como expectativa errada/registro pós-processado; caminho autenticado de `/api/cex/order` não exercitado; RC sem registro prévio; **sem backup `pg_dump` + restauração validada antes das migrations hospedadas** (só o rollback A, redeploy de `25fc4b0`, foi provado) |
+| **GATE-OPEN** | abrir o early access | passos do dono: Termos/Privacidade aprovados, domínio remetente, segredos `EARLY_ACCESS_*`, cron, `disable_early_access=false` |
+| **REAL-AUTOMATION** | DCA, Pilot e Autopilot reais | NO-GO |
+| **FOUNDERS-INDEPENDENT-AUDIT** | finalizar/abrir a venda Founders | PENDING (a página pública está em produção, venda não aberta; data, supply e preço finais pendentes) |
+
+## DEFERRED_FINDINGS (não bloqueiam a Fase 2)
+
+F-05, F-09, F-13, F-14, F-15, F-16; R8-CORRIDA,
+HARNESS-001/002, 36 moderate / 1 low do `npm audit`, HOST-CRED-001, AUTOLOGIN.
+**A08, A09, A10 e A17 da auditoria externa:** SOURCE_NOT_FOUND depois da
+2ª busca forense; seguem UNKNOWN_REQUIRES_REVIEW. Nenhuma correção
+**conhecida e identificável** foi encontrada fora da linha; A08/A09/A10/A17
+permanecem sem fonte e não permitem conclusão. Tabela completa:
+`docs/AUDIT-RECONCILIATION.md` §5. (F-11, antes listado aqui como "escopo da
+Fase 2", está FIXED_CERTIFIED: `CERTIFIED_EXACT_SHA` `53cd85a`.)
+
+## Lacunas de documentação
+
+- **Fechadas na revisão 2** (banner no topo, histórico preservado):
+  `ESTADO-ATUAL.md`, `PLANO-EARLY-ACCESS.md` (+ status operacional),
+  `PLANO-DCA-AUTOMATICO.md`, `PLANO-MURAL-DE-AGENTES.md`, `docs/README.md`
+  (bloco START HERE) e `CLAUDE.md` (entrada).
+- **Fechadas na revisão 3:** `docs/README.md` (banner LEGACY antes do índice
+  "Vivos"), `CLAUDE.md` (Next.js 16.3.6, regra fail-closed precisa, mural só
+  com autorização), status Fase 2 no banner de `PLANO-EARLY-ACCESS.md`.
+- **Abertas:**
+  - `WHITELIST-FUNDRAISING-DISCOVERY.md` ainda diz "Fase 1 não iniciada";
+    o `DOCUMENT-AUTHORITY.md` cobre isso.
+  - `LEDGER-MESTRE-RELEASE.md` ainda chama `3123fb4` de certificado.
+  - Os docs só de `origin/platform-closure` (DOC-PC-DIVERGE).
+
+## Artefatos locais (fora do Git)
+
+- `node_modules/` na worktree (ignorado; não aparece no `git status`).
+- Pacotes de auditoria da Fase 2 e evidência das validações:
+  `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/evidence/phase2-*` e
+  `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/state/precommit-ea2-*` (lista com hashes no ledger L-022…L-026).
+- Cache npm verificado e harness da recert da Fase 1: ver o artefato histórico abaixo.
+
+## NEXT_ACTION
+
+Nada é automático. Nenhum release candidate novo, nenhuma fase aberta. Cada próximo trabalho exige autorização
+explícita do dono: revisão de ACL (ACL-DEFAULT-GRANTS), GATE-OPEN, auditoria independente Founders, ou novo release
+(caminho completo do `RELEASE-CHAIN.md` §3 com marcação `RELEASE_CANDIDATE` **antes** do deploy). Dinheiro real: NO-GO.
+
+## HISTÓRICO (NÃO são instruções atuais)
+
+### Revisão 15 (08/10/2026, L-052) — superada pela revisão 16 (L-053, pós-release)
+
+Cabeçalho, seções atuais e NEXT_ACTION da revisão 15, **literalmente**:
+
 > **Medido em:** 08/10/2026 (revisão 15, ledger L-052: os dois blockers da
 > experiência pública Founders foram fechados no candidato `fd68c4f`: Next.js
 > 16.3.8 sem `GHSA-cjq9-62q9-8jv4` e matriz pública certificada; aguardando
@@ -18,9 +111,8 @@
 > da Fase 2). As seções atuais abaixo descrevem só o estado de hoje; tudo o que
 > valia nas revisões 3–6 está na seção final **HISTÓRICO**, inalterado.
 
----
 
-## Estado atual
+#### [HISTÓRICO rev. 15] Estado atual
 
 | campo | valor | fonte |
 |---|---|---|
@@ -71,7 +163,7 @@
 recertificada ≠ certificada ≠ deployada ≠ gate público aberto. Hoje valem os
 quatro primeiros (no C1); **não** está deployada e o gate público está **fechado**.
 
-## OPEN_BLOCKERS
+#### [HISTÓRICO rev. 15] OPEN_BLOCKERS
 
 | id | bloqueia | estado |
 |---|---|---|
@@ -87,7 +179,7 @@ quatro primeiros (no C1); **não** está deployada e o gate público está **fec
 | **FOUNDERS-INDEPENDENT-AUDIT** | publicar/finalizar a experiência pública Founders | PENDING — candidato `fd68c4f` entregue para nova auditoria independente; nenhuma publicação autorizada |
 | **FOUNDERS-SUPPLY-CHAIN** | release/publicação do candidato | NEXT HIGH FIXED LOCALLY — `GHSA-cjq9-62q9-8jv4` ausente em Next.js 16.3.8; residual `braces` mantém a disposição condicional anterior e requer auditoria independente |
 
-## EXTERNAL_GATES (recalculados ao vivo, L-029)
+#### [HISTÓRICO rev. 15] EXTERNAL_GATES (recalculados ao vivo, L-029)
 
 `READY=2 · NOT_READY=5 · BLOCKED=5 · DEFERRED=11 · NOT_PROVABLE=3`. Escopo: **REL** = bloqueia o
 release com gate fechado · **EA** = bloqueia a abertura do early access · **$** = bloqueia modos de
@@ -122,41 +214,7 @@ dinheiro real · **ND** = diferido/não bloqueante.
 | EG-25 | agendamentos existentes no cron-job.org | NOT_PROVABLE | ND |
 | EG-26 | observabilidade hospedada (logs/alertas) | NOT_PROVABLE (app fora do ar) | ND (pós-deploy) |
 
-## DEFERRED_FINDINGS (não bloqueiam a Fase 2)
-
-F-05, F-09, F-13, F-14, F-15, F-16; R8-CORRIDA,
-HARNESS-001/002, 36 moderate / 1 low do `npm audit`, HOST-CRED-001, AUTOLOGIN.
-**A08, A09, A10 e A17 da auditoria externa:** SOURCE_NOT_FOUND depois da
-2ª busca forense; seguem UNKNOWN_REQUIRES_REVIEW. Nenhuma correção
-**conhecida e identificável** foi encontrada fora da linha; A08/A09/A10/A17
-permanecem sem fonte e não permitem conclusão. Tabela completa:
-`docs/AUDIT-RECONCILIATION.md` §5. (F-11, antes listado aqui como "escopo da
-Fase 2", está FIXED_CERTIFIED: `CERTIFIED_EXACT_SHA` `53cd85a`.)
-
-## Lacunas de documentação
-
-- **Fechadas na revisão 2** (banner no topo, histórico preservado):
-  `ESTADO-ATUAL.md`, `PLANO-EARLY-ACCESS.md` (+ status operacional),
-  `PLANO-DCA-AUTOMATICO.md`, `PLANO-MURAL-DE-AGENTES.md`, `docs/README.md`
-  (bloco START HERE) e `CLAUDE.md` (entrada).
-- **Fechadas na revisão 3:** `docs/README.md` (banner LEGACY antes do índice
-  "Vivos"), `CLAUDE.md` (Next.js 16.3.6, regra fail-closed precisa, mural só
-  com autorização), status Fase 2 no banner de `PLANO-EARLY-ACCESS.md`.
-- **Abertas:**
-  - `WHITELIST-FUNDRAISING-DISCOVERY.md` ainda diz "Fase 1 não iniciada";
-    o `DOCUMENT-AUTHORITY.md` cobre isso.
-  - `LEDGER-MESTRE-RELEASE.md` ainda chama `3123fb4` de certificado.
-  - Os docs só de `origin/platform-closure` (DOC-PC-DIVERGE).
-
-## Artefatos locais (fora do Git)
-
-- `node_modules/` na worktree (ignorado; não aparece no `git status`).
-- Pacotes de auditoria da Fase 2 e evidência das validações:
-  `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/evidence/phase2-*` e
-  `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/state/precommit-ea2-*` (lista com hashes no ledger L-022…L-026).
-- Cache npm verificado e harness da recert da Fase 1: ver o artefato histórico abaixo.
-
-## NEXT_ACTION
+#### [HISTÓRICO rev. 15] NEXT_ACTION
 
 Nada é automático. `RELEASE_CANDIDATE=NONE` · `RC_SELECTION_READY=NO`.
 
@@ -168,7 +226,7 @@ Nada é automático. `RELEASE_CANDIDATE=NONE` · `RC_SELECTION_READY=NO`.
 4. Depois: push/PR/merge e a janela de release conforme `docs/RELEASE-RUNBOOK.md` revisão 2.
 5. Separado: abrir o early access (GATE-OPEN) e modos de dinheiro real (NO-GO).
 
-## HISTÓRICO (NÃO são instruções atuais)
+
 
 ### Revisão 8 (03/10/2026, L-027) — superada pela revisão 9
 

@@ -4,7 +4,7 @@
 > `CERTIFIED_FEATURE_SHA=53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` (Early Access Fase 2).
 > Ensaiado num PROD-CLONE local (`release-rehearsal-20261003T194816Z`, CLOSED_PASS) e
 > reconciliado com o estado AO VIVO (`live-readonly-reconciliation-20261003T221654Z`, CLOSED).
-> **Nada aqui autoriza deploy.** `RELEASE_CANDIDATE=NONE` · `RC_SELECTION_READY=NO`.
+> **Nada aqui autoriza deploy.** (Estado de 03/10: `RELEASE_CANDIDATE=NONE` · `RC_SELECTION_READY=NO`.)
 > A revisão 1 (candidato `0d21874`, 01/10) está preservada abaixo como **HISTÓRICO**, com errata.
 >
 > Evidência (fora do repo, máquina do laboratório, cada pacote com `MANIFEST.sha256`):
@@ -12,6 +12,23 @@
 > (sha256 `5196f1dab46dbb769ad32e4f7dc98cc0c78cf1fa272f808962600583223dd983`) e
 > `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/evidence/zswap-live-readonly-reconciliation-20261003T221654Z.tar.gz`
 > (sha256 `248acd987259ace36850fede4b979aac40e05d03d87277f2a8fca3c337086480`).
+
+## R2.0 Registro de execução (14/10/2026, L-053 — escrito DEPOIS do release)
+
+Esta revisão 2 foi a base do release de produção de 13–14/10, executado com o código
+`6d1295bf43f4967b7e15498f1496c132fc09fa7a` (descendente de `53cd85a`; não o próprio `53cd85a`).
+R2.1 e a coluna de estado de R2.2 descrevem **03/10** e ficam como histórico. Diferenças da execução em relação ao texto:
+
+- **R-01 e R-02: CLOSED** (Vercel ativa; `CEX_RECOVERY_HMAC_KEY` presente por nome desde 13/10 23:50 UTC, valor nunca exibido).
+- **Migrations 0059–0076** (não só 0059–0069) aplicadas, uma transação por arquivo com a linha de histórico, pela API de
+  gerenciamento do Supabase; versões gravadas em timestamp (`20261014002533`…`20261014002550`) com `name` = nome do arquivo,
+  como as linhas anteriores do hospedado (EG-05 decidido na execução). Histórico final: 73 linhas.
+- **R2.3 item 2 (SHA marcado `RELEASE_CANDIDATE` antes)** e **item 6 (backup + restauração validada)**: **não cumpridos**.
+  Não houve `pg_dump` do hospedado; só o rollback A (redeploy de `25fc4b0`) foi provado sobre o schema novo. Lacunas registradas.
+- **R2.7 M1:** sem sessão, `POST /api/cex/order` com `{}` responde 401 `unauthenticated` (o gate de plano vem antes da
+  confirmação, igual ao app anterior). O 400 `missing_confirmation` só vale para requisição autenticada — não exercitada.
+- Evidência: `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/release/production-20261013/` (MANIFEST 60/60) e
+  `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/evidence/post-release-governance-*`.
 
 ## R2.1 Estado medido ao vivo (03/10/2026 ~22:20 UTC, só leitura)
 
@@ -24,7 +41,7 @@
 | Atividade de dinheiro real | 0 sessões de autopilot, 0 conexões CEX, 0 intents; 1 plano DCA **simulado** (completo) | idem (agregados) |
 | Par app+banco | `SAFE_KNOWN_SKEW` (P0 `creds_cipher`: o app pede a coluna, o banco não tem; dormente) | reconciliação |
 
-## R2.2 BLOQUEADORES DO RELEASE (gate fechado)
+## R2.2 BLOQUEADORES DO RELEASE (gate fechado) — estado de 03/10; R-01 e R-02 **CLOSED** em 13–14/10 (R2.0)
 
 | id | bloqueio | escopo | quem resolve |
 |---|---|---|---|

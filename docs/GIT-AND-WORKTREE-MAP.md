@@ -33,6 +33,12 @@
 > Revisão 9 (07/10/2026, L-049): a worktree atual é a correção AF-01 sobre
 > `d08a1e3`; candidato `efdf6ee` recertificado pelo implementador e aguardando
 > auditoria independente.
+>
+> Revisão 10 (14/10/2026, L-053, pós-release): só as linhas de `main`/`origin/main`, `CURRENT_*` e as refs do
+> release foram atualizadas. `origin/main` = commit docs-only da L-053 sobre o código `6d1295b`
+> (release de 13–14/10). As demais linhas de worktree descrevem o estado em que foram medidas; o inventário
+> completo de 13/10 (31 worktrees, 36 refs remotas, classificação de cada commit) está fora do repo em
+> `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/release/production-20261013/PRE-RELEASE-RECONCILIATION.md`.
 > Estado atual: `START-HERE.md`, `CURRENT-STATE.md`, ledger e `RELEASE-CHAIN.md`.
 
 ---
@@ -64,13 +70,14 @@ caminhos forem arquivadas.
 
 | branch | SHA | upstream | observação |
 |---|---|---|---|
-| `founders-af01-partial-schedule-fix-20261007` | `THIS_CONTROL_PLANE_COMMIT` após candidato `efdf6ee` | nenhum | CURRENT_CONTROL_PLANE; auditoria independente pendente; **não existe no GitHub** |
+| `founders-af01-partial-schedule-fix-20261007` | `35b7c72` (atestação L-049) após candidato `efdf6ee` | nenhum | HISTORICAL_CONTROL_PLANE (ancestral do release de 13–14/10); **não existe no GitHub** |
 | `founders-final-microdelta-20261006` | `d08a1e3` após candidato falho `58bcf8e` | nenhum | HISTORICAL_CONTROL_PLANE; preservar; **não existe no GitHub** |
-| `early-access-phase2-email-double-optin-20261001` | commit da L-030 (03/10, revisão 8; filho de `7622248`) | nenhum | CURRENT_WORK; **não existe no GitHub** |
+| `early-access-phase2-email-double-optin-20261001` | `d896ce2` (commit da L-030; filho de `7622248`) | nenhum | HISTORICAL (ancestral do release de 13–14/10); **não existe no GitHub** |
 | `whitelist-fundraising-readiness-20261001` | `9f2ddcb` | nenhum | Fase 1; **não existe no GitHub** |
 | `preprod-final-closure-20260930T131123Z` | `43c484b` | `origin/…` 0/0 | PR #447 |
 | `preprod-blocker-closure-20260929T111136Z` | `16e4000` | nenhum | histórico |
-| `main` | `25fc4b0` | `origin/main` | = produção |
+| `main` (checkout `/home/zetta/swap-z-app`) | `25fc4b0` (local, **desatualizado**) | `origin/main` | `origin/main` está à frente: código `6d1295b` + docs L-053 (produção desde 14/10) |
+| `release/production-20261013` | `6d1295b` | `origin/release/production-20261013` | branch do release de 13–14/10 (`6d1295bf43f4967b7e15498f1496c132fc09fa7a`) |
 | `kimi/round2-audit-fixes` | `d7741bb` | nenhum (`vscode-merge-base` → `origin/claude/swap-z-recovery-deploy-b7y2cw`) | fim do Round 1 |
 | `claude/swap-z-recovery-deploy-b7y2cw` | `d7741bb` | `origin/…` | fim do Round 1 (head dos PRs da auditoria externa, p.ex. #423–#446) |
 
@@ -82,7 +89,8 @@ branch está em `docs/AUDIT-RECONCILIATION.md` §2.
 
 | ref | SHA | relação com `9f2ddcb` |
 |---|---|---|
-| `origin/main`, `origin/HEAD` | `25fc4b0` | ANCESTOR |
+| `origin/main`, `origin/HEAD` | commit docs-only da L-053 sobre `6d1295b` (até 14/10 00:26 UTC: `25fc4b0`) | DESCENDENTE (`9f2ddcb` é ancestral) |
+| `origin/release/production-20261013` | `6d1295b` | DESCENDENTE (release de 13–14/10) |
 | `origin/round9-surgical` | `798fe27` | ANCESTOR (congelada) |
 | `origin/preprod-final-closure-20260930T131123Z` | `43c484b` | ANCESTOR (PR #447) |
 | `origin/claude/swap-z-recovery-deploy-b7y2cw` | `d7741bb` | ANCESTOR |

@@ -61,9 +61,9 @@ Depois meça **separadamente** os refs locais (`refs/heads/*`) e os remotos
 
 | ❌ suposição | por que é falsa aqui |
 |---|---|
-| branch local == GitHub | `9f2ddcb` **não existe no GitHub** (sem push); `main` local e `origin/main` coincidem hoje por acaso |
+| branch local == GitHub | `main` local do checkout `/home/zetta/swap-z-app` ficou em `25fc4b0` enquanto `origin/main` avançou (release de 13–14/10, L-053); medir `origin/*` depois de `git fetch` |
 | GitHub == runtime do Acer | as stacks LAB/DEMO/PRODCLONE rodam imagens e bancos locais com fingerprints próprios |
-| runtime do Acer == produção | a produção roda `25fc4b0` (último registro: 26/09) com o banco no nível 0058 |
+| runtime do Acer == produção | desde 14/10 a produção serve o código `6d1295b` com o banco no head `20261014002550` (0059–0076); o lab local tem bancos e imagens próprios (L-053) |
 | nome de worktree == estado | `candidate/` está em `691bfdc`, que **não** é o candidato atual |
 | nome de documento mais novo == autoridade maior | ver `docs/DOCUMENT-AUTHORITY.md` |
 | "status 🟢" num PLANO == verdade hoje | muitos planos 🟢 são históricos |
@@ -165,6 +165,11 @@ Registrar o resultado da recert muda o working tree (ledger,
 >
 > Até lá: `PRODUCTION=UNTOUCHED` · `VERCEL=DEFERRED_EXTERNAL_PAYMENT` ·
 > `RELEASE_CANDIDATE=NONE`.
+>
+> **Registro factual (14/10, L-053):** o release de 13–14/10 (código `6d1295bf43f4967b7e15498f1496c132fc09fa7a`) foi
+> executado por autorização explícita do dono para a missão de release, **sem** a marcação `RELEASE_CANDIDATE` prévia
+> exigida no item 2 acima. A política não mudou; a divergência está registrada e não é precedente. Estado atual:
+> `docs/CURRENT-STATE.md`.
 
 Registro: `LAUNCH-READINESS-LEDGER.md` L-012. Aviso no topo de
 `ESTADO-ATUAL.md`.

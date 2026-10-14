@@ -63,6 +63,11 @@
 > `fd68c4f`: Dashboard/Pools `AVAILABLE`, Portfolio/Orders `PARTIAL`. O novo
 > relatório substitui o handoff anterior para auditoria. Isso não autoriza
 > publicação, venda, deploy ou release.
+>
+> **Revisão 13 (14/10/2026, L-053, pós-release):** `START-HERE.md` (rev. 14), `CURRENT-STATE.md` (rev. 16),
+> `RELEASE-CHAIN.md` (nós 25–28), `AUDIT-RECONCILIATION.md` (§5.7), `RELEASE-RUNBOOK.md` (R2.0) e `AGENTS.md`
+> reconciliados com o release de 13–14/10 (código `6d1295b`). `EXTERNAL-GATES-PREP.md` (preparação de 03–04/10)
+> recebeu banner: R-01/R-02 fechados; suas instruções de instalação **não** devem ser repetidas.
 
 ## Classes
 
@@ -201,7 +206,7 @@
 | `docs/RELATORIO-27-07.zh.md` | HISTORICAL_EVIDENCE | 2a5e4b3 2026-07-27 | — | rodada/relatório datado | NÃO |
 | `docs/RELATORIO-TECNICO-27-07.md` | HISTORICAL_EVIDENCE | 4357e97 2026-07-27 | — | rodada/relatório datado | NÃO |
 | `docs/RELATORIO-TECNICO-27-07.zh.md` | HISTORICAL_EVIDENCE | 32535dc 2026-07-27 | — | rodada/relatório datado | NÃO |
-| `docs/RELEASE-RUNBOOK.md` | AUTHORITATIVE | commit da L-029, 2026-10-03 (revisão 2) | **revisão 2 vigente** para o alvo `53cd85a`; revisão 1 (`0d21874`) = HISTÓRICO no mesmo arquivo, com errata RB-02 | runbook de release com gate fechado: bloqueadores R-01/R-02, pré-condições, migrations, controles reais, smoke, rollback, pontos de espera | SIM — revisão 2; **não** autoriza deploy |
+| `docs/RELEASE-RUNBOOK.md` | AUTHORITATIVE | commit da L-029, 2026-10-03 (revisão 2) | **revisão 2 vigente** (escrita para o alvo `53cd85a`; executada em 13–14/10 com o código `6d1295b` — registro em R2.0, L-053); revisão 1 (`0d21874`) = HISTÓRICO no mesmo arquivo, com errata RB-02 | runbook de release com gate fechado: bloqueadores R-01/R-02, pré-condições, migrations, controles reais, smoke, rollback, pontos de espera | SIM — revisão 2; **não** autoriza deploy |
 | `docs/RUNBOOK.md` | SUPPORTING_REFERENCE | 9f2ddcb 2026-10-01 | — | env vars, crons, playbooks de incidente (+ config futura do early access) | SIM — para operação/env; não para estado |
 | `docs/SPEC-round9.md` | HISTORICAL_EVIDENCE | e4f6027 2026-09-20 | Round 9 fechado em `798fe27`; release → `RELEASE-RUNBOOK.md` | SPEC do Round 9 (A131–A133+) | NÃO |
 | `docs/TESTE-DA-TAXA-EVM.md` | SUPPORTING_REFERENCE | a188c27 2026-08-11 | — | trilha de produto/flywheel (fora da cadeia de release) | NÃO para estado de lançamento; reconferir no código antes de usar |

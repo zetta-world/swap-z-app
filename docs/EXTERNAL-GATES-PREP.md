@@ -1,5 +1,10 @@
 # EXTERNAL GATES — preparação (NADA aplicado) · PV-A07
 
+> ⚠️ **Registro posterior (14/10/2026, L-053):** R-01 (Vercel) e R-02 (`CEX_RECOVERY_HMAC_KEY`) foram **fechados** no
+> release de 13–14/10 (código `6d1295b`). A chave já existe na Vercel (production + preview, tipo `sensitive`) e precisa ser
+> **estável**: **não** executar de novo as instruções de instalação da seção R-02 nem recriar/sobrescrever a variável.
+> Este documento descreve a preparação de 03–04/10; o estado atual está em `docs/CURRENT-STATE.md`.
+
 > **Criado em:** 03–04/10/2026, lane B (`pre-vercel-forward-20261003T234200Z`), ledger L-031.
 > **Este documento não altera nenhum provedor.** Cada seção diz o estado exigido, o estado conhecido
 > (medido ao vivo em 03/10, L-029, salvo indicação), o preparo, quem age, como validar **só lendo**,

@@ -8,7 +8,10 @@
 
 > ⛔ **NUNCA FAZER DEPLOY DE WORKTREE POR NOME.**
 > ⛔ **Deploy só pode nascer de um SHA marcado `RELEASE_CANDIDATE` nesta página.**
-> ⛔ **Hoje NENHUM SHA está marcado `RELEASE_CANDIDATE`.** `RELEASE_CANDIDATE=NONE`.
+> ⛔ **Hoje nenhum candidato NOVO está marcado `RELEASE_CANDIDATE`.** O release de 13–14/10 (código
+> `6d1295bf43f4967b7e15498f1496c132fc09fa7a`, nó 27) foi selecionado e executado, mas a marcação
+> `RELEASE_CANDIDATE` **não** foi registrada nesta página antes do deploy — lacuna registrada em L-053
+> (reconciliação posterior, 14/10). Isso não é precedente: a regra abaixo continua valendo.
 >
 > **Política de deploy (decisão do dono, 01/10/2026; regra de 31/08 SUSPENSA):**
 > nada vai para produção automaticamente. Deploy exige as quatro coisas:
@@ -31,8 +34,8 @@
 >
 > `LAST_CERTIFIED_RUNTIME=0d21874b4147bb8a0b232aa0abc2302471a720e5` ·
 > `CERTIFIED_FEATURE_SHA=53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` (Fase 2, RECERT(C1)=PASS, 03/10, L-027; antes `f1b4ec1`, Fase 1, L-019) ·
-> `CONTROL_PLANE_HEAD` = `THIS_CONTROL_PLANE_COMMIT` da L-049 (só docs,
-> **não** CERTIFIED; filho do candidato Founders AF-01 `efdf6ee`).
+> `CONTROL_PLANE_HEAD` = `THIS_CONTROL_PLANE_COMMIT` da L-053 em `main` (só docs, **não** CERTIFIED;
+> filho do RELEASE CODE SHA `6d1295bf43f4967b7e15498f1496c132fc09fa7a`, nó 27). Antes: o da L-049 (histórico).
 > C1 `f4af9764e4c773f1bba2821f6cbef9685cfeb59d`: **RECERT FAIL** (02/10, L-018).
 > `CERTIFIED_FEATURE_SHA` (o C1 recertificado) não é necessariamente o
 > `CONTROL_PLANE_HEAD` (o C2 de atestação, só docs, nunca CERTIFIED).
@@ -42,8 +45,8 @@
 ## 1. Desenho (leia de cima para baixo: cada um veio do de cima)
 
 ```
- [PRODUÇÃO HOJE]
- 25fc4b0  main · auditoria externa 30 achados fechada (#446)    PRODUCTION (registro 26/09)
+ [PRODUÇÃO ATÉ 14/10/2026 ~00:26 UTC — hoje ROLLBACK_CANDIDATE `dpl_C1AgJfvQQt38iMTcbDvNVi7aqCQJ`]
+ 25fc4b0  main · auditoria externa 30 achados fechada (#446)    HISTORICAL PRODUCTION (registro 26/09; servido até o release de 13–14/10)
     │
     │  Round 1 … Round 7   (09/15 → 09/16)
     ▼
@@ -125,9 +128,19 @@
  efdf6ee  candidato Founders AF-01                                  EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED; AUDIT PENDING; DO NOT DEPLOY
     │  só docs (diff de produto vazio)
     ▼
- commit da L-049  CONTROL_PLANE_HEAD                                NÃO é CERTIFIED; DO NOT DEPLOY
+ 35b7c72  commit da L-049 (atestação AF-01)                          control plane histórico; NÃO é CERTIFIED; DO NOT DEPLOY
+    │  supply chain (L-050) · página pública Founders (L-051) · blockers finais (L-052, Next 16.3.8)
     ▼
- FINAL RELEASE CANDIDATE                                          NOT_STARTED
+ fd68c4f/56241b2  blockers da página pública Founders              EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED (fd68c4f); DO NOT DEPLOY
+    │  Orders Public Truth micro-closure (IA-PUBLIC-ORDERS-001)
+    ▼
+ 2e50b1d/e2f61d1  Orders Public Truth (código / docs)               topo do trabalho aprovado em 13/10; DO NOT DEPLOY por si
+    │  release 13–14/10: 2 commits só de teste (trava CE-01)
+    ▼
+ 2352fe1 → 6d1295b  RELEASE CODE SHA                               RELEASED TO PRODUCTION 14/10 (não CERTIFIED_EXACT_SHA; ver nó 27)
+    │  só docs (L-053)
+    ▼
+ commit da L-053  reconciliação de governança pós-release           control plane; NÃO é CERTIFIED; o código servido é o de 6d1295b
 ```
 
 `*` `0d21874`/`43c484b` são o **melhor candidato de runtime** que existe, mas
@@ -141,6 +154,10 @@ prova AP-LOCK hospedada (`RELEASE-RUNBOOK.md` §6–§7).
 `BLOCKED_BY_ACCOUNT_PAYMENT`, produção em 402) e **R-02** (`CEX_RECOVERY_HMAC_KEY` ausente na Vercel, exigida
 pelo alvo). `RC_SELECTION_READY=NO`; recomendação (≠ seleção) de feature: `53cd85a`. Runbook vigente:
 `RELEASE-RUNBOOK.md` revisão 2.
+**Atualização L-053 (14/10, pós-release):** o release de produção de 13–14/10 usou o código `6d1295b` (nó 27):
+`main` avançou por fast-forward `25fc4b0` → `6d1295b`; migrations 0059–0076 aplicadas; R-01 e R-02 fechados; a exceção R-03
+foi revisada e mantida (não corrigida). O registro de seleção como `RELEASE_CANDIDATE` **não** existia aqui antes do deploy.
+As atualizações L-029 e L-035 abaixo e acima descrevem o estado **anterior** ao release.
 **Atualização L-035 (04/10, só lane B):** pré-requisito adicional da seleção de RC — **revisão obrigatória da
 exceção temporária R-03** do `npm audit` (`docs/R03-AUDIT-EXCEPTION.md`, `scripts/release/audit-exceptions.json`
 `revisar_antes_do_rc: true`). A vulnerabilidade não está corrigida; o RC não pode ser selecionado sem o dono
@@ -150,7 +167,7 @@ reafirmar ou remover a exceção. (Na lane de release, o passo de audit ainda é
 
 | # | nome humano | SHA curto | SHA completo | tree | branch / ref | status | certificação | filho autorizado |
 |---|---|---|---|---|---|---|---|---|
-| 0 | main histórica (produção) | `25fc4b0` | `25fc4b0fa55db72472c7ae00af42596209d7c362` | `176a4fdaa877082b6abd1925ae60bc4ae86af70e` | `origin/main`, `main` | PRODUCTION (último registro `[VERCEL]` 26/09) | CI run 34986267827 SUCCESS; retest histórico incompleto | `140c860` |
+| 0 | main histórica (produção até 14/10) | `25fc4b0` | `25fc4b0fa55db72472c7ae00af42596209d7c362` | `176a4fdaa877082b6abd1925ae60bc4ae86af70e` | `main` local deste checkout (desatualizado); deixou de ser `origin/main` em 14/10 | HISTORICAL PRODUCTION · ROLLBACK_CANDIDATE (`dpl_C1AgJfvQQt38iMTcbDvNVi7aqCQJ`, servido com sucesso sobre o schema 0076) | CI run 34986267827 SUCCESS; retest histórico incompleto | `140c860` |
 | 1 | Round 1 (meio) | `140c860` | `140c860e5e483e6cc5b8eb885a990ea7bc70694e` | `2b16f7d22c2f4227fd0edb36c7fd5e9f398812ca` | — | HISTORICAL | — | `d7741bb` |
 | 2 | Round 1 (fim) | `d7741bb` | `d7741bb1c10552a61810ed86f76d86715b087115` | `307ebe96d49c309efbb425a25c46c145e32da161` | `origin/claude/swap-z-recovery-deploy-b7y2cw`, `kimi/round2-audit-fixes` | HISTORICAL | retest incompleto | `6b08172` (R2) |
 | 3 | Round 2 (fim) | `6b08172` | `6b081723689aad549c64aa6a6b8b31589fef2215` | `2eb6e840c938eaa5aef49828b021cca043f47b43` | — | HISTORICAL | — | `1325bd3` |
@@ -190,7 +207,10 @@ reafirmar ou remover a exceção. (Na lane de release, o passo de audit ainda é
 | 24a | base cirúrgica AF-01 após FAIL independente | `d08a1e3` | `d08a1e3a221b5559630f53fb3318d538ee9c383f` | `84e1c04f4952e42888150f6472f79591b23672fc` | `founders-af01-partial-schedule-fix-20261007` (local, sem upstream) | PHASE_BASE · DO NOT DEPLOY | abertura L-048 | `8fff64f` → `d2c565f` → `efdf6ee` |
 | 24b | candidato Founders AF-01 surgical closure | `efdf6ee` | `efdf6ee5a64d4f5491b806da6258706615b6ffec` | `9021c273c1d2e790f3a09da25de8f230ba9ef46e` | idem | `EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED` · `READY_FOR_INDEPENDENT_AUDIT` · DO NOT DEPLOY | Node 24; npm ci/build/lint/type-check PASS; Founders 17/254; suíte 314/4674; economia sem diff | nova auditoria independente |
 | 24c | atestação docs-only Founders AF-01 (L-049) | `THIS_CONTROL_PLANE_COMMIT` | — | — | idem | `CONTROL_PLANE_ATTESTATION_COMMIT` · não CERTIFIED · DO NOT DEPLOY | diff de produto `efdf6ee..HEAD` vazio | auditoria independente; `RELEASE_CANDIDATE=NONE` |
-| ∞ | FINAL RELEASE CANDIDATE | — | — | — | — | NOT_STARTED | — | — |
+| 25 | blockers da página pública Founders (L-052) | `fd68c4f` | `fd68c4f663ced81c3e040367c62697e473b5d542` | `aea9a29aa766304a80dc6394d40377632966ce1f` | `sales-page-final-blockers-20261008` (local) | `EXACT_SHA_RECERT_PASS_IMPLEMENTER_REPORTED` · ancestral do release | Next 16.3.8; suíte 320/4702 (implementer-reported) | `56241b2` (docs) → `2e50b1d` |
+| 26 | Orders Public Truth micro-closure | `e2f61d1` | `e2f61d174417a45c299117be86ee74027eec75f3` | `7afa9fe6f4a8d41adb2e8597c7bd08b629a82e3e` | `orders-public-truth-microclosure-20261008` (local); base de `origin/release/production-20261013` | ancestral do release; código em `2e50b1d` (`f414c9fad97494addce2e911f307f20eb48e12af`) | medido no release em 13/10: npm ci, lint 0 erros, type-check, suíte 321/4715, build, audit gate R-03 OK, secret scan, economia sem diff | `2352fe1` |
+| 27 | **RELEASE CODE SHA (13–14/10)** | `6d1295b` | `6d1295bf43f4967b7e15498f1496c132fc09fa7a` | `22a3a409e6f43d2b5bb8f7e727ef4c8bba0e364a` | `origin/release/production-20261013`; `origin/main` avançou para ele por fast-forward | **RELEASED TO PRODUCTION** (deployment original `dpl_A5PDW653HtRyH4HN6CUdhGC7LLrC`) · **não** `CERTIFIED_EXACT_SHA` · seleção como `RELEASE_CANDIDATE` **não registrada antes do deploy** (lacuna L-053) | no SHA exato: lint 0 erros, type-check, suíte local 321/4716, CI 38488966914 e 38490205461 success, build Vercel (preview `dpl_J6K54QHL9xgiQe9CPPLyhu73DKbR` e produção). Desvios: npm ci, secret scan, arneses SQL e economia medidos em `e2f61d1` (lock/migrations idênticos); build local em `2352fe1` (`592cc876bdee9dee6705e75a7cc3ab2b88726ff0`), recusado em `6d1295b` pelo guarda INC-RR-01. Regra §3 item 7 (autorização para o SHA registrada no ledger antes) não cumprida: a autorização foi da missão | commit da L-053 |
+| 28 | reconciliação de governança pós-release (L-053) | `THIS_CONTROL_PLANE_COMMIT` | — | — | `main` | control plane · só docs · **não** CERTIFIED · não é release novo | prova: `git diff 6d1295b..este -- . ':!docs/**' ':!CLAUDE.md' ':!AGENTS.md'` vazio; SHA, CI e deployment registrados fora do commit | — |
 
 Provas rápidas:
 
