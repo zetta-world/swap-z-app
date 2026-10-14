@@ -846,3 +846,12 @@
   `docs/EXTERNAL-GATES-PREP.md` (banner), este ledger. SHA do commit, CI, deployment e readback: evidência externa
   `evidence/post-release-governance-*` (não cabem no próprio commit).
 - **Estado:** release de código concluído em `6d1295b`; nenhum release candidate novo; nenhuma fase aberta.
+
+
+## L-054 — Founder Pass no menu (14/10/2026)
+
+Autorização do dono nesta conversa: "Agente tem que por ela no MENU", após autorização para publicar as atualizações. Escopo: expor a página existente /founders-pass na navegação compartilhada desktop/mobile/CommandBar, EN/PT/ES/ZH. Não abre venda, early access, Autopilot ou DCA real.
+
+Base: 415ac35e26c518e27af034dad22708f11ab0249a. Código: 34e9159d3f181f2d3a12c57a02826db55d9c2686 (5 linhas; nav-items.ts e messages.ts). CI 38538847156 PASS: npm ci, lint, typecheck, suíte completa e audit gate R-03. Preview dpl_EJH4AGttXnkQjGdDZASH9nceXbN5 READY; clique desktop/mobile validado. Este commit documental preserva exatamente esse delta de produto.
+
+Candidato de publicação: commit desta entrada (THIS_RELEASE_CANDIDATE_COMMIT), condicionado ao CI e build do seu próprio SHA; identidade exata e resultados preservados externamente em zswap-local/evidence/founders-menu-20261014/. Validação restrita a navegação; não declarar CERTIFIED_EXACT_SHA da plataforma inteira nem novo ensaio SQL. Nenhuma mudança em banco, migrations, dependências, env ou flags. Findings L-053 permanecem abertos. Rollback de aplicação: dpl_HfxpGF9HBrhfAJ9odLxZuLJ5Zy8G (415ac35); schema inalterado nesta rodada.

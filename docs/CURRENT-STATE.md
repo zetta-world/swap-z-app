@@ -12,7 +12,11 @@
 
 ---
 
-## Estado atual
+## Atualização de navegação L-054 (14/10/2026)
+
+A inclusão autorizada de Founder Pass no menu parte de 415ac35; código 34e9159. O candidato é o commit desta atualização, com CI/build no SHA final antes da publicação. SHA servido e resultados pós-publicação: `zswap-local/evidence/founders-menu-20261014/`. As tabelas L-053 abaixo são o snapshot anterior a esse microdelta de navegação. Não há alteração de banco, venda ou flags.
+
+## Estado anterior ao microdelta L-054
 
 | campo | valor | fonte |
 |---|---|---|

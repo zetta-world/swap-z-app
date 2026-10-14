@@ -244,3 +244,8 @@ Mesmo com 1–7 cumpridos, o deploy em si é **outra** autorização do dono
 (política de 01/10, `AI-OPERATING-RULES.md` §6.1).
 
 Só com 1–7 cumpridos esta página ganha uma linha com `RELEASE_CANDIDATE`.
+
+
+## Atualização L-054 — candidato de navegação Founder Pass
+
+RELEASE_CANDIDATE = THIS_RELEASE_CANDIDATE_COMMIT (commit que acrescenta esta seção; SHA exato no pacote externo founders-menu-20261014 antes de publicar). Base 415ac35; código 34e9159d3f181f2d3a12c57a02826db55d9c2686. Autorização do dono: inclusão e publicação do link no menu. Gate: CI e build do SHA final aprovados e navegação desktop/mobile. Validação de escopo de navegação; não é certificação integral da plataforma. Nenhuma migration ou operação financeira. Ver L-054 e evidência externa para publicação/readback, sem auto-referência impossível do SHA.
