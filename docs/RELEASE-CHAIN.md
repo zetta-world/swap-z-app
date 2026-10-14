@@ -270,3 +270,6 @@ Desvios (escopo, como a L-054): arneses SQL 01–15 **não** rodados (delta sem 
 em 0076). Autorização do dono: a missão "FINAL AUDIT CLOSURE A08/A09/A10/A17" (14/10) autoriza merge em
 `main` e deploy se houver correção real necessária, gates e preview PASS. Condição antes do merge: CI
 verde no SHA deste commit. Rollback de aplicação: `dpl_2NrEVzr9U2FM3Y8fqAzAa4Y6237v` (`2e3e397`).
+
+Executado (14/10): `main` → `2c0c7c9` (fast-forward); produção `dpl_BhiwniCtsqX7iUTGM3mkhrXFzMSj` READY nesse SHA;
+smoke 25/25; sem runtime errors. Detalhe e ressalvas: ledger L-055.

@@ -889,3 +889,12 @@ Gates, CI, preview e candidato: `RELEASE-CHAIN.md` "Atualização L-055". Evidê
 `zswap-local/evidence/forensic-a08-a09-a10-a17-final-20261014/` (`MANIFEST.sha256`). Resultado do deploy:
 registrado no commit seguinte, só de docs.
 
+Resultado do deploy (14/10): `origin/main` avançada por fast-forward `2e3e397` → `2c0c7c9` (sem force), depois
+do CI 38556728385 verde nesse SHA. Produção `dpl_BhiwniCtsqX7iUTGM3mkhrXFzMSj` READY em
+`2c0c7c9bcf3e1d3e9e4440cd59fb9516c45abb16`, aliases `swap-z-app.vercel.app` (confirmado pela API). Smoke de
+produção read-only 25/25 PASS (páginas 200, rotas inexistentes e admin 404, crons/tique/ordem sem segredo
+401 com corpo da aplicação, early access `closed`). Runtime errors desde o deploy: nenhum. ⚠️ O tique de papel
+depois do deploy **não** foi observado: a API de logs da Vercel não devolveu nenhuma linha para o projeto
+(nem das requisições do smoke). Rollback: `dpl_2NrEVzr9U2FM3Y8fqAzAa4Y6237v` (`2e3e397`). Banco, migrations,
+flags, Autopilot e DCA real inalterados; 0 ordens, 0 trades, 0 dinheiro movido.
+
