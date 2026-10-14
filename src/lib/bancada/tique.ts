@@ -22,9 +22,10 @@ import {
 import { motivoFechado, type VistoNoSimbolo } from "@/lib/bancada/ultimo-tique";
 import { duracaoDoIntervaloMs } from "@/lib/mercado/velas";
 import {
-  mesasQuePodemTickar, decidirAbertura, decidirFechamentoDaPosicao,
+  mesasQuePodemTickar, decidirAbertura, decidirFechamentoDaPosicao, aVezDeQuem, CADENCIA_MS,
   type Mesa, type MesaPropria,
 } from "@/lib/bancada/papel";
+import { BANCADA_COTAS } from "@/lib/tier/types";
 import {
   decidirAberturaDoAgente, prepararAgente, INTERVALO_DO_AGENTE, BARRAS_DE_AQUECIMENTO, type PreparoDoAgente,
 } from "@/lib/bancada/agente";
@@ -102,6 +103,16 @@ export interface ResumoDoTique {
  */
 export const PRAZO_DO_TIQUE_MS = Number(process.env.BANCADA_TIQUE_PRAZO_MS ?? 15_000);
 export const LEITURAS_POR_TIQUE = Number(process.env.BANCADA_LEITURAS_POR_TIQUE ?? 400);
+/**
+ * ⚠️⚠️ QUANTOS SÍMBOLOS UMA MESA AVALIA POR TIQUE (auditoria externa A10, 13/09).
+ *
+ * O orçamento acima é conferido ENTRE mesas, não dentro de uma. A entrada limita
+ * os símbolos de linha NOVA (`lerSimbolos`), mas o banco não tem trava: uma
+ * linha legada com 1.000 símbolos fazia 1.000 leituras num tique de teto 400 —
+ * medido. O teto é o maior que algum plano permite: linha dentro do produto não
+ * muda nada.
+ */
+export const SIMBOLOS_POR_MESA_NO_TIQUE = Math.max(...Object.values(BANCADA_COTAS).map((c) => c.simbolosPorTeste));
 /** Tier do dono: aceita o cache até ~1h (ver `getTiersForWallets`). Papel não move dinheiro. */
 export const TOLERANCIA_DO_TIER_MS = 55 * 60_000;
 /** Onde mora o cursor da fila justa (admin_kv é o KV de operação da casa). */
@@ -496,7 +507,22 @@ async function passagem(
      */
     let temAberta = mesa.temPosicaoAberta;
 
-    for (const simbolo of mesa.simbolos) {
+    /**
+     * ⚠️⚠️ LINHA LEGADA ACIMA DO TETO: JANELA QUE GIRA, NÃO CORTE (A10).
+     *
+     * Cortar nos primeiros N avaliaria sempre os mesmos e abandonaria o resto
+     * para sempre — o defeito que `aVezDeQuem` já existe para impedir. O ponto de
+     * partida vem do relógio (sem escrita que possa falhar): em `n/teto` tiques
+     * todo símbolo passou. E o excesso é dito, não engolido.
+     */
+    const simbolosDaPassagem = mesa.simbolos.length > SIMBOLOS_POR_MESA_NO_TIQUE
+      ? aVezDeQuem(mesa.simbolos, SIMBOLOS_POR_MESA_NO_TIQUE, Math.floor(agoraMs / CADENCIA_MS))
+      : mesa.simbolos;
+    if (simbolosDaPassagem.length < mesa.simbolos.length) {
+      resumo.problemas.push(`${mesa.id}: linha com ${mesa.simbolos.length} símbolos, acima do teto de ${SIMBOLOS_POR_MESA_NO_TIQUE} — avaliados ${simbolosDaPassagem.length} neste tique, em rodízio`);
+    }
+
+    for (const simbolo of simbolosDaPassagem) {
       const emMesa: Mesa = { ...mesa, temPosicaoAberta: temAberta };
       const p = emMesa.mesa
         ? await decidirDoAgente(leitor, preparos, emMesa, simbolo, agoraMs, resumo)
