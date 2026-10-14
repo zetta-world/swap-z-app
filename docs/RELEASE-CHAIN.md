@@ -249,3 +249,24 @@ Só com 1–7 cumpridos esta página ganha uma linha com `RELEASE_CANDIDATE`.
 ## Atualização L-054 — candidato de navegação Founder Pass
 
 RELEASE_CANDIDATE = THIS_RELEASE_CANDIDATE_COMMIT (commit que acrescenta esta seção; SHA exato no pacote externo founders-menu-20261014 antes de publicar). Base 415ac35; código 34e9159d3f181f2d3a12c57a02826db55d9c2686. Autorização do dono: inclusão e publicação do link no menu. Gate: CI e build do SHA final aprovados e navegação desktop/mobile. Validação de escopo de navegação; não é certificação integral da plataforma. Nenhuma migration ou operação financeira. Ver L-054 e evidência externa para publicação/readback, sem auto-referência impossível do SHA.
+
+
+## Atualização L-055 — candidato A10 (fechamento final da auditoria externa A08/A09/A10/A17)
+
+RELEASE_CANDIDATE = THIS_RELEASE_CANDIDATE_COMMIT (commit docs-only que acrescenta esta seção; filho de
+`5c2306ee5074b56c59d49616139fa9af28c08e4e`). Base `2e3e3971f837c0131e32163e5831587979631d43` (produção
+`dpl_2NrEVzr9U2FM3Y8fqAzAa4Y6237v`). Delta de produto: só `src/lib/bancada/tique.ts` (teto de símbolos por
+mesa no tique de papel, A10) e dois arquivos de teste. Nenhuma migration, dependência, env ou flag;
+nenhum caminho de dinheiro (papel adiante).
+
+Gates no SHA exato `5c2306e` (tree `9e3c5fdefc915a70b9f5b06a62fe3f18eda2cdcd`, árvore limpa antes e
+depois): `npm ci` 0 · lint 0 erros/145 avisos (igual à base) · type-check 0 · suíte 323/4724 **×2** ·
+build 0 · `npm audit` 0 critical/25 high/40 moderate (= snapshot do release) e `audit-gate.mjs` OK com a
+exceção R-03 · secret scan do diff limpo · CI 38555991893 success · preview
+`dpl_5NupUqqu4xqjCyFP3ReeLMaq3WR2` READY no SHA, smoke 25/25 idêntico à produção.
+
+Desvios (escopo, como a L-054): arneses SQL 01–15 **não** rodados (delta sem SQL); não é
+`CERTIFIED_EXACT_SHA` da plataforma inteira. Delta de migrations contra produção: zero (repo e produção
+em 0076). Autorização do dono: a missão "FINAL AUDIT CLOSURE A08/A09/A10/A17" (14/10) autoriza merge em
+`main` e deploy se houver correção real necessária, gates e preview PASS. Condição antes do merge: CI
+verde no SHA deste commit. Rollback de aplicação: `dpl_2NrEVzr9U2FM3Y8fqAzAa4Y6237v` (`2e3e397`).

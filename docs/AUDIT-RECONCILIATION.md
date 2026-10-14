@@ -13,22 +13,24 @@
 > ambiente usa `LAB_ENV_VERIFIED`.
 > Revisão 6 (02/10/2026): RECERT(C1b)=PASS; `CERTIFIED_EXACT_SHA` também
 > `f1b4ec1874ee41f7a7494c0d1b03c19e400cf71e` (Early Access Fase 1); §5.5 acrescida.
+> Revisão 7 (14/10/2026, L-055): **fonte de A08/A09/A10/A17 RECUPERADA** (3ª busca, §4.1); os quatro
+> fechados com prova; A31/A32/A33 da mesma auditoria descobertos e registrados (§5.1). A resposta
+> curta abaixo foi substituída; a da revisão 6 está no histórico do Git.
 
 ## Resposta curta (a longa está nas tabelas)
 
 | pergunta | resposta |
 |---|---|
-| alguma correção de **código** de auditoria está fora da linha atual? | **Nenhuma correção CONHECIDA e identificável foi encontrada fora da linha;** A08/A09/A10/A17 permanecem sem fonte e não permitem conclusão. Toda branch `origin/claude/auditoria-*` é patch-equivalente a um squash que já está na linha (§2) |
+| alguma correção de **código** de auditoria está fora da linha atual? | **SIM, três achados conhecidos sem correção:** A31, A32 e A33 da auditoria externa (2ª rodada do auditor, 14/09), que nunca tinham sido registrados no repositório (§4.1, §5.1). A08/A09/A17 já estavam corrigidos (prova em §5.1); A10 estava presente e foi corrigido em `5c2306e`. Toda branch `origin/claude/auditoria-*` continua patch-equivalente a um squash que já está na linha (§2) |
 | algum commit remoto de código está fora da linha? | **Um:** `origin/claude/pools-soon-tier` (`0701327`). É uma feature de produto, **não** correção de auditoria. Está SUPERSEDED pela decisão contrária `e369cc6` (#376) |
 | alguma **documentação** de auditoria está fora da linha? | **SIM.** O ledger §Z/§ZB, `PLANO-MESTRE-AUDITORIA.md` e `PLANO-PROD-CLONE-LAB.md` estão só em `origin/platform-closure` (§3) |
-| algum finding tem prova incompleta? | **SIM.** A08, A09, A10 e A17 da auditoria externa: **SOURCE_NOT_FOUND** depois de 2 buscas forenses, e seguem UNKNOWN_REQUIRES_REVIEW (§4.1) |
+| algum finding tem prova incompleta? | **Não para A08/A09/A10/A17:** fonte original recuperada na 3ª busca (14/10) e cada um tem reprodução atual, prova e teste (§4.1, §5.1). Retests históricos por finding continuam incompletos (§4.2) |
 
-`KNOWN_MISSING_CORRECTIONS = 0` · `UNKNOWN_FINDINGS = 4` (A08, A09, A10, A17:
-SOURCE_NOT_FOUND, UNKNOWN_REQUIRES_REVIEW).
+`KNOWN_MISSING_CORRECTIONS = 3` (A31, A32, A33 — OPEN, §5.1) · `UNKNOWN_FINDINGS = 0`.
 
-> A contagem `0` vale **só para correções conhecidas e identificáveis**. Para
-> A08/A09/A10/A17 não há fonte; nada se pode concluir sobre elas estarem ou
-> não na linha. Nenhuma descrição foi inventada.
+> Revisão 6 dizia `KNOWN_MISSING_CORRECTIONS = 0` · `UNKNOWN_FINDINGS = 4`. O `0` valia só para o que era
+> conhecido: a fonte recuperada revelou que a auditoria externa tinha **33** achados, não 30. Nenhuma
+> descrição foi inferida pelo número; todas vêm do texto original (§4.1).
 
 ### Legenda do método
 
@@ -165,6 +167,33 @@ auditoria (ChatGPT, 14–15/09), que não está no repositório.
 Nenhuma descrição foi inferida pelo número. O estado continua
 UNKNOWN_REQUIRES_REVIEW até o dono fornecer o documento original da auditoria.
 
+**3ª busca forense, 14/10/2026 — FONTE RECUPERADA.** Evidência:
+`/home/zetta/Documentos/ZETTA_WORLD/zswap-local/evidence/forensic-a08-a09-a10-a17-final-20261014/`
+(`MANIFEST.sha256`).
+
+As duas buscas anteriores olharam Git, GitHub e `zswap-local/`. A auditoria "ChatGPT" de 14–15/09 foi
+feita numa sessão **Codex** local (`~/.codex/sessions/2026/09/11/rollout-2026-09-11T22-01-04-01a09321-….jsonl`,
+iniciada 11/09), que escrevia os achados em
+`/home/zetta/Documentos/ZETTA_WORLD/audit-swap-z-2026-09-11/ACHADOS-EM-VALIDACAO.md` — **fora** de
+`zswap-local/`. O diretório não existe mais; o texto sobrevive verbatim nas chamadas de ferramenta da
+sessão, extraídas para `original-source/` (linha, timestamp e `call_id` em cada arquivo).
+
+| fonte | resultado |
+|---|---|
+| `git fsck --full --unreachable`, stash, reflog | 5 blobs soltos, nenhum relacionado; stash vazio |
+| GitHub search (PRs e issues do repo inteiro) | 0 para A08/A09/A10/A17 |
+| transcrições locais do Claude Code (`~/.claude/projects`) | só prompts de missão e outros espaços de ID (`EA2-`, `PV-`) |
+| `/home/zetta` (md/txt/json/log/patch/diff/csv/html/pdf) | só ruído (`A1:A10`, GPU A10) |
+| sessão Codex 11/09 (`ACHADOS-EM-VALIDACAO`, 38 eventos) | **texto original** de A08/A09/A10 (13/09 10:47Z, base `9638399`) e A17/A18 (13/09 18:11Z), com reprodução (`bancada-tique.test.ts`, `dca-failed-cycle.test.ts`) |
+
+**Mesmo espaço de IDs, conferido:** os 30 títulos `## Axx` da sessão batem com o mapa achado→PR do
+`LEDGER-MESTRE` §B (A04 #417 plano=admin, A11/A25 #418, A12 #436, A16 #439 Bybit, A18 #425 50 planos,
+A23 #440 localStorage, A29 #433 CSV…) e os 8 altos são exatamente A04, A11, A13, A14, A18, A20, A25, A27.
+A17 é o defeito que o #421 corrigiu (o PR não citava o ID).
+
+**Achado novo:** em 14/09 o auditor fez uma 2ª rodada e o relatório final passou a **33 achados (8 altos,
+24 médios, 1 baixo)**. A31, A32 e A33 nunca chegaram ao repositório. Registro em §5.1.
+
 ### 4.2 Retests históricos
 
 A01–A30, A80–A126 (R1–R7) e A127–A130-B (R8) estão **na linha** (ANCESTRY),
@@ -207,6 +236,13 @@ apague a anterior.
 | A09 (2ª busca, 01/10) | ext. | — | idem | — | idem | **UNKNOWN_REQUIRES_REVIEW: SOURCE_NOT_FOUND** |
 | A10 (2ª busca, 01/10) | ext. | — | idem | — | idem | **UNKNOWN_REQUIRES_REVIEW: SOURCE_NOT_FOUND** |
 | A17 (2ª busca, 01/10) | ext. | — | idem | — | idem | **UNKNOWN_REQUIRES_REVIEW: SOURCE_NOT_FOUND** |
+| A08 (3ª busca, 14/10) | ext. 13/09 | média | última mesa pausada deixava posições sem processamento de saída (`tiqueDoPapelAdiante` voltava cedo sem mesa ligada) | `fc59805` (CE-09, 05/10): `if (ligadas.length === 0 && abertas.length === 0) return` | reprodução atual `auditoria-externa-a08-a10.test.ts` PASS em `2e3e397`; quebra deliberada (volta do `return` antigo) detectada | **ALREADY_FIXED_PROVEN** |
+| A09 (3ª busca, 14/10) | ext. 13/09 | média | orçamento por dono adiava sempre as mesmas mesas válidas (`aVezDeQuem` no-op dentro do dono) | `fc59805` (CE-09): fila justa com cursor em `admin_kv` | 12 donos × 2 mesas, orçamento de metade: as 24 avaliadas em ≤4 tiques; quebra (cursor fixo em 0) detectada | **ALREADY_FIXED_PROVEN** |
+| A10 (3ª busca, 14/10) | ext. 13/09 | média | teto de trabalho não limitava símbolos de linha legada | **ainda presente em `2e3e397`** (1.000 leituras com teto 400, medido) → `5c2306e`: teto `SIMBOLOS_POR_MESA_NO_TIQUE` (= 10, maior limite de plano) com janela rotativa `aVezDeQuem` pelo relógio; excesso declarado em `resumo.problemas` | 4 testes (teto, rodízio cobre os 1.000, gêmea positiva, valor do teto); quebras "sem teto" e "corte em vez de rodízio" detectadas; gates em `5c2306e` (L-055) | **FIXED** · FIXED_NOT_RECERTIFIED (validação escopada, L-055) |
+| A17 (3ª busca, 14/10) | ext. 13/09 | média | ordem DCA recusada reutilizava o número do ciclo e bloqueava a janela seguinte | `a165d73` (#421, 14/09): falha conta em `ciclos_pulados` | `auditoria-externa-a17.test.ts` pelo `POST` real do cron: dia 13 recusa, dia 14 tenta o ciclo 2; quebra (sem `+1`) detectada | **ALREADY_FIXED_PROVEN** |
+| A31 (descoberto 14/10) | ext. 14/09 (2ª rodada) | média | consulta de preços põe em minúsculas o mint Solana (base58) | — | `useTokenPrices.ts:21`, `api/prices/route.ts:72,162`; **produção 14/10 (GET read-only):** USDC Solana → `null` com chave `epjfwdd…`, USDC Ethereum → 1,001 | **OPEN** — correção mexe nos preços que o swap usa (guarda de impacto, gorjeta MEV, arrecadação): rodada própria |
+| A32 (descoberto 14/10) | ext. 14/09 (2ª rodada) | média | portfólio apresenta preço desconhecido como patrimônio zero | — | `PortfolioView.tsx:126,142,297` (`usdValue ?? 0`) | **OPEN** — UI: cobertura parcial explícita |
+| A33 (descoberto 14/10) | ext. 14/09 (2ª rodada) | média | `mode=list` com `taker` devolve calldata firme do 0x sem consultar `disable_swap`/`maintenance_mode` | — | `api/quote/route.ts:217` (kill-switch só em `mode=quote`, "de propósito"); o auditor mostrou list com payload executável | **OPEN** — contraria escolha documentada: **decisão do dono** sobre o alcance do kill-switch |
 | EXT-D1 | ext. §5.27 | — | 3 carteiras admin legadas | — | — | OWNER_DECISION |
 | EXT-D2 | ext. §5.27 | — | TOCTOU de cota (precisa de constraint no banco) | — | — | OWNER_DECISION |
 | EXT-D3 | ext. §5.27 | — | `liquidoCompostoPct` compõe símbolos paralelos | — | — | OWNER_DECISION |
@@ -452,3 +488,14 @@ Fonte: `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/release/production-202610
 | REL-GOV-GAP | — | release executado sem a marcação `RELEASE_CANDIDATE` prévia e sem backup `pg_dump` + restauração validada (runbook R2.3 itens 2 e 6) | registrado em L-053; política de deploy inalterada | este registro | OPEN (lacuna de processo registrada; não é precedente) |
 
 `KNOWN_MISSING_CORRECTIONS=0` e `UNKNOWN_FINDINGS=4` (A08/A09/A10/A17) não mudaram com o release.
+
+### 5.8 Fechamento final A08/A09/A10/A17 (14/10, L-055)
+
+| ID | SOURCE | CURRENT STATE | FIX/PROOF | TEST | SHA | STATUS |
+|---|---|---|---|---|---|---|
+| A08 | RECOVERED (sessão Codex, 13/09 10:47Z) | não reproduz em `2e3e397` | `fc59805` | `src/lib/bancada/auditoria-externa-a08-a10.test.ts` | `fc59805` | ALREADY_FIXED_PROVEN |
+| A09 | RECOVERED (idem) | não reproduz | `fc59805` | idem | `fc59805` | ALREADY_FIXED_PROVEN |
+| A10 | RECOVERED (idem) | **reproduzia** (1.000/400) | `5c2306e` | idem (4 casos A10) | `5c2306e` | FIXED |
+| A17 | RECOVERED (13/09 18:11Z) | não reproduz | `a165d73` (#421) | `src/lib/dca/auditoria-externa-a17.test.ts` | `a165d73` | ALREADY_FIXED_PROVEN |
+
+Contagem depois desta revisão: `KNOWN_MISSING_CORRECTIONS=3` (A31/A32/A33) · `UNKNOWN_FINDINGS=0`.

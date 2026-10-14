@@ -111,6 +111,10 @@ A15/A29 #433 · A16 #439 · A18/A20 #425 · A19 #431 · A20 #426 · A21 #432 ·
 A22 #434 · A23 #440 · A24 #430 · A25 #423 · A26/A27 #427 · A27 #419 ·
 A28 #438 · A30 #437. Sem ID na mensagem: #421, #422, #424, #435, #441.
 **Sem PR identificável: A08, A09, A10, A17** — `HISTORICAL RECORD INCOMPLETE`.
+**Atualização 14/10 (L-055):** fonte original recuperada da sessão local do auditor. A17 = #421 (o PR não
+citava o ID); A08 e A09 corrigidos em `fc59805` (CE-09); A10 estava presente e foi corrigido em `5c2306e`.
+O relatório final do auditor tinha **33** achados: A31/A32/A33 (médios) nunca entraram no repositório e
+estão OPEN. Ver `AUDIT-RECONCILIATION.md` §4.1, §5.1 e §5.8.
 
 ---
 

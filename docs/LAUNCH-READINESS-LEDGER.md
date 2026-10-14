@@ -855,3 +855,37 @@ Autorização do dono nesta conversa: "Agente tem que por ela no MENU", após au
 Base: 415ac35e26c518e27af034dad22708f11ab0249a. Código: 34e9159d3f181f2d3a12c57a02826db55d9c2686 (5 linhas; nav-items.ts e messages.ts). CI 38538847156 PASS: npm ci, lint, typecheck, suíte completa e audit gate R-03. Preview dpl_EJH4AGttXnkQjGdDZASH9nceXbN5 READY; clique desktop/mobile validado. Este commit documental preserva exatamente esse delta de produto.
 
 Candidato de publicação: commit desta entrada (THIS_RELEASE_CANDIDATE_COMMIT), condicionado ao CI e build do seu próprio SHA; identidade exata e resultados preservados externamente em zswap-local/evidence/founders-menu-20261014/. Validação restrita a navegação; não declarar CERTIFIED_EXACT_SHA da plataforma inteira nem novo ensaio SQL. Nenhuma mudança em banco, migrations, dependências, env ou flags. Findings L-053 permanecem abertos. Rollback de aplicação: dpl_HfxpGF9HBrhfAJ9odLxZuLJ5Zy8G (415ac35); schema inalterado nesta rodada.
+
+## L-055 — Fechamento final da auditoria externa: A08/A09/A10/A17 (14/10/2026)
+
+Missão do dono "Z-SWAP — FINAL AUDIT CLOSURE · FORENSIC RECOVERY + INDEPENDENT RE-AUDIT · A08/A09/A10/A17"
+(14/10). Autoriza: busca forense, correção em `audit/final-a08-a09-a10-a17-closure`, preview, e merge +
+deploy só se houver correção real necessária e todos os gates e o preview passarem. Proíbe trade, ordem,
+escrita financeira, DCA/Autopilot real, apagar dados e mexer em flags financeiras.
+
+**Fonte recuperada** (3ª busca): a auditoria de 14–15/09 foi feita numa sessão Codex local que gravava
+`audit-swap-z-2026-09-11/ACHADOS-EM-VALIDACAO.md` fora de `zswap-local/`; o texto e as reproduções do
+auditor foram extraídos verbatim do log da sessão. Mesmo espaço de IDs conferido contra o mapa achado→PR.
+A reauditoria substitutiva não foi necessária.
+
+| ID | estado | prova |
+|---|---|---|
+| A08 | ALREADY_FIXED_PROVEN | `fc59805` (CE-09) |
+| A09 | ALREADY_FIXED_PROVEN | `fc59805` (CE-09) |
+| A10 | **FIXED** em `5c2306e` | reproduzia em `2e3e397` (1.000 leituras com teto 400) |
+| A17 | ALREADY_FIXED_PROVEN | `a165d73` (#421) |
+
+Regressões: `src/lib/bancada/auditoria-externa-a08-a10.test.ts` (7 casos) e
+`src/lib/dca/auditoria-externa-a17.test.ts` (1, pela rota real do cron). Cada correção foi quebrada de
+propósito e a quebra foi detectada (A08, A09, A10 teto, A10 rodízio, A17).
+
+**Descoberto:** o relatório final do auditor tinha 33 achados. A31 (mint Solana em minúsculas: preço
+`null` em produção, confirmado por GET read-only), A32 (preço desconhecido vira zero no portfólio) e A33
+(`mode=list` com taker devolve calldata sem kill-switch) estão **OPEN** e não foram corrigidos aqui: A31
+mexe nos preços que o swap usa e A33 contraria uma escolha documentada (decisão do dono).
+`KNOWN_MISSING_CORRECTIONS=3` · `UNKNOWN_FINDINGS=0`.
+
+Gates, CI, preview e candidato: `RELEASE-CHAIN.md` "Atualização L-055". Evidência fora do repo:
+`zswap-local/evidence/forensic-a08-a09-a10-a17-final-20261014/` (`MANIFEST.sha256`). Resultado do deploy:
+registrado no commit seguinte, só de docs.
+

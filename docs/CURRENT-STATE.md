@@ -12,6 +12,13 @@
 
 ---
 
+## Atualização L-055 — fechamento final da auditoria externa (14/10/2026)
+
+A08, A09 e A17 da auditoria externa: ALREADY_FIXED_PROVEN. A10: corrigido em `5c2306e` (teto de símbolos por
+mesa no tique de papel). Fonte original recuperada; `UNKNOWN_FINDINGS=0`. A31/A32/A33, da mesma auditoria e
+nunca registrados antes, estão OPEN: `KNOWN_MISSING_CORRECTIONS=3`. Candidato e gates: `RELEASE-CHAIN.md`
+"Atualização L-055". Banco, migrations, flags, Autopilot e DCA real inalterados.
+
 ## Atualização de navegação L-054 (14/10/2026)
 
 A inclusão autorizada de Founder Pass no menu parte de 415ac35; código 34e9159. O candidato é o commit desta atualização, com CI/build no SHA final antes da publicação. SHA servido e resultados pós-publicação: `zswap-local/evidence/founders-menu-20261014/`. As tabelas L-053 abaixo são o snapshot anterior a esse microdelta de navegação. Não há alteração de banco, venda ou flags.
