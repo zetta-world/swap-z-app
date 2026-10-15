@@ -1060,3 +1060,7 @@ executável), smoke 25/25.
 redeploy; depois, conferência em produção só de cotação. Rollback da ativação: apagar `LIFI_INTEGRATOR` e
 redeploy. Resultado do deploy: registrado no commit seguinte.
 
+Resultado do deploy (15/10): `main` → `1611042` (fast-forward, CI verde); produção `dpl_2FBAU1EQesKUDhwzZHVRkEFJUw3z`
+READY nesse SHA (código `2b8118d`). Sem `LIFI_INTEGRATOR` ainda: LI.FI cotando com taxa 0% e lista não executável;
+smoke 25/25; runtime errors: nenhum. Rollback: `dpl_DCsP5Gbz6kyu9Y1RubfoZ3t9ZN3D` (`a19d2c1`).
+
