@@ -58,8 +58,16 @@ describe("a taxa só é pedida com destinatário", () => {
       .toContain("aplicarTaxa(params, args)");
   });
 
-  it("LI.FI idem", () => {
-    expect(lifi).toContain("if ((args.feeBps ?? 0) > 0 && args.feeRecipient)");
+  /**
+   * ⚠️ LIFI-UPSTREAM-01 (15/10): na LI.FI a taxa exige um INTEGRATOR CADASTRADO no
+   * portal — não um destinatário. Exigir `feeRecipient` mandava `fee` com um
+   * integrator inexistente, e a API recusava TODA cotação (400/1011). O
+   * comportamento está provado em `lifi-upstream-01.test.ts`; aqui, só a forma.
+   */
+  it("LI.FI: a taxa anda junto com o integrator cadastrado", () => {
+    expect(lifi).toContain("if ((args.feeBps ?? 0) > 0 && args.integrator)");
+    expect(lifi).not.toMatch(/params\.set\("referrer"/);
+    expect(lifi).not.toMatch(/params\.set\("integrator",\s*"z-swap"\)/);
   });
 
   /**

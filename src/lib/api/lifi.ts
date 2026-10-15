@@ -143,9 +143,30 @@ interface QuoteArgs {
   /** Override the destination address on the target chain. */
   toAddress?:   string;
   slippageBps?: number;     // 1-5000
-  /** Taxa da plataforma em pontos-base (Fase 9.2). Exige `feeRecipient`. */
+  /** Taxa da plataforma em pontos-base (Fase 9.2). Só é enviada com `integrator` (LIFI-UPSTREAM-01). */
   feeBps?:      number;
+  /** ⚠️ NÃO vai ao LiFi: lá a taxa cai na carteira cadastrada no portal, não num parâmetro. */
   feeRecipient?: string;
+  /** Integrator CADASTRADO no Partner Portal do LiFi (`integradorLiFi()`). Sem ele, sem taxa. */
+  integrator?:  string;
+}
+
+/**
+ * ⚠️⚠️ LIFI-UPSTREAM-01 (15/10): o integrator que cobra taxa no LiFi.
+ *
+ * Desde a Fase 9.2 (`dfff405`, 10/08) toda cotação levava `fee` + `integrator=z-swap` +
+ * `referrer`. O LiFi só aceita `fee` de integrator CADASTRADO no Partner Portal
+ * (portal.li.fi), com a carteira de taxa configurada LÁ — e "z-swap" nunca foi.
+ * Resposta: HTTP 400, code 1011, em TODA cotação; a rota engolia o erro, e o LiFi é a
+ * única fonte cross-chain. Dois meses sem Bridge.
+ *
+ * Decisão do dono (15/10): sem integrator cadastrado, NENHUMA taxa vai ao LiFi (e a
+ * rota divulga 0% nessas cotações). Cadastrado, `LIFI_INTEGRATOR` liga a taxa sem deploy.
+ * `referrer` saiu: no LiFi ele é só rastreio, nunca foi destinatário de taxa.
+ */
+export function integradorLiFi(): string | null {
+  const v = (process.env.LIFI_INTEGRATOR ?? "").trim();
+  return v.length > 0 ? v : null;
 }
 
 /**
@@ -181,10 +202,9 @@ export async function fetchLiFiQuote(args: QuoteArgs, integratorKey?: string): P
    * pedir 10.000%. A conversão fica aqui, no ponto de contato, e não em quem
    * chama: quem chama fala em bps, que é a unidade da escada.
    */
-  if ((args.feeBps ?? 0) > 0 && args.feeRecipient) {
+  if ((args.feeBps ?? 0) > 0 && args.integrator) {
     params.set("fee", ((args.feeBps as number) / 10_000).toString());
-    params.set("integrator", "z-swap");
-    params.set("referrer", args.feeRecipient);
+    params.set("integrator", args.integrator);
   }
 
   const res = await fetch(`${LIFI_BASE}/quote?${params.toString()}`, {

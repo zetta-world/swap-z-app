@@ -7,7 +7,7 @@ import {
   fetchZeroXPrice, fetchZeroXQuote, isZeroXSupported, ZEROX_CHAIN_IDS, ZEROX_NATIVE, tokenDaTaxa,
 } from "@/lib/api/zerox";
 import {
-  fetchLiFiQuote, isLiFiSupported, LIFI_CHAIN_IDS, LIFI_NATIVE,
+  fetchLiFiQuote, isLiFiSupported, LIFI_CHAIN_IDS, LIFI_NATIVE, integradorLiFi,
 } from "@/lib/api/lifi";
 import {
   fetchJupiterQuote, fetchJupiterSwap, JUPITER_SOL_MINT,
@@ -344,6 +344,14 @@ export async function GET(req: NextRequest) {
     feeBps:      taxa.bps,
     feeRecipient: taxa.destinatario ?? undefined,
   };
+  /**
+   * ⚠️ LIFI-UPSTREAM-01: sem integrator cadastrado no portal do LiFi, NENHUMA taxa vai
+   * nas cotações LiFi — e a taxa DIVULGADA dessas cotações é 0. A tela mostra a taxa
+   * que veio na resposta; anunciar 1% numa rota que não cobra seria a mesma mentira
+   * de contador que esta casa já pagou caro.
+   */
+  const integrador = integradorLiFi();
+  const taxaLiFi = integrador ? taxa : { ...taxa, bps: 0, pct: 0 };
   const lfArgs = {
     fromChainId: LIFI_CHAIN_IDS[fromChain as ChainId]!,
     toChainId:   LIFI_CHAIN_IDS[toChain   as ChainId]!,
@@ -353,8 +361,9 @@ export async function GET(req: NextRequest) {
     fromAddress: taker,
     toAddress:   recipient ?? taker,
     slippageBps,
-    feeBps:      taxa.bps,
+    feeBps:      taxaLiFi.bps,
     feeRecipient: taxa.destinatario ?? undefined,
+    integrator:  integrador ?? undefined,
   };
   /**
    * ⚠️ A JUPITER NÃO RECEBE TAXA (Fase 9.2). O `platformFeeBps` exige um
@@ -493,7 +502,7 @@ export async function GET(req: NextRequest) {
         await recordEvent("swap_intent", { wallet: taker, meta: {
           source, fromChain, toChain, sellToken, buyToken, crossChain: true,
           chainId: lfArgs.fromChainId, target: q.transactionRequest?.to, spender: q.estimate?.approvalAddress,
-          taxaPedidaBps: taxa.bps, taxaDestinatario: taxa.destinatario,
+          taxaPedidaBps: taxaLiFi.bps, taxaDestinatario: taxa.destinatario,
           taxaAceita: taxaAceitaLiFi,
           /**
            * ⚠️⚠️ A LISTA CRUA, E POR QUE ELA FALTAVA (14/08).
@@ -520,11 +529,11 @@ export async function GET(req: NextRequest) {
           taxaRespostaCrua: q.estimate?.feeCosts ?? null,
         } });
         alertarTaxaNaoRetida({
-          aceita: taxaAceitaLiFi, bps: taxa.bps,
+          aceita: taxaAceitaLiFi, bps: taxaLiFi.bps,
           source: "lifi", fromChain, sellToken, buyToken,
         });
         return NextResponse.json(
-          { ok: true, mode, source, taxa, result: q, normalized: normalizeLiFi(q) },
+          { ok: true, mode, source, taxa: taxaLiFi, result: q, normalized: normalizeLiFi(q) },
           { headers: { "Cache-Control": "no-store" } },
         );
       }
@@ -634,7 +643,8 @@ export async function GET(req: NextRequest) {
   const quotes  = rankQuotes(settled.filter((x): x is NormalizedQuote => !!x)).map(paraListagem);
 
   return NextResponse.json(
-    { ok: true, mode, quotes, taxa, isCrossChain },
+    // ⚠️ LIFI-UPSTREAM-01: cross-chain aqui é só LiFi — a taxa divulgada é a dele.
+    { ok: true, mode, quotes, taxa: isCrossChain ? taxaLiFi : taxa, isCrossChain },
     {
       // When a taker is present the amounts come from the firm upstream quote
       // for THAT wallet (the response no longer carries calldata — A33): keep it
