@@ -341,3 +341,6 @@ executável, taxa divulgada 0%.
 Desvios (escopo): arneses SQL não rodados (delta sem SQL); não é `CERTIFIED_EXACT_SHA` da plataforma inteira.
 Autorização do dono: missão LIFI-UPSTREAM-01 + escolha "Corrigir já, sem taxa" (15/10). Condição antes do
 merge: CI verde no SHA deste commit.
+
+Executado (15/10): `main` → `a19d2c1` (fast-forward); produção `dpl_DCsP5Gbz6kyu9Y1RubfoZ3t9ZN3D` READY nesse SHA;
+LiFi cotando; smoke 25/25; sem runtime errors. Detalhe: ledger L-058.

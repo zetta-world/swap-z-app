@@ -1022,3 +1022,12 @@ USDC Ethereum→Base, taxa divulgada 0% (produção: lista vazia, `upstream_fail
 carteira de taxa e definir `LIFI_INTEGRATOR` na Vercel com esse nome exato (ver `RUNBOOK.md`).
 Resultado do deploy: registrado no commit seguinte, só de docs.
 
+Resultado do deploy (15/10): `origin/main` avançada por fast-forward `835b5b0` → `a19d2c1` (sem force), depois do
+CI 38722925490 verde nesse SHA. Produção `dpl_DCsP5Gbz6kyu9Y1RubfoZ3t9ZN3D` READY em
+`a19d2c1a12d00f34ac82b86682cb02a48867a787` (código `2719e38`), alias `swap-z-app.vercel.app` confirmado pela API.
+Smoke read-only/quote-only: LiFi com lista (não executável) e cotação firme em ETH→Arbitrum, ETH→Optimism e USDC
+Ethereum→Base, taxa divulgada 0% (antes: lista vazia e `upstream_failed`); swap na mesma rede (0x) segue com
+taxa 100 bps; smoke geral 25/25; early access `closed`. Runtime errors: nenhum. Rollback:
+`dpl_3E65QrD59LprRzkkS7EMrMukEzRw` (`d390880`; deployment de produção anterior ao mesmo código de `835b5b0`).
+Banco, migrations, flags, Autopilot e DCA real inalterados; 0 ordens, 0 trades, 0 dinheiro movido.
+

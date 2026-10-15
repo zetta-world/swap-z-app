@@ -19,6 +19,9 @@ cadastrado no portal deles, 400/1011), e o cross-chain ficou sem rota. Corrigido
 `LIFI_INTEGRATOR`, as rotas LiFi não levam taxa e divulgam 0%. Para voltar a cobrar: cadastro em portal.li.fi
 + env (ver `RUNBOOK.md`). Auditoria externa segue fechada; A33 intocado.
 
+Em produção desde 15/10 ~10:54 UTC: `dpl_DCsP5Gbz6kyu9Y1RubfoZ3t9ZN3D` (`a19d2c1`, código `2719e38`); LiFi cotando
+em produção; sem runtime errors.
+
 ## Atualização L-057 — A33 corrigido; auditoria externa encerrada (15/10/2026)
 
 `/api/quote` em `mode=list` não devolve mais nada executável (DTO `ListQuote`, allowlist); `mode=quote` segue a
