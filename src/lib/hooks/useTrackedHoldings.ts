@@ -7,6 +7,7 @@ import { CHAINS, type Chain } from "@/lib/chains";
 import { findToken, type Token } from "@/lib/tokens";
 import { useTokenBalance, type TokenBalance } from "@/lib/hooks/useTokenBalance";
 import { useTokenPrices, tokenPriceKey } from "@/lib/hooks/useTokenPrices";
+import { avaliar, porValorDesc, temPreco } from "@/lib/portfolio/avaliacao";
 
 /**
  * Live wallet holdings across the curated token set. Mirrors the tracked
@@ -53,7 +54,11 @@ export interface TrackedHoldings {
   holdings:  Array<{ token: Token; balance: TokenBalance }>;
   byChain:   ChainSlice[];
   byAsset:   AssetSlice[];
+  /** ⚠️ A32: soma SÓ dos ativos com preço — ver `semPreco`/`indisponiveis`/`completo`. */
   walletUsd: number;
+  semPreco:  number;
+  indisponiveis: number;
+  completo:  boolean;
   loading:   boolean;
   anyWalletConnected: boolean;
 }
@@ -98,23 +103,26 @@ export function useTrackedHoldings(): TrackedHoldings {
       .filter((row): row is { token: Token; balance: TokenBalance } =>
         !!row.token && !row.balance.isZero && !row.balance.loading && !row.balance.error,
       )
-      .sort((a, b) => (b.balance.usdValue ?? 0) - (a.balance.usdValue ?? 0));
+      .sort((a, b) => porValorDesc(a.balance.usdValue, b.balance.usdValue));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackedTokens, ...balances]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const loading = useMemo(() => balances.some((b) => b.loading), [...balances]);
 
-  const walletUsd = useMemo(
-    () => holdings.reduce((acc, h) => acc + (h.balance.usdValue ?? 0), 0),
-    [holdings],
+  // ⚠️ A32: sem preço ≠ $0, e saldo não lido não some calado.
+  const indisponiveis = trackedTokens.filter((tk, i) => !!tk && !!balances[i].error).length;
+  const avaliacao = useMemo(
+    () => avaliar(holdings.map((h) => h.balance.usdValue), indisponiveis),
+    [holdings, indisponiveis],
   );
+  const walletUsd = avaliacao.totalUsd;
 
   const byChain = useMemo<ChainSlice[]>(() => {
     const map = new Map<string, number>();
     for (const h of holdings) {
-      const v = h.balance.usdValue ?? 0;
-      if (v <= 0) continue;
+      const v = h.balance.usdValue;
+      if (!temPreco(v) || v <= 0) continue;
       map.set(h.token.chain, (map.get(h.token.chain) ?? 0) + v);
     }
     return [...map.entries()]
@@ -125,8 +133,8 @@ export function useTrackedHoldings(): TrackedHoldings {
   const byAsset = useMemo<AssetSlice[]>(() => {
     const map = new Map<string, { value: number; color: string }>();
     for (const h of holdings) {
-      const v = h.balance.usdValue ?? 0;
-      if (v <= 0) continue;
+      const v = h.balance.usdValue;
+      if (!temPreco(v) || v <= 0) continue;
       const cur = map.get(h.token.symbol) ?? { value: 0, color: h.token.color ?? "#00E8FF" };
       cur.value += v;
       map.set(h.token.symbol, cur);
@@ -136,5 +144,9 @@ export function useTrackedHoldings(): TrackedHoldings {
       .sort((a, b) => b.value - a.value);
   }, [holdings]);
 
-  return { holdings, byChain, byAsset, walletUsd, loading, anyWalletConnected };
+  return {
+    holdings, byChain, byAsset, walletUsd,
+    semPreco: avaliacao.semPreco, indisponiveis: avaliacao.indisponiveis, completo: avaliacao.completo,
+    loading, anyWalletConnected,
+  };
 }

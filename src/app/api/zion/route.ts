@@ -28,6 +28,7 @@ import { tierSatisfies, FEATURE_TIER } from "@/lib/tier/types";
 import { consumeAnalysisQuota, denialResponse } from "@/lib/tier/enforce";
 import { featureForOp } from "@/lib/zion/op-tier";
 import { envNumber } from "@/lib/env-number";
+import { linhasDaCarteira } from "@/lib/portfolio/avaliacao";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -939,16 +940,9 @@ async function buildPairData(args: RunArgs): Promise<string> {
   if (args.walletJson) {
     lines.push("\nWALLET HOLDINGS (all chains, live balances):");
     try {
-      const holdings: Array<{ symbol: string; chain: string; amount: string; usdValue: number }> =
+      const holdings: Array<{ symbol: string; chain: string; amount: string; usdValue: number | null }> =
         JSON.parse(args.walletJson);
-      const totalUsd = holdings.reduce((s, h) => s + (h.usdValue ?? 0), 0);
-      lines.push(`  total_portfolio_usd: ${totalUsd.toFixed(2)}`);
-      holdings
-        .sort((a, b) => (b.usdValue ?? 0) - (a.usdValue ?? 0))
-        .slice(0, 20)
-        .forEach((h) => {
-          lines.push(`  - ${h.symbol} on ${h.chain}: ${h.amount} (~$${(h.usdValue ?? 0).toFixed(2)})`);
-        });
+      linhasDaCarteira(holdings, 20).forEach((l) => lines.push(l));
     } catch {}
   }
 
@@ -1037,12 +1031,8 @@ async function buildAccumulationPayload(args: RunArgs): Promise<string> {
   if (args.walletJson) {
     lines.push("\nWALLET HOLDINGS:");
     try {
-      const holdings: Array<{ symbol: string; chain: string; amount: string; usdValue: number }> = JSON.parse(args.walletJson);
-      const totalUsd = holdings.reduce((s, h) => s + (h.usdValue ?? 0), 0);
-      lines.push(`  total_portfolio_usd: ${totalUsd.toFixed(2)}`);
-      holdings.sort((a, b) => (b.usdValue ?? 0) - (a.usdValue ?? 0)).slice(0, 10).forEach((h) => {
-        lines.push(`  - ${h.symbol} on ${h.chain}: ${h.amount} (~$${(h.usdValue ?? 0).toFixed(2)})`);
-      });
+      const holdings: Array<{ symbol: string; chain: string; amount: string; usdValue: number | null }> = JSON.parse(args.walletJson);
+      linhasDaCarteira(holdings, 10).forEach((l) => lines.push(l));
     } catch {}
   }
 

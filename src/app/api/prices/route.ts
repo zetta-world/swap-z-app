@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { chaveDePreco, enderecoCanonico } from "@/lib/precos/chave";
 
 /**
  * Live USD price feed for tokens across every chain the platform tracks.
@@ -68,9 +69,10 @@ function parseQuery(raw: string): ParsedTok[] {
     if (!trimmed) continue;
     const [chainRaw, addrRaw] = trimmed.split(":");
     if (!chainRaw || !addrRaw) continue;
+    // ⚠️ A31: minúsculas só no hex EVM; o mint Solana é a identidade e passa exato.
     const chain = chainRaw.toLowerCase();
-    const addr  = addrRaw === "native" ? "native" : addrRaw.toLowerCase();
-    const key   = `${chain}:${addr}`;
+    const addr  = addrRaw === "native" ? "native" : enderecoCanonico(addrRaw);
+    const key   = chaveDePreco(chain, addr);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({ chain, addr, key });
@@ -158,8 +160,10 @@ export async function GET(req: NextRequest) {
             if (!attrs?.address) continue;
             const px = attrs.price_usd ? parseFloat(attrs.price_usd) : NaN;
             if (!Number.isFinite(px)) continue;
-            // GeckoTerminal returns lowercase addresses, our keys match
-            result[`${chain}:${attrs.address.toLowerCase()}`] = px;
+            // ⚠️ A31: a mesma regra do pedido. A GeckoTerminal devolve EVM em
+            // minúsculas e Solana exato; só grava chave que foi PEDIDA.
+            const k = chaveDePreco(chain, attrs.address);
+            if (k in result) result[k] = px;
           }
         } catch (err) {
           console.warn("[prices] geckoterminal failed:", err instanceof Error ? err.message : err);

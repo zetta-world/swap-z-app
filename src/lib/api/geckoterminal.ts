@@ -1,6 +1,10 @@
 // GeckoTerminal API v2 — free, no key
 // https://api.geckoterminal.com/docs/index.html
 
+import { enderecoCanonico } from "@/lib/precos/chave";
+
+// ⚠️ A31: endereço vai à GeckoTerminal pela `enderecoCanonico` — hex EVM em
+// minúsculas, mint/pool Solana (base58) EXATO. Minúsculas num base58 é outro endereço.
 const NETWORK_IDS: Record<string, string> = {
   ethereum:  "eth",
   bsc:       "bsc",
@@ -322,7 +326,7 @@ interface GTTokenAttrs {
 export async function getTokenInfo(chainName: string, address: string): Promise<TokenInfo | null> {
   const network = NETWORK_IDS[chainName];
   if (!network || !address || address === "native") return null;
-  const url = `https://api.geckoterminal.com/api/v2/networks/${network}/tokens/${address.toLowerCase()}`;
+  const url = `https://api.geckoterminal.com/api/v2/networks/${network}/tokens/${enderecoCanonico(address)}`;
   try {
     const res = await fetch(url, {
       headers: { Accept: "application/json;version=20230302" },
@@ -436,7 +440,7 @@ export async function getPoolMeta(chainName: string, poolAddress: string): Promi
 export async function getPoolMetaOuFalha(chainName: string, poolAddress: string): Promise<PoolMeta | null> {
   const network = NETWORK_IDS[chainName];
   if (!network || !poolAddress) return null;
-  const url = `https://api.geckoterminal.com/api/v2/networks/${network}/pools/${poolAddress.toLowerCase()}?include=base_token,quote_token,dex`;
+  const url = `https://api.geckoterminal.com/api/v2/networks/${network}/pools/${enderecoCanonico(poolAddress)}?include=base_token,quote_token,dex`;
   {
     const res = await fetch(url, {
       headers: { Accept: "application/json;version=20230302" },
@@ -499,7 +503,7 @@ export async function getTokenTopPool(
 ): Promise<{ address: string; tokenIsBase: boolean } | null> {
   const network = NETWORK_IDS[chainName];
   if (!network || !tokenAddress || tokenAddress === "native") return null;
-  const url = `https://api.geckoterminal.com/api/v2/networks/${network}/tokens/${tokenAddress.toLowerCase()}/pools?include=base_token&page=1`;
+  const url = `https://api.geckoterminal.com/api/v2/networks/${network}/tokens/${enderecoCanonico(tokenAddress)}/pools?include=base_token&page=1`;
   try {
     const res = await fetch(url, {
       headers: { Accept: "application/json;version=20230302" },
@@ -515,8 +519,8 @@ export async function getTokenTopPool(
     if (!addr) return null;
     const baseId   = pool?.relationships?.base_token?.data?.id;
     const baseTok  = (data.included ?? []).find((x) => x.id === baseId);
-    const baseAddr = baseTok?.attributes?.address?.toLowerCase() ?? "";
-    return { address: addr, tokenIsBase: baseAddr === tokenAddress.toLowerCase() };
+    const baseAddr = enderecoCanonico(baseTok?.attributes?.address ?? "");
+    return { address: addr, tokenIsBase: baseAddr === enderecoCanonico(tokenAddress) };
   } catch {
     return null;
   }
@@ -540,7 +544,7 @@ export async function getTokenPools(
 ): Promise<PoolSummary[]> {
   const network = NETWORK_IDS[chainName];
   if (!network || !tokenAddress || tokenAddress === "native") throw new GeckoIndisponivel(0, "rede");
-  const url = `https://api.geckoterminal.com/api/v2/networks/${network}/tokens/${tokenAddress.toLowerCase()}/pools?include=dex&page=1`;
+  const url = `https://api.geckoterminal.com/api/v2/networks/${network}/tokens/${enderecoCanonico(tokenAddress)}/pools?include=dex&page=1`;
   const data = await buscar<{ data: GTPool[] }>(url, 30);
   return (data.data ?? []).slice(0, limit).map((p) => poolToSummary(p, network));
 }
@@ -622,7 +626,7 @@ export async function getOHLCVOuFalha(
   const cfg = TF_MAP[tf];
   if (!cfg) throw new GeckoIndisponivel(0, "rede");
 
-  const url = `https://api.geckoterminal.com/api/v2/networks/${network}/pools/${poolAddress.toLowerCase()}/ohlcv/${cfg.timeframe}?aggregate=${cfg.aggregate}&limit=${Math.min(limit, 1000)}&currency=usd&token=${token}`;
+  const url = `https://api.geckoterminal.com/api/v2/networks/${network}/pools/${enderecoCanonico(poolAddress)}/ohlcv/${cfg.timeframe}?aggregate=${cfg.aggregate}&limit=${Math.min(limit, 1000)}&currency=usd&token=${token}`;
   const data = await buscar<{ data?: { attributes?: { ohlcv_list?: number[][] } } }>(url, 0);
   const rows = data.data?.attributes?.ohlcv_list ?? [];
   return rows
@@ -697,7 +701,7 @@ export async function getRecentTrades(
 ): Promise<Trade[]> {
   const network = NETWORK_IDS[chainName];
   if (!network || !poolAddress) return [];
-  const url = `https://api.geckoterminal.com/api/v2/networks/${network}/pools/${poolAddress.toLowerCase()}/trades?trade_volume_in_usd_greater_than=0`;
+  const url = `https://api.geckoterminal.com/api/v2/networks/${network}/pools/${enderecoCanonico(poolAddress)}/trades?trade_volume_in_usd_greater_than=0`;
   try {
     const res = await fetch(url, {
       headers: { Accept: "application/json;version=20230302" },
@@ -725,7 +729,7 @@ export async function getRecentTrades(
         amountIn:  Number(a.from_token_amount ?? 0),
         amountOut: Number(a.to_token_amount   ?? 0),
         txHash:    a.tx_hash ?? "",
-        trader:    (a.tx_from_address ?? "").toLowerCase(),
+        trader:    enderecoCanonico(a.tx_from_address ?? ""),   // A31: carteira Solana passa exata
         sizeUsd:   Number(a.volume_in_usd ?? 0),
       };
     }).filter((t) => t.ts > 0);

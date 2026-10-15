@@ -475,6 +475,13 @@ export default function DashboardView() {
               <div className="priv-value font-display font-extrabold text-2xl sm:text-3xl text-ink tabular-nums truncate">
                 {mask(formatUsd(totalUsd))}
               </div>
+              {/* ⚠️ A32: total parcial é dito, não escondido. */}
+              {live.anyWalletConnected && live.semPreco > 0 && (
+                <div className="font-mono text-[10px] text-gold mt-1">{t("portfolio.partialTotal", { n: live.semPreco })}</div>
+              )}
+              {live.anyWalletConnected && live.indisponiveis > 0 && (
+                <div className="font-mono text-[10px] text-gold mt-1">{t("portfolio.balancesUnavailable", { n: live.indisponiveis })}</div>
+              )}
               <div className="flex items-center gap-3 mt-1.5">
                 <span className="font-mono text-[10px] text-ink-3">24h</span>
                 <DeltaPill d={pnl24h} />

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Token } from "@/lib/tokens";
+import { chaveDePreco } from "@/lib/precos/chave";
 
 interface PricesResponse {
   ok:     boolean;
@@ -17,8 +18,9 @@ interface UseTokenPricesResult {
 
 const REFRESH_MS = 60_000;
 
+// ⚠️ A31: a regra de case mora em `lib/precos/chave.ts` — mint Solana passa exato.
 function tokenKey(t: Token): string {
-  return `${t.chain}:${t.address.toLowerCase()}`;
+  return chaveDePreco(t.chain, t.address);
 }
 
 /**

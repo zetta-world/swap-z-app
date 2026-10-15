@@ -7,6 +7,7 @@ import {
 } from "@/lib/zion/orders";
 import { useSwap } from "@/lib/store/swap";
 import { findToken } from "@/lib/tokens";
+import { tokenPriceKey } from "@/lib/hooks/useTokenPrices";
 import type { ChainId } from "@/lib/chains";
 import {
   direcaoDoGatilho, simboloVigiado, lerPrecoDoGatilho, gatilhoAtingido,
@@ -46,11 +47,10 @@ export function useOrderWatcher() {
         const sym   = simboloVigiado(o.card);
         if (!sym) continue;
         const tok = findToken(chain, sym);
-        if (tok && tok.address !== "native") {
-          keys.add(`${chain}:${tok.address}`);
-        } else if (tok?.address === "native") {
-          keys.add(`${chain}:native`);
-        }
+        // ⚠️ A31: a MESMA chave que a rota devolve. Antes ia o endereço cru: o
+        // checksum EVM não batia com a resposta em minúsculas e nenhuma ordem
+        // de token com contrato disparava.
+        if (tok) keys.add(tokenPriceKey(tok));
       }
       if (keys.size === 0) return;
 
@@ -136,8 +136,7 @@ function checkTrigger(
   const tok = findToken(chain, sym);
   if (!tok) return false;
 
-  const priceKey = tok.address === "native" ? `${chain}:native` : `${chain}:${tok.address}`;
-  const current  = prices[priceKey];
+  const current  = prices[tokenPriceKey(tok)];
   if (current == null) return false;
 
   return gatilhoAtingido(direcao, current, gatilho);

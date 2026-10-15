@@ -11,6 +11,7 @@ import { compactNumber, formatUsd } from "@/lib/format";
 import { useTokenBalance, type TokenBalance } from "@/lib/hooks/useTokenBalance";
 import { useTokenPrices, tokenPriceKey } from "@/lib/hooks/useTokenPrices";
 import { usePortfolioHistory } from "@/lib/store/portfolioHistory";
+import { avaliar, porValorDesc, temPreco } from "@/lib/portfolio/avaliacao";
 import CexPortfolioRollup from "./CexPortfolioRollup";
 import PortfolioEvolution from "./PortfolioEvolution";
 import { useT } from "@/lib/i18n";
@@ -104,9 +105,12 @@ export default function PortfolioView() {
       .filter((row): row is { token: Token; balance: TokenBalance } =>
         !!row.token && !row.balance.isZero && !row.balance.loading && !row.balance.error,
       )
-      .sort((a, b) => (b.balance.usdValue ?? 0) - (a.balance.usdValue ?? 0));
+      .sort((a, b) => porValorDesc(a.balance.usdValue, b.balance.usdValue));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackedTokens, ...balances]);
+
+  // ⚠️ A32: saldo que não foi lido NÃO some calado — é contado e dito.
+  const indisponiveis = trackedTokens.filter((tk, i) => !!tk && !!balances[i].error).length;
 
   // True while any slot is still resolving. Combined with the "wallet
   // connected" check, we use this to show shimmer skeletons instead of
@@ -122,25 +126,32 @@ export default function PortfolioView() {
     catch { return 0; }
   });
 
+  /**
+   * ⚠️⚠️ A32: o total soma SÓ o que tem preço. Sem preço ≠ $0: os ativos sem
+   * preço e os saldos não lidos são contados e o total é marcado parcial.
+   */
   const totals = useMemo(() => {
-    const portfolio = holdings.reduce((acc, h) => acc + (h.balance.usdValue ?? 0), 0);
-    return { portfolio, cex: cexUsd, total: portfolio + cexUsd };
-  }, [holdings, cexUsd]);
+    const a = avaliar(holdings.map((h) => h.balance.usdValue), indisponiveis);
+    return { portfolio: a.totalUsd, cex: cexUsd, total: a.totalUsd + cexUsd,
+      semPreco: a.semPreco, indisponiveis: a.indisponiveis, completo: a.completo };
+  }, [holdings, cexUsd, indisponiveis]);
 
   // Record a balance snapshot once the live totals settle. The store
   // throttles writes internally, so calling on every change is safe.
   const recordSnapshot = usePortfolioHistory((s) => s.record);
+  // ⚠️ A32: total PARCIAL não vira ponto do histórico — compará-lo depois com um
+  // total completo mostraria "ganho" ou "perda" que é só preço que faltou.
   useEffect(() => {
-    if (balancesLoading || totals.total <= 0) return;
+    if (balancesLoading || totals.total <= 0 || !totals.completo) return;
     recordSnapshot(totals.total, totals.portfolio, totals.cex);
-  }, [balancesLoading, totals.total, totals.portfolio, totals.cex, recordSnapshot]);
+  }, [balancesLoading, totals.total, totals.portfolio, totals.cex, totals.completo, recordSnapshot]);
 
   // Distribution across chains for the bar chart.
   const byChain = useMemo(() => {
     const map = new Map<string, number>();
     for (const h of holdings) {
-      const v = h.balance.usdValue ?? 0;
-      if (v <= 0) continue;
+      const v = h.balance.usdValue;
+      if (!temPreco(v) || v <= 0) continue;
       map.set(h.token.chain, (map.get(h.token.chain) ?? 0) + v);
     }
     return [...map.entries()]
@@ -154,6 +165,9 @@ export default function PortfolioView() {
   const chainTotal = byChain.reduce((acc, c) => acc + c.value, 0) || 1;
 
   const mask = (v: string) => (hidden ? "•••••" : v);
+  // ⚠️ A32: com NADA precificado, "$0.00" seria um número inventado — é "—".
+  const usdOuDesconhecido = (v: number, semPrecoNoTotal: boolean) =>
+    v === 0 && semPrecoNoTotal ? "—" : formatUsd(v);
 
   return (
     <div className="relative min-h-[calc(100vh-4rem)] overflow-x-hidden">
@@ -209,9 +223,16 @@ export default function PortfolioView() {
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                   <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase mb-1.5">{t("portfolio.netWorth")}</div>
-                  <div className="priv-value font-display font-extrabold text-3xl sm:text-4xl text-ink">{mask(formatUsd(totals.total))}</div>
+                  <div className="priv-value font-display font-extrabold text-3xl sm:text-4xl text-ink">{mask(usdOuDesconhecido(totals.total, !totals.completo))}</div>
+                  {/* ⚠️ A32: total parcial é DITO — sem isso o número promete uma precisão que não tem. */}
+                  {totals.semPreco > 0 && (
+                    <div className="font-mono text-[10px] text-gold mt-1">{t("portfolio.partialTotal", { n: totals.semPreco })}</div>
+                  )}
+                  {totals.indisponiveis > 0 && (
+                    <div className="font-mono text-[10px] text-gold mt-1">{t("portfolio.balancesUnavailable", { n: totals.indisponiveis })}</div>
+                  )}
                 </div>
-                <Metric label={t("portfolio.walletBalance")} value={mask(formatUsd(totals.portfolio))} tone="cyan" />
+                <Metric label={t("portfolio.walletBalance")} value={mask(usdOuDesconhecido(totals.portfolio, !totals.completo))} tone="cyan" />
                 <Metric label={t("portfolio.cexBalance")}    value={mask(formatUsd(totals.cex))}       tone="violet" />
                 <Metric label={t("portfolio.chainsTracked")} value={String(byChain.length)} tone="gold" />
               </div>
@@ -294,7 +315,7 @@ export default function PortfolioView() {
           ) : (
             <div className="divide-y divide-white/[0.04]">
               {holdings.map(({ token, balance }) => {
-                const usd = balance.usdValue ?? 0;
+                const usd = balance.usdValue;
                 const qtyNum = Number(balance.formatted) || 0;
                 return (
                   <div key={token.symbol + ":" + token.chain} className="px-4 py-3 flex items-center gap-3 hover:bg-white/[0.02]">
@@ -304,7 +325,9 @@ export default function PortfolioView() {
                       <div className="font-mono text-[10px] text-ink-3 uppercase tracking-wider truncate">{token.chain}</div>
                     </div>
                     <div className="text-right min-w-0">
-                      <div className="font-mono text-sm text-ink">{mask(formatUsd(usd))}</div>
+                      {temPreco(usd)
+                        ? <div className="font-mono text-sm text-ink">{mask(formatUsd(usd))}</div>
+                        : <div className="font-mono text-[11px] text-ink-3">{t("portfolio.priceUnavailable")}</div>}
                       <div className="font-mono text-[10px] text-ink-3 truncate">
                         {hidden ? "•••••" : `${compactNumber(qtyNum)} ${token.symbol}`}
                       </div>
