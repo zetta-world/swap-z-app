@@ -1031,3 +1031,32 @@ taxa 100 bps; smoke geral 25/25; early access `closed`. Runtime errors: nenhum. 
 `dpl_3E65QrD59LprRzkkS7EMrMukEzRw` (`d390880`; deployment de produção anterior ao mesmo código de `835b5b0`).
 Banco, migrations, flags, Autopilot e DCA real inalterados; 0 ordens, 0 trades, 0 dinheiro movido.
 
+## L-059 — LIFI-UPSTREAM-01, ativação: integrator `zswap` validado e detecção da taxa corrigida (15/10/2026)
+
+O dono cadastrou o integrator **`zswap`** no Partner Portal do LI.FI (carteiras de taxa por família de rede,
+EVM L2 por rede deixado em branco). Antes de ligar `LIFI_INTEGRATOR`, teste só de cotação na API real com
+`integrator=zswap` + `fee`: **HTTP 200** (sem 1011) em ETH→Arbitrum, USDC Ethereum→Base (1%) e ETH→Optimism
+(0,10%). O LI.FI **soma** a taxa do integrador à dele na linha "LIFI Fixed Fee": sem `fee` 0,0025; `fee=0.01`
+0,0125; `fee=0.001` 0,0035 (evidência `lifi-upstream-01-20261015/integrator-check-zswap/`).
+
+**Defeito achado antes de ligar:** a rota procurava a taxa por nome (`integrator|z-swap|referrer`). Com a
+variável ligada, toda cotação LI.FI firme dispararia o alerta **falso** "TAXA NÃO RETIDA" no Telegram e gravaria
+`taxaAceita: []` no `swap_intent`, com a taxa retida.
+
+**Correção (`2b8118d`).** `taxaDoIntegradorNaCotacao` em `lib/api/lifi.ts`: linha própria do integrador se o
+LI.FI um dia separar; senão, nossa parte = total da "LIFI Fixed Fee" − taxa própria do LI.FI
+(`LIFI_TAXA_PROPRIA`, env `LIFI_SERVICE_FEE`, padrão 0,0025). Sem prova, `null` — erra para o alarme, nunca para
+receita fingida. A rota grava `taxaAceita` com pct, valor da nossa parte, token e total.
+
+**Prova.** `lifi-taxa-integrador.test.ts` (7, com respostas reais aparadas em `__fixtures__/`) + 2 casos na
+rota (`lifi-upstream-01.test.ts`: sem alerta falso e receita registrada; gêmea: LI.FI sem a nossa taxa →
+alerta dispara). Em `00c9eec` o caso da rota falha (alerta falso reproduzido). 3 quebras deliberadas
+detectadas. Gates no SHA exato `2b8118d` (tree `51373b64376f9d52f2e905987260c279108d2164`): `npm ci` 0 · lint
+0/145 · type-check 0 · suítes 19/229 · suíte 329/4785 ×2 · build 0 · audit-gate OK · CI 38825991656 · preview
+`dpl_4LQyCmZ7rdyaSLqwHenMpwVtDtfV`: sem `LIFI_INTEGRATOR` igual à produção (LI.FI cotando, taxa 0%, lista não
+executável), smoke 25/25.
+
+**Ativação (dono):** `LIFI_INTEGRATOR=zswap` e `LIFI_API_KEY` (sensível) em Production+Preview na Vercel +
+redeploy; depois, conferência em produção só de cotação. Rollback da ativação: apagar `LIFI_INTEGRATOR` e
+redeploy. Resultado do deploy: registrado no commit seguinte.
+

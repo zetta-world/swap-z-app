@@ -344,3 +344,12 @@ merge: CI verde no SHA deste commit.
 
 Executado (15/10): `main` → `a19d2c1` (fast-forward); produção `dpl_DCsP5Gbz6kyu9Y1RubfoZ3t9ZN3D` READY nesse SHA;
 LiFi cotando; smoke 25/25; sem runtime errors. Detalhe: ledger L-058.
+
+
+## Atualização L-059 — candidato detecção da taxa LI.FI
+
+RELEASE_CANDIDATE = THIS_RELEASE_CANDIDATE_COMMIT (docs-only, filho de `2b8118d485990342418b4632d93d4bb296c564ca`).
+Base `00c9eece2c92a99a03ef10482909aa945978ef42`. Delta: `lib/api/lifi.ts` (`taxaDoIntegradorNaCotacao`),
+`app/api/quote/route.ts` (`taxaAceita` da LI.FI). Gates, CI 38825991656 e preview `dpl_4LQyCmZ7rdyaSLqwHenMpwVtDtfV`
+em PASS (ledger L-059). Desvios: escopo (sem SQL). Autorização: missão LIFI-UPSTREAM-01 do dono (15/10).
+Condição antes do merge: CI verde no SHA deste commit.

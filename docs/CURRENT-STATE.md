@@ -12,6 +12,11 @@
 
 ---
 
+## Atualização L-059 — taxa LI.FI pronta para ativar (15/10/2026)
+
+Integrator `zswap` cadastrado e validado na API real; a detecção da taxa (somada à do LI.FI) foi corrigida em
+`2b8118d`. A taxa no cross-chain saindo de EVM liga quando o dono definir `LIFI_INTEGRATOR=zswap` na Vercel.
+
 ## Atualização L-058 — LiFi (cross-chain) restaurado (15/10/2026)
 
 LIFI-UPSTREAM-01: desde `dfff405` (10/08) o LiFi recusava toda cotação (taxa com integrator "z-swap" não
