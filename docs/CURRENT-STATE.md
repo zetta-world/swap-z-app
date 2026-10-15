@@ -19,6 +19,9 @@
 fechados: `KNOWN_MISSING_CORRECTIONS=0` · `UNKNOWN_FINDINGS=0`. Observação aberta fora de escopo: LiFi sem
 cotação (LIFI-UPSTREAM-01). Banco, migrations, flags, Autopilot e DCA real inalterados.
 
+Em produção desde 15/10 ~10:00 UTC: `dpl_3E65QrD59LprRzkkS7EMrMukEzRw` (`d390880`, código `4ba6694`); smoke 25/25;
+lista sem payload executável; sem runtime errors. Rollback: `dpl_EvGv264czgmaBRPuhaQvFDgMDKxQ` (`5af0504`).
+
 ## Atualização L-056 — A31 e A32 corrigidos (14/10/2026)
 
 A31 (mint Solana em minúsculas: preço `null` para SPL) e A32 (preço desconhecido como patrimônio zero)

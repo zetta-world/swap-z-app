@@ -973,3 +973,13 @@ Observação fora do escopo: LiFi sem cotação em produção e preview (LIFI-UP
 `KNOWN_MISSING_CORRECTIONS=0` · `UNKNOWN_FINDINGS=0` · AUDIT RECONCILIATION FINAL = PASS. Gates, CI, preview e
 candidato: `RELEASE-CHAIN.md` "Atualização L-057". Resultado do deploy: registrado no commit seguinte, só de docs.
 
+Resultado do deploy (15/10): `origin/main` avançada por fast-forward `5af0504` → `d390880` (sem force), depois
+do CI 38716563329 verde nesse SHA. Produção `dpl_3E65QrD59LprRzkkS7EMrMukEzRw` READY em
+`d390880cf150534a9c9755ac318deb188a23b327` (código `4ba6694`), alias `swap-z-app.vercel.app` confirmado pela API.
+Smoke read-only 25/25; listas reais 0x (com e sem carteira) e Jupiter: **zero material executável** (antes: calldata
+real na lista 0x com carteira); `mode=quote` 0x com interruptores abertos devolve payload firme; fluxo do swap no
+navegador (1440/390) com cotação 0,05 SOL → ~5,15 USDC na tela e lista não executável; early access `closed`.
+Runtime errors: nenhum. Kill-switch de `mode=quote` provado pelos testes E/F (mocks), sem mexer em flag de
+produção. Rollback: `dpl_EvGv264czgmaBRPuhaQvFDgMDKxQ` (`5af0504`). Banco, migrations, flags, Autopilot e DCA real
+inalterados; 0 ordens, 0 trades, 0 dinheiro movido.
+

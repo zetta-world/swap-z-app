@@ -319,3 +319,6 @@ Desvios (escopo, como L-054/55/56): arneses SQL não rodados (delta sem SQL); n�
 plataforma inteira. LiFi sem cotação em produção e preview (pré-existente, LIFI-UPSTREAM-01): o caso LiFi do A33
 é provado pelo teste com a rota real. Autorização do dono: missão "FINAL EXTERNAL AUDIT CLOSURE — A33" (15/10).
 Condição antes do merge: CI verde no SHA deste commit.
+
+Executado (15/10): `main` → `d390880` (fast-forward); produção `dpl_3E65QrD59LprRzkkS7EMrMukEzRw` READY nesse SHA;
+smoke 25/25; lista sem payload executável; sem runtime errors. Detalhe: ledger L-057.
