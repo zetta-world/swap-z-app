@@ -7,7 +7,7 @@ import {
   fetchZeroXPrice, fetchZeroXQuote, isZeroXSupported, ZEROX_CHAIN_IDS, ZEROX_NATIVE, tokenDaTaxa,
 } from "@/lib/api/zerox";
 import {
-  fetchLiFiQuote, isLiFiSupported, LIFI_CHAIN_IDS, LIFI_NATIVE, integradorLiFi,
+  fetchLiFiQuote, isLiFiSupported, LIFI_CHAIN_IDS, LIFI_NATIVE, integradorLiFi, taxaDoIntegradorNaCotacao,
 } from "@/lib/api/lifi";
 import {
   fetchJupiterQuote, fetchJupiterSwap, JUPITER_SOL_MINT,
@@ -495,9 +495,12 @@ export async function GET(req: NextRequest) {
          * mudar nada na tela. `taxaAceita` sai da resposta dela, então a ordem
          * de grandeza fica conferível sem depender de ninguém abrir explorador.
          */
-        const taxaAceitaLiFi = (q.estimate?.feeCosts ?? [])
-          .filter((f) => /integrator|z-swap|referrer/i.test(`${f.name ?? ""}${f.description ?? ""}`))
-          .map((f) => ({ amount: f.amount, token: f.token?.symbol, pct: f.percentage }));
+        // ⚠️ LIFI-UPSTREAM-01: o LI.FI SOMA a nossa taxa à dele ("LIFI Fixed Fee"); a busca por
+        // nome não achava nada e acusava "taxa não retida" com a taxa retida. Ver `lifi.ts`.
+        const retida = taxaDoIntegradorNaCotacao(q, taxaLiFi.bps / 10_000);
+        const taxaAceitaLiFi = retida
+          ? [{ amount: retida.amount, token: retida.token, pct: String(retida.pct), pctTotalLiFi: String(retida.pctTotal) }]
+          : [];
         // ⚠️ AGUARDADO pelo mesmo motivo do caminho 0x acima.
         await recordEvent("swap_intent", { wallet: taker, meta: {
           source, fromChain, toChain, sellToken, buyToken, crossChain: true,

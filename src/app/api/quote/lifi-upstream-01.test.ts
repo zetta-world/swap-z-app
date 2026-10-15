@@ -18,7 +18,7 @@ import { NextRequest } from "next/server";
 
 const TAKER = "0x" + "c".repeat(40);
 const CADASTRADO = "zswap-portal";
-const s = vi.hoisted(() => ({ pedidos: [] as URL[], zxPrice: vi.fn() }));
+const s = vi.hoisted(() => ({ pedidos: [] as URL[], zxPrice: vi.fn(), lifiIgnoraTaxa: false }));
 
 vi.mock("@/lib/rate-limit", () => ({ rateLimitDurable: async () => ({ ok: true }), getClientId: () => "lifi" }));
 vi.mock("@/lib/admin/track", () => ({ recordEvent: vi.fn(async () => undefined), notifyTelegram: vi.fn(), logSecurity: vi.fn() }));
@@ -28,6 +28,7 @@ vi.mock("@/lib/tier/check", () => ({ getTierForWallet: async () => ({ tier: "fre
 vi.mock("@/lib/api/zerox", async (orig) => ({ ...(await orig<typeof import("@/lib/api/zerox")>()), fetchZeroXPrice: s.zxPrice }));
 
 import { GET } from "@/app/api/quote/route";
+import { notifyTelegram, recordEvent } from "@/lib/admin/track";
 import { fetchLiFiQuote, LIFI_NATIVE } from "@/lib/api/lifi";
 
 /** O LiFi real: `fee` exige integrator, e integrator com `fee` tem de estar cadastrado no portal. */
@@ -44,7 +45,12 @@ function servidorLiFi() {
       tool: "stargate", toolDetails: { name: "Stargate" },
       action: { fromChainId: 1, toChainId: 42161, toAddress: u.searchParams.get("toAddress") },
       estimate: { fromAmount: "20000000000000000", toAmount: "19950000000000000", toAmountMin: "19850000000000000",
-        executionDuration: 60, approvalAddress: "0x" + "d".repeat(40), gasCosts: [], feeCosts: [] },
+        executionDuration: 60, approvalAddress: "0x" + "d".repeat(40), gasCosts: [],
+        // Como a API real (medido 15/10): a taxa do integrador vem SOMADA à do LI.FI, numa linha só.
+        // `s.lifiIgnoraTaxa` simula o LI.FI não aplicar a nossa (só os 0,25% dele).
+        feeCosts: [{ name: "LIFI Fixed Fee", description: "Fixed LIFI fee, independent of any other fee",
+          percentage: String(0.0025 + (fee && !s.lifiIgnoraTaxa ? Number(fee) : 0)), amount: "250000000000000",
+          token: { symbol: "ETH" } }] },
       includedSteps: [{ tool: "stargate", type: "cross", toolDetails: { name: "Stargate" } }],
       transactionRequest: { to: "0x" + "a".repeat(40), data: "0xcafe" + "00".repeat(40), value: "20000000000000000" },
     });
@@ -107,6 +113,24 @@ describe("LIFI-UPSTREAM-01 · com integrator cadastrado, a taxa volta sozinha", 
     expect(q.get("fee")).toBe("0.01");            // free = 100 bps
     expect(q.get("integrator")).toBe(CADASTRADO);
     expect(body.taxa).toMatchObject({ bps: 100 });
+  });
+
+  it("⚠️ taxa retida (somada à do LI.FI): NENHUM alerta de 'taxa não retida', e a receita é registrada", async () => {
+    s.lifiIgnoraTaxa = false;
+    await pedir({ mode: "quote", source: "lifi", ...CROSS });
+    expect(vi.mocked(notifyTelegram).mock.calls.filter((c) => String(c[0]).includes("TAXA NÃO RETIDA"))).toEqual([]);
+    const intent = vi.mocked(recordEvent).mock.calls.find((c) => c[0] === "swap_intent");
+    const meta = (intent![1] as { meta: { taxaAceita: Array<{ pct: string }> } }).meta;
+    expect(meta.taxaAceita).toHaveLength(1);
+    expect(Number(meta.taxaAceita[0].pct)).toBeCloseTo(0.01, 6);
+  });
+
+  it("gêmea: o LI.FI só aplica os 0,25% dele → o alerta DISPARA (cobrança zero não passa calada)", async () => {
+    s.lifiIgnoraTaxa = true;
+    try {
+      await pedir({ mode: "quote", source: "lifi", ...CROSS });
+      expect(vi.mocked(notifyTelegram).mock.calls.some((c) => String(c[0]).includes("TAXA NÃO RETIDA"))).toBe(true);
+    } finally { s.lifiIgnoraTaxa = false; }
   });
 
   it("⚠️ referrer NÃO é usado como destinatário da taxa (no LiFi ele é só rastreio)", async () => {

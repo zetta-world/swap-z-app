@@ -1,0 +1,321 @@
+{
+ "_fonte": "li.quest/v1/quote real, 15/10/2026, integrator=zswap; fee pedido: SEM=nenhum, free=0.01, pilot=0.001",
+ "respostas": {
+  "eth-arb-SEM-taxa": {
+   "estimate": {
+    "feeCosts": [
+     {
+      "name": "LIFI Fixed Fee",
+      "description": "Fixed LIFI fee, independent of any other fee",
+      "percentage": "0.0025",
+      "amount": "50000000000000",
+      "included": true,
+      "token": {
+       "symbol": "ETH"
+      }
+     },
+     {
+      "name": "Arbitrum fees",
+      "description": "Infrastructure fee paid in native token",
+      "percentage": "0.0001",
+      "amount": "2985945888800",
+      "included": false,
+      "token": {
+       "symbol": "ETH"
+      }
+     }
+    ]
+   },
+   "includedSteps": [
+    {
+     "type": "protocol",
+     "tool": "feeCollection",
+     "estimate": {
+      "feeCosts": [
+       {
+        "name": "LIFI Fixed Fee",
+        "description": "Fixed LIFI fee, independent of any other fee",
+        "percentage": "0.0025",
+        "amount": "50000000000000",
+        "included": true,
+        "token": {
+         "symbol": "ETH"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "type": "cross",
+     "tool": "arbitrum",
+     "estimate": {
+      "feeCosts": [
+       {
+        "name": "Arbitrum fees",
+        "description": "Infrastructure fee paid in native token",
+        "percentage": "0.0001",
+        "amount": "2985945888800",
+        "included": false,
+        "token": {
+         "symbol": "ETH"
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  "eth-arb-free": {
+   "estimate": {
+    "feeCosts": [
+     {
+      "name": "LIFI Fixed Fee",
+      "description": "Fixed LIFI fee, independent of any other fee",
+      "percentage": "0.0125",
+      "amount": "250000000000000",
+      "included": true,
+      "token": {
+       "symbol": "ETH"
+      }
+     },
+     {
+      "name": "Relayer fee",
+      "description": "The fee taken by the relayer",
+      "percentage": "0.000099",
+      "amount": "1958747395833",
+      "included": true,
+      "token": {
+       "symbol": "ETH"
+      }
+     },
+     {
+      "name": "Relayer gas fee",
+      "description": "The gas fee taken by the relayer",
+      "percentage": "0.000226",
+      "amount": "4457188700053",
+      "included": true,
+      "token": {
+       "symbol": "ETH"
+      }
+     }
+    ]
+   },
+   "includedSteps": [
+    {
+     "type": "protocol",
+     "tool": "feeCollection",
+     "estimate": {
+      "feeCosts": [
+       {
+        "name": "LIFI Fixed Fee",
+        "description": "Fixed LIFI fee, independent of any other fee",
+        "percentage": "0.0125",
+        "amount": "250000000000000",
+        "included": true,
+        "token": {
+         "symbol": "ETH"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "type": "cross",
+     "tool": "across",
+     "estimate": {
+      "feeCosts": [
+       {
+        "name": "Relayer fee",
+        "description": "The fee taken by the relayer",
+        "percentage": "0.000099",
+        "amount": "1958747395833",
+        "included": true,
+        "token": {
+         "symbol": "ETH"
+        }
+       },
+       {
+        "name": "Relayer gas fee",
+        "description": "The gas fee taken by the relayer",
+        "percentage": "0.000226",
+        "amount": "4457188700053",
+        "included": true,
+        "token": {
+         "symbol": "ETH"
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  "eth-op-pilot": {
+   "estimate": {
+    "feeCosts": [
+     {
+      "name": "LIFI Fixed Fee",
+      "description": "Fixed LIFI fee, independent of any other fee",
+      "percentage": "0.0035",
+      "amount": "70000000000000",
+      "included": true,
+      "token": {
+       "symbol": "ETH"
+      }
+     },
+     {
+      "name": "Relayer fee",
+      "description": "The fee taken by the relayer",
+      "percentage": "0.000099",
+      "amount": "1976449795833",
+      "included": true,
+      "token": {
+       "symbol": "ETH"
+      }
+     },
+     {
+      "name": "Relayer gas fee",
+      "description": "The gas fee taken by the relayer",
+      "percentage": "0.000007",
+      "amount": "140416936923",
+      "included": true,
+      "token": {
+       "symbol": "ETH"
+      }
+     }
+    ]
+   },
+   "includedSteps": [
+    {
+     "type": "protocol",
+     "tool": "feeCollection",
+     "estimate": {
+      "feeCosts": [
+       {
+        "name": "LIFI Fixed Fee",
+        "description": "Fixed LIFI fee, independent of any other fee",
+        "percentage": "0.0035",
+        "amount": "70000000000000",
+        "included": true,
+        "token": {
+         "symbol": "ETH"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "type": "cross",
+     "tool": "across",
+     "estimate": {
+      "feeCosts": [
+       {
+        "name": "Relayer fee",
+        "description": "The fee taken by the relayer",
+        "percentage": "0.000099",
+        "amount": "1976449795833",
+        "included": true,
+        "token": {
+         "symbol": "ETH"
+        }
+       },
+       {
+        "name": "Relayer gas fee",
+        "description": "The gas fee taken by the relayer",
+        "percentage": "0.000007",
+        "amount": "140416936923",
+        "included": true,
+        "token": {
+         "symbol": "ETH"
+        }
+       }
+      ]
+     }
+    }
+   ]
+  },
+  "usdc-eth-base-free": {
+   "estimate": {
+    "feeCosts": [
+     {
+      "name": "LIFI Fixed Fee",
+      "description": "Fixed LIFI fee, independent of any other fee",
+      "percentage": "0.0125",
+      "amount": "625000",
+      "included": true,
+      "token": {
+       "symbol": "USDC"
+      }
+     },
+     {
+      "name": "Relayer fee",
+      "description": "The fee taken by the relayer",
+      "percentage": "0.000100",
+      "amount": "4937",
+      "included": true,
+      "token": {
+       "symbol": "USDC"
+      }
+     },
+     {
+      "name": "Relayer gas fee",
+      "description": "The gas fee taken by the relayer",
+      "percentage": "0.000068",
+      "amount": "3336",
+      "included": true,
+      "token": {
+       "symbol": "USDC"
+      }
+     }
+    ]
+   },
+   "includedSteps": [
+    {
+     "type": "protocol",
+     "tool": "feeCollection",
+     "estimate": {
+      "feeCosts": [
+       {
+        "name": "LIFI Fixed Fee",
+        "description": "Fixed LIFI fee, independent of any other fee",
+        "percentage": "0.0125",
+        "amount": "625000",
+        "included": true,
+        "token": {
+         "symbol": "USDC"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "type": "cross",
+     "tool": "across",
+     "estimate": {
+      "feeCosts": [
+       {
+        "name": "Relayer fee",
+        "description": "The fee taken by the relayer",
+        "percentage": "0.000100",
+        "amount": "4937",
+        "included": true,
+        "token": {
+         "symbol": "USDC"
+        }
+       },
+       {
+        "name": "Relayer gas fee",
+        "description": "The gas fee taken by the relayer",
+        "percentage": "0.000068",
+        "amount": "3336",
+        "included": true,
+        "token": {
+         "symbol": "USDC"
+        }
+       }
+      ]
+     }
+    }
+   ]
+  }
+ }
+}

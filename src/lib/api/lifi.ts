@@ -221,3 +221,43 @@ export async function fetchLiFiQuote(args: QuoteArgs, integratorKey?: string): P
   }
   return res.json() as Promise<LfQuote>;
 }
+
+/**
+ * ⚠️⚠️ A TAXA PRÓPRIA DO LI.FI, para separar a nossa da dela (LIFI-UPSTREAM-01, ativação 15/10).
+ *
+ * Medido com o integrator cadastrado: o LI.FI não devolve a taxa do integrador numa linha
+ * própria — soma à dele em "LIFI Fixed Fee" (sem `fee`: 0,0025; `fee=0.01`: 0,0125). Acordo
+ * comercial pode mudar a parte dele, então ela é configurável. Se mudar sem ajuste aqui, a
+ * conta erra para o lado do ALARME ("taxa não retida"), nunca para o de receita fingida.
+ */
+export const LIFI_TAXA_PROPRIA = Number(process.env.LIFI_SERVICE_FEE ?? 0.0025);
+
+/** A parte da Z-SWAP na cotação, ou `null` se a resposta não prova que ela foi retida. */
+export function taxaDoIntegradorNaCotacao(
+  q: LfQuote, fracaoPedida: number,
+): { pct: number; pctTotal: number; amount: string; token?: string } | null {
+  if (!(fracaoPedida > 0)) return null;
+  const custos = q?.estimate?.feeCosts ?? [];
+  const tol = 1e-6;
+  // 1) Linha própria do integrador (se o LI.FI um dia separar).
+  const propria = custos.find((f) => /integrator|z-?swap|referrer/i.test(`${f.name ?? ""}${f.description ?? ""}`));
+  if (propria) {
+    const p = Number(propria.percentage);
+    if (Number.isFinite(p) && p + tol >= fracaoPedida) {
+      return { pct: p, pctTotal: p, amount: String(propria.amount), token: propria.token?.symbol };
+    }
+  }
+  // 2) Somada à do LI.FI: a nossa é o que passa da taxa própria dele.
+  const fixa = custos.find((f) => /lifi/i.test(f.name ?? "") && /fixed/i.test(`${f.name ?? ""}${f.description ?? ""}`));
+  if (!fixa) return null;
+  const total = Number(fixa.percentage);
+  if (!Number.isFinite(total) || total <= 0) return null;
+  const nossa = total - LIFI_TAXA_PROPRIA;
+  if (nossa + tol < fracaoPedida) return null;
+  let amount = String(fixa.amount);
+  try {
+    const escala = 1_000_000n;
+    amount = ((BigInt(fixa.amount) * BigInt(Math.round((nossa / total) * 1_000_000))) / escala).toString();
+  } catch { /* quantidade ilegível: devolve a total, e o pct diz a parte */ }
+  return { pct: Number(nossa.toFixed(8)), pctTotal: total, amount, token: fixa.token?.symbol };
+}
