@@ -19,6 +19,9 @@ corrigidos em `d047673`, junto com o vigia de ordens que não achava preço de t
 `KNOWN_MISSING_CORRECTIONS=1` (A33, decisão do dono) · `UNKNOWN_FINDINGS=0`. Candidato e gates:
 `RELEASE-CHAIN.md` "Atualização L-056". Banco, migrations, flags, Autopilot e DCA real inalterados.
 
+Em produção desde 15/10 ~00:47 UTC: `dpl_2R8vsDxZNEDMyACbsR1TJ6npPwYB` (`6c66c13`, código `d047673`); smoke
+25/25; preços SPL em produção; sem runtime errors. Rollback: `dpl_DT9haCV1YucfhoFJkxjRNnrqfDNT` (`27bf8eb`).
+
 ## Atualização L-055 — fechamento final da auditoria externa (14/10/2026)
 
 A08, A09 e A17 da auditoria externa: ALREADY_FIXED_PROVEN. A10: corrigido em `5c2306e` (teto de símbolos por

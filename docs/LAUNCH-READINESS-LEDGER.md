@@ -933,3 +933,11 @@ CEX/Autopilot com `?? 0` (não fabricam patrimônio).
 `RELEASE-CHAIN.md` "Atualização L-056". `KNOWN_MISSING_CORRECTIONS=1` (A33) · `UNKNOWN_FINDINGS=0`.
 Resultado do deploy: registrado no commit seguinte, só de docs.
 
+Resultado do deploy (14–15/10): `origin/main` avançada por fast-forward `27bf8eb` → `6c66c13` (sem force),
+depois do CI 38661654305 verde nesse SHA. Produção `dpl_2R8vsDxZNEDMyACbsR1TJ6npPwYB` READY em
+`6c66c132699c06d249c41fd4a07279563cba46f5` (código `d047673`), alias `swap-z-app.vercel.app` confirmado pela
+API. Smoke read-only 25/25; `/api/prices` em produção agora devolve USDC Solana 1,002, JUP 0,318, WIF 0,201
+(antes `null`), EVM e nativos inalterados; early access `closed`. Runtime errors: nenhum. Rollback:
+`dpl_DT9haCV1YucfhoFJkxjRNnrqfDNT` (`27bf8eb`). Banco, migrations, flags, Autopilot e DCA real inalterados;
+0 ordens, 0 trades, 0 dinheiro movido. A33 intocado.
+

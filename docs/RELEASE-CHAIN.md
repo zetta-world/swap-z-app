@@ -294,3 +294,6 @@ páginas `/`, `/portfolio`, `/dashboard` em 1440 e 390 sem erro de página.
 Desvios (escopo, como L-054/L-055): arneses SQL não rodados (delta sem SQL); não é `CERTIFIED_EXACT_SHA`
 da plataforma inteira. Autorização do dono: missão "AUDIT CLOSURE ROUND — ESCOPO EXCLUSIVO: A31 + A32"
 (14/10). Condição antes do merge: CI verde no SHA deste commit.
+
+Executado (15/10): `main` → `6c66c13` (fast-forward); produção `dpl_2R8vsDxZNEDMyACbsR1TJ6npPwYB` READY nesse SHA;
+smoke 25/25; preços SPL em produção; sem runtime errors. Detalhe: ledger L-056.
