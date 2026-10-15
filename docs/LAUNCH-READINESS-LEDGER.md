@@ -941,3 +941,35 @@ API. Smoke read-only 25/25; `/api/prices` em produção agora devolve USDC Solan
 `dpl_DT9haCV1YucfhoFJkxjRNnrqfDNT` (`27bf8eb`). Banco, migrations, flags, Autopilot e DCA real inalterados;
 0 ordens, 0 trades, 0 dinheiro movido. A33 intocado.
 
+## L-057 — Auditoria externa A33 corrigido; os 33 achados fechados (15/10/2026)
+
+Missão do dono "Z-SWAP — FINAL EXTERNAL AUDIT CLOSURE · A33 — EXECUTABLE PAYLOAD BOUNDARY" (15/10). Decisão de
+arquitetura do dono: **não** pôr o kill-switch sobre a lista inteira; `mode=list` continua READ-ONLY e
+disponível com o swap desligado, mas nunca entrega payload executável/signável; `mode=quote` é a única
+superfície de preparação de execução, sob `disable_swap`/`maintenance_mode`. Política de falha aberta da
+leitura do kill-switch **não** alterada (exigiria finding próprio).
+
+**Fonte:** teste original do auditor (`quote-killswitch-list.test.ts`, 14/09) recuperado da sessão Codex local.
+
+**Auditoria de todos os provedores da lista** (`raw` atravessava a resposta HTTP inteira):
+0x com carteira → `/quote` firme: `transaction.to/data/value/gas`, `permit2`, `issues.allowance.spender`;
+0x sem carteira → `/price`: `allowanceTarget`, `issues`; LiFi (cross-chain, só com carteira) →
+`transactionRequest` assinável e `estimate.approvalAddress`; Jupiter → `quoteResponse` com `routePlan` (o insumo
+direto do `/swap`). Não havia outro provedor na lista (CoW não passa por esta rota).
+
+**Correção:** DTO `ListQuote` + `paraListagem` em `lib/api/quote-types.ts` — allowlist estrutural que copia cada
+campo por nome, com tipo coagido (hops: `protocol`, `share`, `color`). As chamadas aos provedores não mudaram
+(valores firmes e o booleano `isFirm` que o CTA usa). As quatro telas da lista passaram a `ListQuote`: o
+type-check prova que nenhuma lia `raw`. `ExecuteSwap` continua buscando cotação firme NOVA em `mode=quote` ao
+abrir o modal (sem reaproveitar nada da lista: frescor de calldata, allowance, rota, preço e taker).
+
+**Prova:** `auditoria-externa-a33.test.ts` (12, rota real, provedores falsos devolvendo o material executável
+real de cada um; casos A–J da missão + integridade da comparação). Em `5af0504`: 7 falham (toda a lista), os de
+quote passam. Em `4ba6694`: 12/12. Quebras: sem a fronteira; DTO por spread; calldata 0x de volta; quoteResponse
+Jupiter de volta — todas detectadas. Prova da allowlist: campo novo com calldata no normalizador 0x não vaza.
+Produção antes (15/10, leitura): lista 0x com carteira trazia `transaction.data` real (4490 chars).
+Observação fora do escopo: LiFi sem cotação em produção e preview (LIFI-UPSTREAM-01, OPEN_NONBLOCKING).
+
+`KNOWN_MISSING_CORRECTIONS=0` · `UNKNOWN_FINDINGS=0` · AUDIT RECONCILIATION FINAL = PASS. Gates, CI, preview e
+candidato: `RELEASE-CHAIN.md` "Atualização L-057". Resultado do deploy: registrado no commit seguinte, só de docs.
+

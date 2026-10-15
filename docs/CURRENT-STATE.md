@@ -12,6 +12,13 @@
 
 ---
 
+## Atualização L-057 — A33 corrigido; auditoria externa encerrada (15/10/2026)
+
+`/api/quote` em `mode=list` não devolve mais nada executável (DTO `ListQuote`, allowlist); `mode=quote` segue a
+única porta de execução, sob o kill-switch. Corrigido em `4ba6694`. Os 33 achados da auditoria externa estão
+fechados: `KNOWN_MISSING_CORRECTIONS=0` · `UNKNOWN_FINDINGS=0`. Observação aberta fora de escopo: LiFi sem
+cotação (LIFI-UPSTREAM-01). Banco, migrations, flags, Autopilot e DCA real inalterados.
+
 ## Atualização L-056 — A31 e A32 corrigidos (14/10/2026)
 
 A31 (mint Solana em minúsculas: preço `null` para SPL) e A32 (preço desconhecido como patrimônio zero)

@@ -116,6 +116,7 @@ citava o ID); A08 e A09 corrigidos em `fc59805` (CE-09); A10 estava presente e f
 O relatório final do auditor tinha **33** achados: A31/A32/A33 (médios) nunca entraram no repositório e
 estão OPEN. Ver `AUDIT-RECONCILIATION.md` §4.1, §5.1 e §5.8.
 **Atualização 14/10 (L-056):** A31 e A32 corrigidos em `d047673`; A33 segue OPEN (decisão do dono).
+**Atualização 15/10 (L-057):** A33 corrigido em `4ba6694` (lista sem payload executável). Os 33 achados estão fechados.
 
 ---
 

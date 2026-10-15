@@ -18,17 +18,22 @@
 > curta abaixo foi substituída; a da revisão 6 está no histórico do Git.
 > Revisão 8 (14/10/2026, L-056): **A31 e A32 FIXED** em `d047673` (rodada própria autorizada pelo dono);
 > A33 continua OPEN, decisão do dono. Resposta curta e contagem substituídas de novo.
+> Revisão 9 (15/10/2026, L-057): **A33 FIXED** em `4ba6694` (decisão de arquitetura do dono). Os 33 achados
+> da auditoria externa estão fechados. Resposta curta e contagem substituídas.
 
 ## Resposta curta (a longa está nas tabelas)
 
 | pergunta | resposta |
 |---|---|
-| alguma correção de **código** de auditoria está fora da linha atual? | **SIM, um achado conhecido sem correção:** A33 da auditoria externa (`mode=list` com calldata sem kill-switch), por **decisão do dono** pendente. A31 e A32 corrigidos em `d047673` (L-056); A08/A09/A17 já estavam corrigidos e A10 foi corrigido em `5c2306e` (L-055). Toda branch `origin/claude/auditoria-*` continua patch-equivalente a um squash que já está na linha (§2) |
+| alguma correção de **código** de auditoria está fora da linha atual? | **Não.** Os 33 achados da auditoria externa têm correção na linha ou prova de que já estavam corrigidos: A33 em `4ba6694` (L-057), A31/A32 em `d047673` (L-056), A10 em `5c2306e` e A08/A09/A17 já corrigidos (L-055). Toda branch `origin/claude/auditoria-*` continua patch-equivalente a um squash que já está na linha (§2) |
 | algum commit remoto de código está fora da linha? | **Um:** `origin/claude/pools-soon-tier` (`0701327`). É uma feature de produto, **não** correção de auditoria. Está SUPERSEDED pela decisão contrária `e369cc6` (#376) |
 | alguma **documentação** de auditoria está fora da linha? | **SIM.** O ledger §Z/§ZB, `PLANO-MESTRE-AUDITORIA.md` e `PLANO-PROD-CLONE-LAB.md` estão só em `origin/platform-closure` (§3) |
 | algum finding tem prova incompleta? | **Não para A08/A09/A10/A17:** fonte original recuperada na 3ª busca (14/10) e cada um tem reprodução atual, prova e teste (§4.1, §5.1). Retests históricos por finding continuam incompletos (§4.2) |
 
-`KNOWN_MISSING_CORRECTIONS = 1` (A33 — OPEN / OWNER DECISION REQUIRED, §5.1) · `UNKNOWN_FINDINGS = 0`.
+`KNOWN_MISSING_CORRECTIONS = 0` · `UNKNOWN_FINDINGS = 0` (15/10, L-057).
+
+> Revisão 8 dizia `KNOWN_MISSING_CORRECTIONS = 1` (A33). A contagem vale para os achados CONHECIDOS e
+> identificáveis das auditorias registradas aqui; retests históricos por finding seguem incompletos (§4.2).
 
 > Revisão 7 dizia `KNOWN_MISSING_CORRECTIONS = 3` (A31, A32, A33).
 
@@ -251,6 +256,8 @@ apague a anterior.
 | A31-NB1 (achado novo, 14/10) | — | média | vigia de ordens procurava o preço pelo endereço CRU; com checksum EVM (21 tokens do registro) e mint SPL a chave não batia e a ordem local **nunca disparava** | `d047673`: `tokenPriceKey` nos dois lados | teste de ponta a ponta pelo hook e pela rota reais (LINK e WIF disparam; gêmea não) | **FIXED** |
 | A32 (L-056, 14/10) | ext. 14/09 (2ª rodada) | média | preço desconhecido exibido como patrimônio zero | `d047673`: `src/lib/portfolio/avaliacao.ts` separa zero conhecido / sem preço / indisponível; linha "preço indisponível" com quantidade; total só do que tem preço, marcado parcial, "—" quando nada tem preço; total parcial não vira snapshot; saldo não lido contado e dito; mesmo no total da carteira do Dashboard e no resumo enviado ao ZION (sem "~$0.00"); 4 locales | `auditoria-externa-a32.test.ts` (8, `PortfolioView` real): em `27bf8eb` 6 falham; em `d047673` 8/8. `avaliacao.test.ts` (9) | **FIXED** · FIXED_NOT_RECERTIFIED (validação escopada, L-056) |
 | A33 (L-056, 14/10) | ext. 14/09 (2ª rodada) | média | `mode=list` com calldata sem kill-switch | **não tocado** (fora do escopo autorizado) | — | **OPEN / OWNER DECISION REQUIRED** |
+| A33 (L-057, 15/10) | ext. 14/09 (2ª rodada) | média | `mode=list` com `taker` devolvia payload executável sem kill-switch | `4ba6694`: decisão do dono — a lista segue READ-ONLY e disponível com o swap desligado, mas sai pelo DTO `ListQuote`/`paraListagem` (allowlist estrutural em `quote-types.ts`): sem `raw`, calldata 0x, `transactionRequest`/`approvalAddress` LiFi, `quoteResponse`/`routePlan` Jupiter, `permit2` ou spender. `mode=quote` segue a única superfície de execução, sob `disable_swap`/`maintenance_mode` (política `usuario_confirma` inalterada). Telas da lista tipadas como `ListQuote` (type-check prova que nenhuma lia `raw`) | `src/app/api/quote/auditoria-externa-a33.test.ts` (12, rota real): em `5af0504` 7 falham (toda a lista), quote passa; em `4ba6694` 12/12; 4 quebras detectadas + prova da allowlist. Produção 15/10 (antes): lista 0x com carteira trazia `transaction.data` real (4490 chars); preview: zero material executável, comparação e fluxo do swap intactos | **FIXED** · FIXED_NOT_RECERTIFIED (validação escopada, L-057) |
+| LIFI-UPSTREAM-01 (observado 15/10) | operação | — | cotações LiFi (lista e firme) voltam vazias/`upstream_failed` em produção e preview para pares cross-chain reais | — (fora do escopo do A33; igual antes e depois) | smoke L-057 | **OPEN_NONBLOCKING** — investigar em rodada própria (não é achado de auditoria) |
 | EXT-D1 | ext. §5.27 | — | 3 carteiras admin legadas | — | — | OWNER_DECISION |
 | EXT-D2 | ext. §5.27 | — | TOCTOU de cota (precisa de constraint no banco) | — | — | OWNER_DECISION |
 | EXT-D3 | ext. §5.27 | — | `liquidoCompostoPct` compõe símbolos paralelos | — | — | OWNER_DECISION |
@@ -517,3 +524,12 @@ Contagem depois desta revisão: `KNOWN_MISSING_CORRECTIONS=3` (A31/A32/A33) · `
 | A33 | RECOVERED | — | — | — | — | OPEN / OWNER DECISION REQUIRED |
 
 Contagem depois desta revisão: `KNOWN_MISSING_CORRECTIONS=1` (A33) · `UNKNOWN_FINDINGS=0`.
+
+### 5.10 Fechamento A33 (15/10, L-057) — auditoria externa encerrada
+
+| ID | SOURCE | REPRO (base `5af0504`) | FIX | TEST | SHA | STATUS |
+|---|---|---|---|---|---|---|
+| A33 | RECOVERED (sessão Codex, 14/09 10:13Z; teste original `quote-killswitch-list.test.ts`) | reproduz: 7 de 12 falham (A–D, H–J); produção real com calldata na lista | DTO `ListQuote` + `paraListagem` (allowlist) | `src/app/api/quote/auditoria-externa-a33.test.ts` | `4ba6694` | FIXED |
+
+**Auditoria externa (33 achados): todos fechados.** `KNOWN_MISSING_CORRECTIONS=0` · `UNKNOWN_FINDINGS=0` ·
+**AUDIT RECONCILIATION FINAL = PASS** (para os achados conhecidos; retests históricos por finding: §4.2).

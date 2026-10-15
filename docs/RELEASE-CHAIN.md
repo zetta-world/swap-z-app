@@ -297,3 +297,25 @@ da plataforma inteira. Autorização do dono: missão "AUDIT CLOSURE ROUND — E
 
 Executado (15/10): `main` → `6c66c13` (fast-forward); produção `dpl_2R8vsDxZNEDMyACbsR1TJ6npPwYB` READY nesse SHA;
 smoke 25/25; preços SPL em produção; sem runtime errors. Detalhe: ledger L-056.
+
+
+## Atualização L-057 — candidato A33
+
+RELEASE_CANDIDATE = THIS_RELEASE_CANDIDATE_COMMIT (commit docs-only que acrescenta esta seção; filho de
+`4ba669411173f561930f850daa5e0297cb355d94`). Base `5af0504304caa07225e0fd6989c5f4bb09cd7030` (produção
+`dpl_EvGv264czgmaBRPuhaQvFDgMDKxQ`, que também é o rollback de aplicação). Delta de produto: DTO público
+`ListQuote`/`paraListagem` em `lib/api/quote-types.ts`, a resposta de `mode=list` em `app/api/quote/route.ts` e o
+tipo da lista em `useQuotes`, `SwapCard`, `QuoteComparison`, `CrossChainBanner`. `mode=quote`, o kill-switch e sua
+política (`usuario_confirma`, falha aberta) inalterados. Nenhuma migration, dependência, env ou flag.
+
+Gates no SHA exato `4ba6694` (tree `fc3c494263ffc9cf9591ebfe6ea52cbe730aa4f6`, árvore limpa antes e depois):
+`npm ci` 0 · lint 0 erros/145 avisos (= base) · type-check 0 · suítes quote/swap/kill-switch/Pro/API 20/262 ·
+suíte 327/4765 **×2** · build 0 · `npm audit` = snapshot e `audit-gate.mjs` OK (R-03) · secret scan limpo · CI
+38715150493 success · preview `dpl_C1S7yqh5qcmVPUbYfJa5nwoq4fea` READY no SHA: smoke 25/25 igual à produção;
+listas reais 0x (com e sem carteira) e Jupiter sem nada executável (produção: calldata real na lista 0x com
+carteira); `mode=quote` 0x real devolve payload firme; fluxo do swap no navegador (1440/390) com cotação na tela.
+
+Desvios (escopo, como L-054/55/56): arneses SQL não rodados (delta sem SQL); não é `CERTIFIED_EXACT_SHA` da
+plataforma inteira. LiFi sem cotação em produção e preview (pré-existente, LIFI-UPSTREAM-01): o caso LiFi do A33
+é provado pelo teste com a rota real. Autorização do dono: missão "FINAL EXTERNAL AUDIT CLOSURE — A33" (15/10).
+Condição antes do merge: CI verde no SHA deste commit.
