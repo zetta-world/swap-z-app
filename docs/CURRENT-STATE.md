@@ -12,6 +12,13 @@
 
 ---
 
+## Atualização L-056 — A31 e A32 corrigidos (14/10/2026)
+
+A31 (mint Solana em minúsculas: preço `null` para SPL) e A32 (preço desconhecido como patrimônio zero)
+corrigidos em `d047673`, junto com o vigia de ordens que não achava preço de token com contrato.
+`KNOWN_MISSING_CORRECTIONS=1` (A33, decisão do dono) · `UNKNOWN_FINDINGS=0`. Candidato e gates:
+`RELEASE-CHAIN.md` "Atualização L-056". Banco, migrations, flags, Autopilot e DCA real inalterados.
+
 ## Atualização L-055 — fechamento final da auditoria externa (14/10/2026)
 
 A08, A09 e A17 da auditoria externa: ALREADY_FIXED_PROVEN. A10: corrigido em `5c2306e` (teto de símbolos por

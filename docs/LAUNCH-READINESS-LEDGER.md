@@ -898,3 +898,38 @@ depois do deploy **não** foi observado: a API de logs da Vercel não devolveu n
 (nem das requisições do smoke). Rollback: `dpl_2NrEVzr9U2FM3Y8fqAzAa4Y6237v` (`2e3e397`). Banco, migrations,
 flags, Autopilot e DCA real inalterados; 0 ordens, 0 trades, 0 dinheiro movido.
 
+## L-056 — Auditoria externa A31 + A32 corrigidos; A33 intocado (14/10/2026)
+
+Missão do dono "Z-SWAP — AUDIT CLOSURE ROUND · ESCOPO EXCLUSIVO: A31 + A32" (14/10): investigar, corrigir,
+testar e, com todos os gates e preview, publicar. **A33 explicitamente fora** (kill-switch de `mode=list`:
+decisão do dono). Proíbe trades, ordens, dinheiro real, flags financeiras, schema e migrations.
+
+**Fonte:** texto e testes originais do auditor recuperados da sessão Codex local (14/09, 2ª rodada),
+evidência em `zswap-local/evidence/forensic-a31-a32-final-20261014/original-source/`.
+
+**A31 — fronteira, não sintoma.** Toda normalização de endereço no caminho de preço foi mapeada: cliente
+(`useTokenPrices`), rota `/api/prices` (pedido e chave da resposta), vigia de ordens e 6 URLs da GeckoTerminal
+(info de token usada por `/api/risk` e ZION, pools, OHLCV, trades) mais a carteira do trader nas trades.
+Regra única em `src/lib/precos/chave.ts`: hex EVM → minúsculas (semântica EVM inalterada), base58 e `native`
+exatos. Comparações por igualdade com `toLowerCase` nos dois lados (store do swap, seletor) não corrompem e
+ficaram. GoPlus não atende Solana.
+Efeito no swap: tokens SPL passam a usar preço vivo do mint correto em vez do snapshot estático do registro
+(WIF estava 1,20 no registro; vivo 0,20) ou `null` (que deixava a guarda de impacto muda: `impactoPct null →
+"ok"`). Gorjeta MEV: o preço do SOL vem da chave `native` (inalterada); o notional de SPL passa a ser real.
+**Achado novo na mesma fronteira (A31-NB1):** o vigia de ordens procurava o preço pelo endereço cru — com
+checksum EVM (21 tokens do registro) ou mint SPL a chave não batia e ordem local de token com contrato nunca
+disparava. Corrigido junto.
+
+**A32 — semântica, não cosmética.** `src/lib/portfolio/avaliacao.ts`: zero conhecido ≠ sem preço ≠
+indisponível. Linha sem preço diz "preço indisponível" e mantém a quantidade; total soma só o que tem preço,
+é marcado parcial e mostra "—" quando nada tem preço; total parcial **não** vira snapshot do histórico; saldo
+não lido é contado e dito. Mesmo tratamento no total da carteira do Dashboard e no resumo de carteira enviado
+ao ZION. `formatUsd(null) → "$0.00"` (formatador global) não foi alterado: o portfólio deixou de passar
+`null` para ele. Fora do escopo e registrados: volume de operações (History/Dashboard) e ordenações de
+CEX/Autopilot com `?? 0` (não fabricam patrimônio).
+
+**Prova:** testes idênticos em `27bf8eb` → 14 falham / 6 passam (só controles e gêmeas); em `d047673` → 29/29
+(20 de reprodução + 9 de módulo). Cinco quebras deliberadas, todas detectadas. Gates, CI, preview e candidato:
+`RELEASE-CHAIN.md` "Atualização L-056". `KNOWN_MISSING_CORRECTIONS=1` (A33) · `UNKNOWN_FINDINGS=0`.
+Resultado do deploy: registrado no commit seguinte, só de docs.
+

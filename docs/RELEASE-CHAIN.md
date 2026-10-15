@@ -273,3 +273,24 @@ verde no SHA deste commit. Rollback de aplicação: `dpl_2NrEVzr9U2FM3Y8fqAzAa4Y
 
 Executado (14/10): `main` → `2c0c7c9` (fast-forward); produção `dpl_BhiwniCtsqX7iUTGM3mkhrXFzMSj` READY nesse SHA;
 smoke 25/25; sem runtime errors. Detalhe e ressalvas: ledger L-055.
+
+
+## Atualização L-056 — candidato A31/A32
+
+RELEASE_CANDIDATE = THIS_RELEASE_CANDIDATE_COMMIT (commit docs-only que acrescenta esta seção; filho de
+`d04767371ac1fccc975e3384dcbec7323076e14c`). Base `27bf8ebfcb712497755eb4b221cef78981e2ce06` (produção
+`dpl_DT9haCV1YucfhoFJkxjRNnrqfDNT`). Rollback de aplicação: esse mesmo deployment). Delta de produto: chave de preço (`lib/precos/chave.ts`), rota `/api/prices`,
+`useTokenPrices`, `useOrderWatcher`, `lib/api/geckoterminal.ts`, avaliação do portfólio
+(`lib/portfolio/avaliacao.ts`, `PortfolioView`, `useTrackedHoldings`, `DashboardView`), resumo de carteira
+do ZION e 3 textos ×4 locales. Nenhuma migration, dependência, env ou flag; A33 intocado.
+
+Gates no SHA exato `d047673` (tree `16f0c14fe287810f531c323f19980c5ea6fc6a4a`, árvore limpa antes e depois):
+`npm ci` 0 · lint 0 erros/145 avisos (= base) · type-check 0 · suítes específicas 20/236 · suíte 326/4753 **×2**
+· build 0 · `npm audit` 0 critical/25 high/40 moderate (= snapshot) e `audit-gate.mjs` OK (R-03) · secret
+scan do diff limpo · CI 38660768007 success · preview `dpl_GtYSYbRDH543sQJ9MVh4rSRnVvYE` READY no SHA:
+smoke 25/25 igual à produção; `/api/prices` com preço para USDC/JUP/WIF Solana (produção: `null`);
+páginas `/`, `/portfolio`, `/dashboard` em 1440 e 390 sem erro de página.
+
+Desvios (escopo, como L-054/L-055): arneses SQL não rodados (delta sem SQL); não é `CERTIFIED_EXACT_SHA`
+da plataforma inteira. Autorização do dono: missão "AUDIT CLOSURE ROUND — ESCOPO EXCLUSIVO: A31 + A32"
+(14/10). Condição antes do merge: CI verde no SHA deste commit.

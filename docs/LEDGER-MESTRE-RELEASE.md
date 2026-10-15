@@ -115,6 +115,7 @@ A28 #438 · A30 #437. Sem ID na mensagem: #421, #422, #424, #435, #441.
 citava o ID); A08 e A09 corrigidos em `fc59805` (CE-09); A10 estava presente e foi corrigido em `5c2306e`.
 O relatório final do auditor tinha **33** achados: A31/A32/A33 (médios) nunca entraram no repositório e
 estão OPEN. Ver `AUDIT-RECONCILIATION.md` §4.1, §5.1 e §5.8.
+**Atualização 14/10 (L-056):** A31 e A32 corrigidos em `d047673`; A33 segue OPEN (decisão do dono).
 
 ---
 

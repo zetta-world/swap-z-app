@@ -16,17 +16,21 @@
 > Revisão 7 (14/10/2026, L-055): **fonte de A08/A09/A10/A17 RECUPERADA** (3ª busca, §4.1); os quatro
 > fechados com prova; A31/A32/A33 da mesma auditoria descobertos e registrados (§5.1). A resposta
 > curta abaixo foi substituída; a da revisão 6 está no histórico do Git.
+> Revisão 8 (14/10/2026, L-056): **A31 e A32 FIXED** em `d047673` (rodada própria autorizada pelo dono);
+> A33 continua OPEN, decisão do dono. Resposta curta e contagem substituídas de novo.
 
 ## Resposta curta (a longa está nas tabelas)
 
 | pergunta | resposta |
 |---|---|
-| alguma correção de **código** de auditoria está fora da linha atual? | **SIM, três achados conhecidos sem correção:** A31, A32 e A33 da auditoria externa (2ª rodada do auditor, 14/09), que nunca tinham sido registrados no repositório (§4.1, §5.1). A08/A09/A17 já estavam corrigidos (prova em §5.1); A10 estava presente e foi corrigido em `5c2306e`. Toda branch `origin/claude/auditoria-*` continua patch-equivalente a um squash que já está na linha (§2) |
+| alguma correção de **código** de auditoria está fora da linha atual? | **SIM, um achado conhecido sem correção:** A33 da auditoria externa (`mode=list` com calldata sem kill-switch), por **decisão do dono** pendente. A31 e A32 corrigidos em `d047673` (L-056); A08/A09/A17 já estavam corrigidos e A10 foi corrigido em `5c2306e` (L-055). Toda branch `origin/claude/auditoria-*` continua patch-equivalente a um squash que já está na linha (§2) |
 | algum commit remoto de código está fora da linha? | **Um:** `origin/claude/pools-soon-tier` (`0701327`). É uma feature de produto, **não** correção de auditoria. Está SUPERSEDED pela decisão contrária `e369cc6` (#376) |
 | alguma **documentação** de auditoria está fora da linha? | **SIM.** O ledger §Z/§ZB, `PLANO-MESTRE-AUDITORIA.md` e `PLANO-PROD-CLONE-LAB.md` estão só em `origin/platform-closure` (§3) |
 | algum finding tem prova incompleta? | **Não para A08/A09/A10/A17:** fonte original recuperada na 3ª busca (14/10) e cada um tem reprodução atual, prova e teste (§4.1, §5.1). Retests históricos por finding continuam incompletos (§4.2) |
 
-`KNOWN_MISSING_CORRECTIONS = 3` (A31, A32, A33 — OPEN, §5.1) · `UNKNOWN_FINDINGS = 0`.
+`KNOWN_MISSING_CORRECTIONS = 1` (A33 — OPEN / OWNER DECISION REQUIRED, §5.1) · `UNKNOWN_FINDINGS = 0`.
+
+> Revisão 7 dizia `KNOWN_MISSING_CORRECTIONS = 3` (A31, A32, A33).
 
 > Revisão 6 dizia `KNOWN_MISSING_CORRECTIONS = 0` · `UNKNOWN_FINDINGS = 4`. O `0` valia só para o que era
 > conhecido: a fonte recuperada revelou que a auditoria externa tinha **33** achados, não 30. Nenhuma
@@ -243,6 +247,10 @@ apague a anterior.
 | A31 (descoberto 14/10) | ext. 14/09 (2ª rodada) | média | consulta de preços põe em minúsculas o mint Solana (base58) | — | `useTokenPrices.ts:21`, `api/prices/route.ts:72,162`; **produção 14/10 (GET read-only):** USDC Solana → `null` com chave `epjfwdd…`, USDC Ethereum → 1,001 | **OPEN** — correção mexe nos preços que o swap usa (guarda de impacto, gorjeta MEV, arrecadação): rodada própria |
 | A32 (descoberto 14/10) | ext. 14/09 (2ª rodada) | média | portfólio apresenta preço desconhecido como patrimônio zero | — | `PortfolioView.tsx:126,142,297` (`usdValue ?? 0`) | **OPEN** — UI: cobertura parcial explícita |
 | A33 (descoberto 14/10) | ext. 14/09 (2ª rodada) | média | `mode=list` com `taker` devolve calldata firme do 0x sem consultar `disable_swap`/`maintenance_mode` | — | `api/quote/route.ts:217` (kill-switch só em `mode=quote`, "de propósito"); o auditor mostrou list com payload executável | **OPEN** — contraria escolha documentada: **decisão do dono** sobre o alcance do kill-switch |
+| A31 (L-056, 14/10) | ext. 14/09 (2ª rodada) | média | mint Solana em minúsculas na consulta de preço | `d047673`: fronteira única `src/lib/precos/chave.ts` (hex EVM → minúsculas; base58/`native` exatos) no cliente, na rota `/api/prices` (pedido e resposta), no vigia de ordens e em toda URL da GeckoTerminal (info de token, pools, OHLCV, trades e carteira do trader) | `auditoria-externa-a31.test.ts` (12): em `27bf8eb` 8 falham, só controles passam; em `d047673` 12/12. Preview: USDC Solana 0,9998, JUP 0,3187, WIF 0,2013 (produção: `null`); EVM e nativos iguais | **FIXED** · FIXED_NOT_RECERTIFIED (validação escopada, L-056) |
+| A31-NB1 (achado novo, 14/10) | — | média | vigia de ordens procurava o preço pelo endereço CRU; com checksum EVM (21 tokens do registro) e mint SPL a chave não batia e a ordem local **nunca disparava** | `d047673`: `tokenPriceKey` nos dois lados | teste de ponta a ponta pelo hook e pela rota reais (LINK e WIF disparam; gêmea não) | **FIXED** |
+| A32 (L-056, 14/10) | ext. 14/09 (2ª rodada) | média | preço desconhecido exibido como patrimônio zero | `d047673`: `src/lib/portfolio/avaliacao.ts` separa zero conhecido / sem preço / indisponível; linha "preço indisponível" com quantidade; total só do que tem preço, marcado parcial, "—" quando nada tem preço; total parcial não vira snapshot; saldo não lido contado e dito; mesmo no total da carteira do Dashboard e no resumo enviado ao ZION (sem "~$0.00"); 4 locales | `auditoria-externa-a32.test.ts` (8, `PortfolioView` real): em `27bf8eb` 6 falham; em `d047673` 8/8. `avaliacao.test.ts` (9) | **FIXED** · FIXED_NOT_RECERTIFIED (validação escopada, L-056) |
+| A33 (L-056, 14/10) | ext. 14/09 (2ª rodada) | média | `mode=list` com calldata sem kill-switch | **não tocado** (fora do escopo autorizado) | — | **OPEN / OWNER DECISION REQUIRED** |
 | EXT-D1 | ext. §5.27 | — | 3 carteiras admin legadas | — | — | OWNER_DECISION |
 | EXT-D2 | ext. §5.27 | — | TOCTOU de cota (precisa de constraint no banco) | — | — | OWNER_DECISION |
 | EXT-D3 | ext. §5.27 | — | `liquidoCompostoPct` compõe símbolos paralelos | — | — | OWNER_DECISION |
@@ -499,3 +507,13 @@ Fonte: `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/release/production-202610
 | A17 | RECOVERED (13/09 18:11Z) | não reproduz | `a165d73` (#421) | `src/lib/dca/auditoria-externa-a17.test.ts` | `a165d73` | ALREADY_FIXED_PROVEN |
 
 Contagem depois desta revisão: `KNOWN_MISSING_CORRECTIONS=3` (A31/A32/A33) · `UNKNOWN_FINDINGS=0`.
+
+### 5.9 Fechamento A31/A32 (14/10, L-056)
+
+| ID | SOURCE | REPRO (base `27bf8eb`) | FIX | TEST | SHA | STATUS |
+|---|---|---|---|---|---|---|
+| A31 | RECOVERED (sessão Codex, 14/09 10:14Z; teste original `solana-price-case.test.ts`) | reproduz (8 de 12 falham; controles passam) | fronteira `lib/precos/chave.ts` | `src/lib/precos/auditoria-externa-a31.test.ts` | `d047673` | FIXED |
+| A32 | RECOVERED (idem; teste original `portfolio-unknown-price.test.ts`) | reproduz (6 de 8 falham) | `lib/portfolio/avaliacao.ts` + UI | `src/components/portfolio/auditoria-externa-a32.test.ts`, `src/lib/portfolio/avaliacao.test.ts` | `d047673` | FIXED |
+| A33 | RECOVERED | — | — | — | — | OPEN / OWNER DECISION REQUIRED |
+
+Contagem depois desta revisão: `KNOWN_MISSING_CORRECTIONS=1` (A33) · `UNKNOWN_FINDINGS=0`.
