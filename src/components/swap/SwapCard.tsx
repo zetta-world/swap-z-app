@@ -27,7 +27,7 @@ import type { Token } from "@/lib/tokens";
 import { useQuotes } from "@/lib/hooks/useQuotes";
 import { useTokenBalance, type TokenBalance } from "@/lib/hooks/useTokenBalance";
 import { useTokenPrices, tokenPriceKey } from "@/lib/hooks/useTokenPrices";
-import type { NormalizedQuote } from "@/lib/api/quote-types";
+import type { ListQuote } from "@/lib/api/quote-types";
 
 interface SwapCardProps {
   /**
@@ -603,7 +603,7 @@ function StatsGrid({
   rate:         number;
   minDec:       number;
   slippageBps:  number;
-  quote:        NormalizedQuote;
+  quote:        ListQuote;
   isCrossChain: boolean;
 }) {
   const t = useT();

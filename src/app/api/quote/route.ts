@@ -14,7 +14,7 @@ import {
 } from "@/lib/api/jupiter";
 import {
   normalizeZeroX, normalizeLiFi, normalizeJupiter,
-  rankQuotes, type NormalizedQuote,
+  rankQuotes, paraListagem, type NormalizedQuote,
 } from "@/lib/api/quote-types";
 import type { ChainId } from "@/lib/chains";
 import { envNumber } from "@/lib/env-number";
@@ -206,6 +206,12 @@ export async function GET(req: NextRequest) {
    * — sem ele não há transação para a carteira assinar, então este é o
    * estrangulamento real do swap. Barrar `mode=list` junto derrubaria a
    * comparação de preços, que é navegação, não movimento de dinheiro.
+   *
+   * ⚠️⚠️ A33 (auditoria externa): essa premissa era FALSA até 15/10 — com
+   * carteira, a lista devolvia a calldata firme do 0x, o `transactionRequest`
+   * do LiFi e a `quoteResponse` do Jupiter, sem passar por aqui. Agora a lista
+   * sai por `paraListagem` (allowlist em `quote-types.ts`) e não carrega nada
+   * executável; esta guarda continua sendo a ÚNICA porta para o payload.
    *
    * ⚠️ E FALHA ABERTA: o usuário ainda assina na carteira, revisando. Derrubar
    * o swap de todo mundo por um Postgres intermitente é o dano certo. A direção
@@ -622,14 +628,17 @@ export async function GET(req: NextRequest) {
   }
 
   const settled = await Promise.all(tasks);
-  const quotes  = rankQuotes(settled.filter((x): x is NormalizedQuote => !!x));
+  // ⚠️⚠️ A33: a resposta da LISTA passa pela allowlist `paraListagem` — nenhum
+  // `raw`, calldata, transactionRequest, permit2, spender ou quoteResponse sai
+  // daqui. Executar exige `mode=quote`, que é o caminho sob o kill-switch.
+  const quotes  = rankQuotes(settled.filter((x): x is NormalizedQuote => !!x)).map(paraListagem);
 
   return NextResponse.json(
     { ok: true, mode, quotes, taxa, isCrossChain },
     {
-      // When a taker is present the list contains firm quotes with calldata —
-      // those must never be cached. Without a taker we only have indicative
-      // price estimates and a short CDN cache is fine.
+      // When a taker is present the amounts come from the firm upstream quote
+      // for THAT wallet (the response no longer carries calldata — A33): keep it
+      // out of shared caches. Without a taker a short CDN cache is fine.
       headers: {
         "Cache-Control": taker
           ? "no-store"

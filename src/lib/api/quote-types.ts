@@ -212,3 +212,73 @@ export function rankQuotes(quotes: NormalizedQuote[]): NormalizedQuote[] {
     return a.durationSec - b.durationSec;
   });
 }
+
+/**
+ * ⚠️⚠️ O CONTRATO PÚBLICO DE `mode=list` (auditoria externa A33, 14/09).
+ *
+ * `mode=list` é descoberta e comparação; `mode=quote` é a ÚNICA superfície que
+ * prepara execução — e é ela que passa por `disable_swap`/`maintenance_mode`.
+ * A listagem devolvia `NormalizedQuote` inteiro, com `raw`: com carteira, o 0x
+ * vinha da `/quote` FIRME (`transaction.to/data/value`, `permit2`, spender), o
+ * LiFi com `transactionRequest` assinável e `approvalAddress`, e o Jupiter com a
+ * `quoteResponse` que é o insumo direto do `/swap`. Tudo isso sem kill-switch.
+ *
+ * Decisão do dono (15/10): a lista continua disponível com o swap desligado —
+ * só deixa de carregar qualquer coisa executável.
+ *
+ * ⚠️ ALLOWLIST ESTRUTURAL, NÃO BLACKLIST. Cada campo é copiado POR NOME e com
+ * o tipo coagido; um campo novo num fornecedor, ou em `NormalizedQuote`, não
+ * atravessa esta fronteira sem alguém escrevê-lo aqui de propósito. Os hops
+ * também: só `protocol`, `share`, `color`.
+ *
+ * `isFirm` fica: é um booleano (o CTA do swap usa para saber se dá para
+ * executar), não um payload. A transação que será assinada é sempre buscada de
+ * novo em `mode=quote` quando o modal abre — fresca, nunca a da listagem.
+ */
+export interface ListQuote {
+  source:        QuoteSource;
+  label:         string;
+  durationSec:   number;
+  isCrossChain:  boolean;
+  fromChainId:   number;
+  toChainId:     number;
+  sellAmount:    string;
+  buyAmount:     string;
+  minBuyAmount:  string;
+  buyAmountUsd?: number;
+  gasUsd?:       number;
+  routeSummary:  string;
+  hops:          { protocol: string; share: number; color?: string }[];
+  isFirm:        boolean;
+  isIndicative:  boolean;
+}
+
+const numeroOuUndefined = (n: unknown): number | undefined =>
+  typeof n === "number" && Number.isFinite(n) ? n : undefined;
+
+export function paraListagem(q: NormalizedQuote): ListQuote {
+  const out: ListQuote = {
+    source:       q.source,
+    label:        String(q.label),
+    durationSec:  Number(q.durationSec) || 0,
+    isCrossChain: q.isCrossChain === true,
+    fromChainId:  Number(q.fromChainId),
+    toChainId:    Number(q.toChainId),
+    sellAmount:   String(q.sellAmount ?? ""),
+    buyAmount:    String(q.buyAmount ?? ""),
+    minBuyAmount: String(q.minBuyAmount ?? ""),
+    routeSummary: String(q.routeSummary ?? ""),
+    hops: (q.hops ?? []).map((h) => ({
+      protocol: String(h.protocol),
+      share:    Number(h.share) || 0,
+      ...(typeof h.color === "string" ? { color: h.color } : {}),
+    })),
+    isFirm:       q.isFirm === true,
+    isIndicative: q.isIndicative === true,
+  };
+  const usd = numeroOuUndefined(q.buyAmountUsd);
+  const gas = numeroOuUndefined(q.gasUsd);
+  if (usd !== undefined) out.buyAmountUsd = usd;
+  if (gas !== undefined) out.gasUsd = gas;
+  return out;
+}

@@ -2,14 +2,14 @@
 
 import { motion } from "framer-motion";
 import { Check, Clock, Globe, Zap, Sparkles } from "lucide-react";
-import type { NormalizedQuote, QuoteSource } from "@/lib/api/quote-types";
+import type { ListQuote, QuoteSource } from "@/lib/api/quote-types";
 import type { Token } from "@/lib/tokens";
 import { formatAmount } from "@/lib/format";
 import { useT, type MessageKey } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
 interface Props {
-  quotes:        NormalizedQuote[];
+  quotes:        ListQuote[];
   selected:      QuoteSource | null;
   onSelect:      (source: QuoteSource) => void;
   toToken:       Token | undefined;

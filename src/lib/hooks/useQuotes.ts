@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ChainId } from "@/lib/chains";
-import type { NormalizedQuote } from "@/lib/api/quote-types";
+import type { ListQuote } from "@/lib/api/quote-types";
 
 interface Args {
   fromChain:    ChainId;
@@ -31,7 +31,7 @@ export interface TaxaDaCotacao {
 }
 
 export interface QuotesState {
-  quotes:      NormalizedQuote[];
+  quotes:      ListQuote[];
   loading:     boolean;
   error:       string | null;
   isCrossChain: boolean;

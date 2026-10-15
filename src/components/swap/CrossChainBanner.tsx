@@ -1,7 +1,7 @@
 "use client";
 
 import { Globe, Clock, Fuel, Workflow } from "lucide-react";
-import type { NormalizedQuote } from "@/lib/api/quote-types";
+import type { ListQuote } from "@/lib/api/quote-types";
 import type { Token } from "@/lib/tokens";
 import { CHAIN_BY_ID } from "@/lib/chains";
 import { formatAmount } from "@/lib/format";
@@ -15,7 +15,7 @@ import { useT } from "@/lib/i18n";
 export default function CrossChainBanner({
   quote, fromToken, toToken,
 }: {
-  quote:     NormalizedQuote;
+  quote:     ListQuote;
   fromToken: Token;
   toToken:   Token;
 }) {
