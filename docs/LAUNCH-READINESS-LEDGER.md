@@ -983,3 +983,42 @@ Runtime errors: nenhum. Kill-switch de `mode=quote` provado pelos testes E/F (mo
 produção. Rollback: `dpl_EvGv264czgmaBRPuhaQvFDgMDKxQ` (`5af0504`). Banco, migrations, flags, Autopilot e DCA real
 inalterados; 0 ordens, 0 trades, 0 dinheiro movido.
 
+## L-058 — LIFI-UPSTREAM-01: LiFi sem cotação desde 10/08; corrigido (15/10/2026)
+
+Missão do dono "LIFI-UPSTREAM-01 — INVESTIGAÇÃO CIRÚRGICA". Auditoria externa fechada e **não** reaberta; A33
+intocado; esta investigação não altera `AUDIT-RECONCILIATION.md` (instrução do dono — a linha
+LIFI-UPSTREAM-01 de lá fica como registro histórico de 15/10; o desfecho está aqui).
+
+**Causa (provada antes de editar).** Toda cotação LiFi levava `fee` + `integrator=z-swap` + `referrer`: todo
+plano EVM tem taxa > 0 e `destinatarioDaTaxa("evm")` cai numa carteira fixa no código. O integrator "z-swap"
+nunca foi cadastrado no Partner Portal do LiFi, e a API recusa: HTTP 400, code 1011, *"Integrator "z-swap" is
+not configured for collecting fees. Please sign up on https://portal.li.fi/ and configure your fee wallet."*
+Provas: chamada direta à API (sem taxa 200; só `integrator` 200; `fee`+integrator 400/1011; `fee` sem
+integrator 400/1011) e a `fetchLiFiQuote` real com os argumentos da rota (free/pro/trader/pilot: 400/1011; sem
+taxa: OK). Documentação oficial: a taxa exige integrator cadastrado e vai para a carteira configurada no
+portal; `referrer` é só rastreio. A rota engolia o erro (lista → `null` com `console.warn`; firme →
+`upstream_failed`). Hipóteses de rede, região, chave, token nativo, decimais e parser descartadas: a mesma
+chamada sem `fee` funciona.
+
+**Classificação.** Z-SWAP BUG: YES · UPSTREAM: NO · REGRESSION: YES · FIRST BAD: `dfff405` (10/08, Fase 9.2) ·
+LAST KNOWN GOOD: `80dc71e` (pai; não mandava taxa ao LiFi). Impacto: LiFi é a única fonte cross-chain da rota —
+**Bridge e todo swap entre redes sem rota por ~2 meses**; e a tela ainda anunciava 1% de taxa nessas rotas.
+
+**Decisão do dono (15/10):** restaurar já, sem taxa nas rotas LiFi, até o integrator ser cadastrado.
+
+**Correção (`2719e38`).** `lifi.ts`: `fee` + `integrator` só com integrator informado
+(`integradorLiFi()` = env `LIFI_INTEGRATOR`); `referrer` removido. `route.ts`: taxa das cotações LiFi só com
+integrator; a taxa DIVULGADA nas rotas LiFi (firme, lista cross-chain, `swap_intent`, alerta de taxa não
+retida) é 0 sem ele. Taxas 0x/Jupiter inalteradas; A33 preservado (lista sem nada executável).
+
+**Prova.** `src/app/api/quote/lifi-upstream-01.test.ts` (11; rota e `fetchLiFiQuote` reais, servidor LiFi falso
+com a regra 1011): em `835b5b0` 8 falham / 3 controles passam; em `2719e38` 11/11. Quatro quebras deliberadas
+detectadas (a primeira só depois de testar a função direto: a rota zerar a taxa mascarava a condição — defesa
+em profundidade, agora com teste nas duas camadas). Gates, CI e preview: `RELEASE-CHAIN.md` "Atualização
+L-058". Preview real: LiFi devolve lista (não executável) e cotação firme em ETH→Arbitrum, ETH→Optimism e
+USDC Ethereum→Base, taxa divulgada 0% (produção: lista vazia, `upstream_failed`, taxa anunciada 100 bps).
+
+**Pendência do dono:** para voltar a cobrar no cross-chain, cadastrar o integrator em portal.li.fi com a
+carteira de taxa e definir `LIFI_INTEGRATOR` na Vercel com esse nome exato (ver `RUNBOOK.md`).
+Resultado do deploy: registrado no commit seguinte, só de docs.
+

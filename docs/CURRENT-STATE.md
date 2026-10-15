@@ -12,6 +12,13 @@
 
 ---
 
+## Atualização L-058 — LiFi (cross-chain) restaurado (15/10/2026)
+
+LIFI-UPSTREAM-01: desde `dfff405` (10/08) o LiFi recusava toda cotação (taxa com integrator "z-swap" não
+cadastrado no portal deles, 400/1011), e o cross-chain ficou sem rota. Corrigido em `2719e38`: sem
+`LIFI_INTEGRATOR`, as rotas LiFi não levam taxa e divulgam 0%. Para voltar a cobrar: cadastro em portal.li.fi
++ env (ver `RUNBOOK.md`). Auditoria externa segue fechada; A33 intocado.
+
 ## Atualização L-057 — A33 corrigido; auditoria externa encerrada (15/10/2026)
 
 `/api/quote` em `mode=list` não devolve mais nada executável (DTO `ListQuote`, allowlist); `mode=quote` segue a

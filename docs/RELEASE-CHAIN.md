@@ -322,3 +322,22 @@ Condição antes do merge: CI verde no SHA deste commit.
 
 Executado (15/10): `main` → `d390880` (fast-forward); produção `dpl_3E65QrD59LprRzkkS7EMrMukEzRw` READY nesse SHA;
 smoke 25/25; lista sem payload executável; sem runtime errors. Detalhe: ledger L-057.
+
+
+## Atualização L-058 — candidato LIFI-UPSTREAM-01
+
+RELEASE_CANDIDATE = THIS_RELEASE_CANDIDATE_COMMIT (commit docs-only que acrescenta esta seção; filho de
+`2719e383910b8ec19c59a3d973eda18de3268090`). Base `835b5b0eb141e991a9bbd94159c6fb9534ff24c4`. Delta de produto:
+`lib/api/lifi.ts` (taxa só com integrator cadastrado; sem `referrer`) e `app/api/quote/route.ts` (taxa e
+divulgação das rotas LiFi). Nenhuma migration, dependência ou flag; env nova opcional `LIFI_INTEGRATOR`
+(ausente = sem taxa LiFi). A33 intocado.
+
+Gates no SHA exato `2719e38` (tree `c2452f834c55a2a4447392830da77bc995318ea4`, árvore limpa antes e depois):
+`npm ci` 0 · lint 0 erros/145 avisos (= base) · type-check 0 · suítes quote/API/swap/bridge/tier 21/261 · suíte
+328/4776 **×2** · build 0 · `audit-gate.mjs` OK (R-03) · secret scan limpo · CI 38722359434 success · preview
+`dpl_7xNZXGofj3izUQb1pZqEza1c9DHu` READY no SHA: smoke 25/25; LiFi real com lista e firme em 3 pares, lista não
+executável, taxa divulgada 0%.
+
+Desvios (escopo): arneses SQL não rodados (delta sem SQL); não é `CERTIFIED_EXACT_SHA` da plataforma inteira.
+Autorização do dono: missão LIFI-UPSTREAM-01 + escolha "Corrigir já, sem taxa" (15/10). Condição antes do
+merge: CI verde no SHA deste commit.
