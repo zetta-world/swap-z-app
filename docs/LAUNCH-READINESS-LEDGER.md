@@ -1226,3 +1226,14 @@ deliberadas detectadas. Prova real na mainnet (sem chave, nada assinado): 5 rota
 593–1229 bytes, taxa confirmada (USDC/wSOL); **a nova tentativa disparou de verdade** (JUP→BONK: 56 contas/1281 bytes
 → refeita, 1212 bytes, 200); 10 × `[jupiter] autenticada ok`, 0 × 401/403/429. Produção da correção: aguarda o dono
 (depois do rollback a Vercel não promove a `main` sozinha — exige promoção explícita).
+
+Produção da correção (16/10, autorizada pelo dono: "sim autorizo produção"): RC `fd4172f` (docs-only), CI
+38977110571, `main` `a675ddb` → `fd4172f` (fast-forward); `dpl_HcXiT1J7SwzXYNS87oRgq33UQeRc` READY e **promovido
+explicitamente** (a Vercel estava em rollback). Smoke só-cotação 22:45:29–22:46:08Z, nada assinado: 10/10 HTTP 200;
+SOL→USDC e USDC→SOL firmes com taxa 100 confirmada na conta USDC, SOL→JUP na wSOL; 7 firmes v0 com 29–55 contas e
+706–1173 bytes, CU sempre da simulação; rotas de 5 trechos (JUP→BONK, WIF→BONK, JUP→WIF grande) OK; listas sem
+payload executável; LI.FI EVM 100. **A nova tentativa disparou em produção** (SOL→JUP: 1233 bytes → refeita, 1173,
+200). Logs: 13 × `[jupiter] autenticada ok 200 api.jup.ag`, 1 `tx-grande`, 0 × 401/403/429, 0 erro. Segredo: 0 termos
+nas respostas, 38 chunks do navegador sem chave/host Jupiter, 0 source map. Smoke de rotas 25/25. Rollback:
+`dpl_AcHcoSLXYEeWB1qvMQE9NXqpimrn` (`2a06326`). **Pendente:** primeiro swap real assinado (sugerido: o dono, valor
+pequeno, conferindo a taxa na conta).

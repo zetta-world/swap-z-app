@@ -1,6 +1,6 @@
 # PLANO — Jupiter Swap V2, caminho Router `/build` (L-062B, 16/10/2026)
 
-Status: 🟡 produção revertida (16/10, transação acima de 64 contas); correção 7 certificada em `feat/jupiter-swap-v2@d86c963` (CI 38976037886, preview PASS); **produção aguarda nova autorização do dono** · rodada: L-062B
+Status: 🟢 concluído (16/10): produção `dpl_HcXiT1J7SwzXYNS87oRgq33UQeRc` (`main` `fd4172f`, código `d86c963`), após rollback de `a675ddb` · pendente: 1º swap real assinado · rodada: L-062B
 
 ## Decisão do dono (16/10)
 

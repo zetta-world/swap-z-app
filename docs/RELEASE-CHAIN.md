@@ -412,3 +412,6 @@ base `a675ddb` (a `main`; produção em `2a06326` por rollback). Delta sobre `a6
 CI verde neste SHA. Promoção explícita (a Vercel está em rollback). Stop: transação > 64 contas ou > 1232 bytes,
 simulação recusada por limite, 401/403, 429 persistente, taxa não confirmada, regressão Solana. Rollback:
 `dpl_AcHcoSLXYEeWB1qvMQE9NXqpimrn`.
+Resultado: `main` → `fd4172f` (fast-forward), produção `dpl_HcXiT1J7SwzXYNS87oRgq33UQeRc` promovida; smoke só-cotação
+PASS (rotas longas dentro dos limites, nova tentativa exercitada, 0 × 401/403/429, 100 bps). Rollback:
+`dpl_AcHcoSLXYEeWB1qvMQE9NXqpimrn`.

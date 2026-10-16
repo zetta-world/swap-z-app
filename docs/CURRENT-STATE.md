@@ -14,10 +14,10 @@
 
 ## Atualização L-062B — Jupiter Swap V2 `/build` (16/10/2026)
 
-**Produção = `dpl_AcHcoSLXYEeWB1qvMQE9NXqpimrn` (`2a06326`, `/swap/v1` autenticada) por ROLLBACK**: a V2 (`a675ddb`)
-foi ao ar e voltou no mesmo dia (transação de 65 contas em rota longa). A `main` está em `a675ddb` mas NÃO é a
-produção; a Vercel só promove com ação explícita. Correção certificada em `feat/jupiter-swap-v2@d86c963` (preview
-PASS, nova tentativa exercitada); produção aguarda o dono.
+Em produção desde 16/10 (`main` `fd4172f`, código `d86c963`, `dpl_HcXiT1J7SwzXYNS87oRgq33UQeRc` promovido): Jupiter
+na Swap V2 Router `/build`, transação v0 montada no servidor e medida (≤ 64 contas, ≤ 1232 bytes; rota longa →
+refeita com `maxAccounts=40`), taxa confirmada na instrução, autenticada. Uma primeira subida (`a675ddb`) foi revertida
+no mesmo dia (65 contas). Pendente: primeiro swap real assinado.
 
 ## Atualização L-062A — chave da Jupiter (16/10/2026)
 
