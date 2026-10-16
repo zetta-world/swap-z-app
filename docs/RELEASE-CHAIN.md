@@ -381,3 +381,5 @@ LI.FI, EVM, CEX, DCA, Autopilot, Founder; sem SQL; Swap V2 fora. Gates, CI 38932
 `dpl_42NsuWMM4skUAjXpBHcta6XwiCRi` em PASS. Autorização: dono, 16/10 ("AUTORIZO PRODUÇÃO DA L-062A").
 Condição antes do merge: CI verde neste SHA. Stop: 401/403, 429 persistente, `lite-api` inesperada, sem
 `x-api-key`, vazamento, regressão Solana, divergência de taxa.
+Resultado: `main` → `a738e7c` (fast-forward), produção `dpl_3VqE1Ex1RGta87E7gVHUffX1kT82` READY; smoke só-cotação PASS
+(Jupiter autenticada, 0 × 401/403/429, 100 bps). Rollback: `06bff5c`.

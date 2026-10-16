@@ -14,8 +14,9 @@
 
 ## Atualização L-062A — chave da Jupiter (16/10/2026)
 
-Código pronto e certificado em `feat/jupiter-api-key@37666e9` (preview autenticado: 0 × 401/403/429). Produção
-**ainda na `lite-api` sem chave** até o dono autorizar o deploy. Swap V2 fora.
+Em produção desde 16/10 (`main` `a738e7c`, `dpl_3VqE1Ex1RGta87E7gVHUffX1kT82`): toda chamada à Jupiter vai para
+`api.jup.ag` com `x-api-key` (logs `[jupiter] modo autenticada`); smoke 0 × 401/403/429, taxa Solana 100 bps intacta.
+Plano Free da Jupiter = 1 req/s. Swap V2 fora (L-062B não iniciada).
 
 ## Atualização L-061 — taxa na Solana (16/10/2026)
 

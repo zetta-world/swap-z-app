@@ -1,6 +1,6 @@
 # PLANO — Chave da Jupiter (L-062A, 16/10/2026)
 
-Status: 🟡 código certificado em `feat/jupiter-api-key@37666e9` (gates + CI 38932931702 + preview autenticado, 0 × 401/403/429); **produção aguarda autorização do dono** · rodada: L-062A
+Status: 🟢 concluído (16/10): produção `dpl_3VqE1Ex1RGta87E7gVHUffX1kT82` (`main` `a738e7c`, código `37666e9`), autenticada em `api.jup.ag`, 0 × 401/403/429 · rodada: L-062A
 
 ## Contexto
 

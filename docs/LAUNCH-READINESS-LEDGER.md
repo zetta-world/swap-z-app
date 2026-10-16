@@ -1161,3 +1161,15 @@ transação montada (antes dava 429); listas com taxa 100. Logs: 10 chamadas `[j
 api.jup.ag`; **0 × 401/403/429**. 10/25/50 bps: só pela suíte (o preview sem sessão é plano free).
 
 **Produção: NÃO feita** — aguarda autorização explícita do dono. Sem evidência de produção nesta entrada.
+
+Resultado do deploy (16/10, autorizado pelo dono: "AUTORIZO PRODUÇÃO DA L-062A"): RC `a738e7c` (docs-only; delta
+`06bff5c..a738e7c` = só os 11 arquivos da L-062A), CI 38939893760 success, `main` `06bff5c` → `a738e7c` por
+fast-forward (sem force). Produção `dpl_3VqE1Ex1RGta87E7gVHUffX1kT82` READY (alias `swap-z-app.vercel.app`).
+Smoke só-cotação 17:31:49–17:32:12Z (nada assinado): 7/7 HTTP 200; SOL→USDC e USDC→SOL firmes com
+`platformFee.feeBps` 100 + transação montada, taxa divulgada 100; SOL→JUP 100 bps; JUP→WIF sem taxa com transação
+(antes 429); listas sem payload executável; LI.FI EVM 100. Logs do deployment: 12 × `[jupiter] {"modo":"autenticada",
+"tipo":"ok","status":200,"host":"api.jup.ag"}` (10 do smoke + 2 externas); **0 × 401/403/429**, 0 `lite-api`, 0 linhas
+warning/error (nenhum alerta `jupiter:*` nem `taxa-solana`). Segredo: 38 chunks do navegador sem `JUPITER_API_KEY`,
+`x-api-key`, `api.jup.ag` ou `lite-api`; 0 source map servido (0/38 `.map` 200); respostas da API sem esses termos; o
+código só loga modo/tipo/status/host (valor da chave nunca lido nesta rodada). Smoke de rotas 25/25. Rollback:
+`06bff5c` (deploy anterior de produção).
