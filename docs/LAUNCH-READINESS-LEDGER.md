@@ -1090,3 +1090,7 @@ aviso de valor inválido no log; a regra validada é a mesma que o LI.FI já ace
 **Pendências do dono:** definir `LIFI_INTEGRATOR` também em Preview, se quiser o preview igual à produção;
 apagar no painel do LI.FI a key cujo valor completo ninguém tem. Resultado do deploy: no commit seguinte.
 
+Resultado do deploy (16/10): `main` → `f64c5e2` (fast-forward, CI verde); produção `dpl_ymHCBMGg64jZTmtWncqjuxVZ6qL1`
+READY (código `12b898f`). Só cotação: LI.FI segue cobrando 1% nas três rotas ("LIFI Fixed Fee" 0,0125, taxa divulgada
+100 bps), lista não executável, smoke 25/25, sem avisos/erros no log. Rollback: `dpl_Fk4xVsGwszBgWz17iRjyEBVUzev8`.
+
