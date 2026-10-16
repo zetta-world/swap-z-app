@@ -9,11 +9,12 @@
  * (`__fixtures__/jupiter-build-20261016.json`). O `fetch` é falso (Jupiter + RPC de simulação).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ComputeBudgetProgram, PublicKey, VersionedTransaction } from "@solana/web3.js";
+import { ComputeBudgetProgram, Keypair, PublicKey, VersionedTransaction } from "@solana/web3.js";
 import fixture from "./__fixtures__/jupiter-build-20261016.json";
 import {
   configJupiter, CU_PRECO_TETO, CU_TETO, fetchJupiterBuild, fetchJupiterFirm, fetchJupiterQuote,
-  JupiterError, montarTransacaoJupiter, quoteDoBuild, taxaNaInstrucao, type JupBuild,
+  JupiterError, MAX_ACCOUNTS_REDUZIDO, MAX_BYTES_TX, MAX_CONTAS_TX, montarTransacaoJupiter, quoteDoBuild,
+  tamanhoDaTransacao, taxaNaInstrucao, TransacaoGrandeError, type JupBuild,
 } from "@/lib/api/jupiter";
 import { verifyJupiterTransaction, extractProgramIds } from "@/lib/swap/solana-guard";
 import { CARTEIRA_TAXA_SOLANA } from "@/lib/tier/fees";
@@ -310,5 +311,59 @@ describe("montagem da transação (v0) a partir da resposta real", () => {
     expect(chamadas).toHaveLength(1);
     expect(quote.platformFee).toEqual({ feeBps: 100, feeAccount: CONTA_USDC });
     expect(ler(swap.swapTransaction).version).toBe(0);
+  });
+});
+
+/**
+ * ⚠️ PRODUÇÃO 16/10 (rollback): JUP→WIF numa rota de 5 trechos virou uma transação de 65 contas — a
+ * rede recusa acima de 64 (`TooManyAccountLocks`). No `/build` o limite é responsabilidade nossa.
+ */
+describe("⚠️ transação tem de caber na rede (64 contas, 1232 bytes)", () => {
+  const MEMO = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
+  /** A resposta real + uma instrução com `extras` contas novas (simula uma rota longa). */
+  const inchada = (extras: number, dados = ""): JupBuild => ({
+    ...COM_TAXA,
+    otherInstructions: [{ programId: MEMO, data: Buffer.from(dados).toString("base64"),
+      accounts: Array.from({ length: extras }, () => ({ pubkey: Keypair.generate().publicKey.toBase58(), isSigner: false, isWritable: false })) }],
+  });
+
+  it("a resposta real cabe com folga", async () => {
+    const tx = VersionedTransaction.deserialize(Buffer.from((await montarTransacaoJupiter(COM_TAXA, TAKER)).swapTransaction, "base64"));
+    const t = tamanhoDaTransacao(tx);
+    expect(t.contas).toBeLessThanOrEqual(MAX_CONTAS_TX);
+    expect(t.bytes).toBeLessThanOrEqual(MAX_BYTES_TX);
+  });
+
+  it("65+ contas → TransacaoGrandeError, sem simular e sem devolver transação", async () => {
+    corpoSimulacao = {};
+    const e = await montarTransacaoJupiter(inchada(30), TAKER).catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(TransacaoGrandeError);
+    expect((e as TransacaoGrandeError).contas).toBeGreaterThan(MAX_CONTAS_TX);
+    expect(corpoSimulacao.params).toBeUndefined();
+  });
+
+  it("acima de 1232 bytes → TransacaoGrandeError", async () => {
+    const e = await montarTransacaoJupiter(inchada(0, "x".repeat(900)), TAKER).catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(TransacaoGrandeError);
+    expect((e as TransacaoGrandeError).bytes).toBeGreaterThan(MAX_BYTES_TX);
+  });
+
+  it("firme: rota não coube → refaz UMA vez com maxAccounts reduzido e o swap sai", async () => {
+    const grande = inchada(30);
+    jupiter = (c) => Response.json(new URL(c.url).searchParams.has("maxAccounts") ? COM_TAXA : grande);
+    const { quote, swap } = await fetchJupiterFirm({ ...ARGS, taker: TAKER, platformFeeBps: 100, feeAccount: CONTA_USDC });
+    expect(chamadas).toHaveLength(2);
+    expect(new URL(chamadas[0].url).searchParams.has("maxAccounts")).toBe(false);
+    expect(new URL(chamadas[1].url).searchParams.get("maxAccounts")).toBe(String(MAX_ACCOUNTS_REDUZIDO));
+    expect(new URL(chamadas[1].url).searchParams.get("feeAccount")).toBe(CONTA_USDC);
+    expect(quote.platformFee).toEqual({ feeBps: 100, feeAccount: CONTA_USDC });
+    expect(tamanhoDaTransacao(VersionedTransaction.deserialize(Buffer.from(swap.swapTransaction, "base64"))).contas).toBeLessThanOrEqual(MAX_CONTAS_TX);
+    expect(logs()).toContain("tx-grande");
+  });
+
+  it("firme: nem a rota reduzida coube → erro (nunca uma transação inválida), sem laço", async () => {
+    jupiter = () => Response.json(inchada(30));
+    await expect(fetchJupiterFirm({ ...ARGS, taker: TAKER })).rejects.toBeInstanceOf(TransacaoGrandeError);
+    expect(chamadas).toHaveLength(2);
   });
 });

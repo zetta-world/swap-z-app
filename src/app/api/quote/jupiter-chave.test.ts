@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { VersionedTransaction } from "@solana/web3.js";
+import { Keypair, VersionedTransaction } from "@solana/web3.js";
 import fixture from "@/lib/api/__fixtures__/jupiter-build-20261016.json";
 import { verifyJupiterTransaction } from "@/lib/swap/solana-guard";
 
@@ -25,6 +25,8 @@ const s = vi.hoisted(() => ({
   jupStatus: 200,
   /** Jupiter "ignora" a taxa: devolve a resposta sem o feeAccount na instrução. */
   jupIgnoraTaxa: false,
+  /** Jupiter devolve uma rota longa demais para UMA transação (65+ contas), sempre. */
+  jupRotaGrande: false,
   jup: [] as { url: string; headers: Headers }[],
 }));
 vi.mock("@/lib/rate-limit", () => ({ rateLimitDurable: async () => ({ ok: true }), getClientId: () => "jk" }));
@@ -40,7 +42,7 @@ import { _limparCacheDeContas } from "@/lib/solana/conta-de-taxa";
 beforeEach(() => {
   vi.clearAllMocks();
   _limparCacheDeContas();
-  s.tier = "free"; s.contaOk = true; s.jupStatus = 200; s.jupIgnoraTaxa = false; s.jup = [];
+  s.tier = "free"; s.contaOk = true; s.jupStatus = 200; s.jupIgnoraTaxa = false; s.jupRotaGrande = false; s.jup = [];
   vi.stubEnv("JUPITER_API_KEY", CHAVE);
   vi.stubEnv("JUPITER_BASE_URL", "");
   vi.stubEnv("LIFI_INTEGRATOR", "");
@@ -53,7 +55,10 @@ beforeEach(() => {
       s.jup.push({ url: u, headers });
       if (headers.has("x-api-key") && s.jupStatus !== 200) return new Response("denied", { status: s.jupStatus });
       const comTaxa = new URL(u).searchParams.has("platformFeeBps") && !s.jupIgnoraTaxa;
-      return Response.json(comTaxa ? fixture.com_taxa_100bps_feeAccount_En1J8 : fixture.sem_taxa);
+      const b = comTaxa ? fixture.com_taxa_100bps_feeAccount_En1J8 : fixture.sem_taxa;
+      if (!s.jupRotaGrande) return Response.json(b);
+      return Response.json({ ...b, otherInstructions: [{ programId: "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr", data: "",
+        accounts: Array.from({ length: 30 }, () => ({ pubkey: Keypair.generate().publicKey.toBase58(), isSigner: false, isWritable: false })) }] });
     }
     const body = JSON.parse(String(init?.body ?? "{}"));
     if (body.method === "getAccountInfo") {
@@ -188,5 +193,18 @@ describe("visibilidade operacional", () => {
     await firme();
     expect(new URL(s.jup[0].url).host).toBe("api.jup.ag");
     expect(alertas().some((t) => t.includes("JUPITER config"))).toBe(true);
+  });
+});
+
+describe("⚠️ rota que não cabe numa transação (produção 16/10, rollback)", () => {
+  it("nem a rota reduzida coube → 502 upstream_failed, NENHUMA transação vai ao navegador", async () => {
+    s.jupRotaGrande = true;
+    const r = await firme();
+    expect(r.status).toBe(502);
+    const body = await r.json();
+    expect(body).toMatchObject({ ok: false, error: "upstream_failed" });
+    expect(JSON.stringify(body)).not.toContain("swapTransaction");
+    expect(s.jup).toHaveLength(2);
+    expect(new URL(s.jup[1].url).searchParams.get("maxAccounts")).toBe("40");
   });
 });

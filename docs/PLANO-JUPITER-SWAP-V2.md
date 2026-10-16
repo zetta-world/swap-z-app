@@ -1,6 +1,6 @@
 # PLANO — Jupiter Swap V2, caminho Router `/build` (L-062B, 16/10/2026)
 
-Status: 🟡 código certificado em `feat/jupiter-swap-v2@6722b5c` (gates + CI 38952568486 + preview autenticado); **produção aguarda autorização do dono** · rodada: L-062B
+Status: 🔴 produção revertida (16/10, transação acima de 64 contas); correção 7 em recertificação na branch `feat/jupiter-swap-v2` · rodada: L-062B
 
 ## Decisão do dono (16/10)
 
@@ -49,6 +49,17 @@ Motivo: preserva a receita e a escada; o custo é código (montar a transação)
 `/build` real → transação montada por este código → `simulateTransaction` na mainnet, taker = carteira de taxa `H7zw…`:
 SOL→USDC com 10 bps na conta USDC e SOL→JUP com 25 bps na conta wSOL — simulação **sem erro** (76.075 e 117.498 CU;
 limites 91.536 e 139.901), guard aprova, conta de taxa na instrução. A escada abaixo de 50 bps funciona no `/build`.
+
+## ⚠️ Incidente de produção (16/10) e correção
+
+Smoke de produção de `a675ddb`: JUP→WIF numa rota de 5 trechos virou transação de **65 contas** (limite da rede 64)
+→ simulação `TooManyAccountLocks`. Na v1 a Jupiter montava a transação e respeitava o limite; no `/build` é nosso.
+Impacto: só rotas longas, recusadas no preflight da carteira (sem perda de fundos). **Rollback** autorizado pelo dono
+para `dpl_AcHcoSLXYEeWB1qvMQE9NXqpimrn` (`2a06326`, v1 autenticada) minutos depois.
+
+7. 🟢 Correção: antes de devolver, a transação é medida (contas estáticas + via ALT ≤ 64; ≤ 1232 bytes). Não coube →
+   refaz UMA vez com `maxAccounts=40` (taxa preservada); ainda não coube → erro (502), nunca transação inválida. Prova
+   real: 5 rotas (até 5 trechos) entre 40 e 55 contas, 918–1210 bytes, simulação sem erro.
 
 ## Fora do escopo
 

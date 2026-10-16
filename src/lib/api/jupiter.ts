@@ -171,6 +171,8 @@ export interface BuildArgs {
    */
   platformFeeBps?: number;
   feeAccount?: string;
+  /** Contas da ROTA (1–64, padrão da Jupiter 64). Reduzido quando a transação montada não cabe. */
+  maxAccounts?: number;
 }
 
 /** Envolve o fetch para que uma falha de CONEXÃO deixe rastro utilizável.
@@ -244,6 +246,7 @@ export async function fetchJupiterBuild(args: BuildArgs & { taker: string }, opt
     taker:       args.taker,
     slippageBps: String(args.slippageBps ?? 50),
   });
+  if (args.maxAccounts) params.set("maxAccounts", String(args.maxAccounts));
   if (fee > 0) {
     params.set("platformFeeBps", String(fee));
     params.set("feeAccount", args.feeAccount!);
@@ -289,11 +292,47 @@ export async function fetchJupiterQuote(args: BuildArgs, opts: OpcoesJupiter = {
 /** Cotação FIRME: um `/build` para a carteira de quem troca + a transação montada aqui. */
 export async function fetchJupiterFirm(args: BuildArgs & { taker: string }, opts: OpcoesJupiter = {}): Promise<{ quote: JupQuote; swap: JupSwapResponse }> {
   const build = await fetchJupiterBuild(args, opts);
-  const swap = await montarTransacaoJupiter(build, args.taker);
-  return { quote: quoteDoBuild(build, args), swap };
+  try {
+    return { quote: quoteDoBuild(build, args), swap: await montarTransacaoJupiter(build, args.taker) };
+  } catch (e) {
+    if (!(e instanceof TransacaoGrandeError) || args.maxAccounts) throw e;
+    // ⚠️ Rota longa demais para UMA transação (L-062B, produção 16/10: JUP→WIF em 5 trechos deu 65
+    // contas). Refaz UMA vez pedindo uma rota menor — preço um pouco pior, mas o swap sai.
+    console.warn("[jupiter]", JSON.stringify({ tipo: "tx-grande", contas: e.contas, bytes: e.bytes, refazendo: { maxAccounts: MAX_ACCOUNTS_REDUZIDO } }));
+    const menor = { ...args, maxAccounts: MAX_ACCOUNTS_REDUZIDO };
+    const b2 = await fetchJupiterBuild(menor, opts);
+    return { quote: quoteDoBuild(b2, menor), swap: await montarTransacaoJupiter(b2, args.taker) };
+  }
 }
 
 // ─── Montagem da transação (v0) ─────────────────────────────────────
+
+/**
+ * ⚠️ LIMITES DE UMA TRANSAÇÃO SOLANA. No `/swap` da v1 a Jupiter montava a transação e cuidava
+ * disto; no `/build` quem monta somos nós. Estourar = a rede recusa (`TooManyAccountLocks` acima
+ * de 64 contas; pacote acima de 1232 bytes) — visto em produção em 16/10 (65 contas, rollback).
+ */
+export const MAX_CONTAS_TX = 64;
+export const MAX_BYTES_TX = 1232;
+/** `maxAccounts` da segunda tentativa quando a rota não coube (a docs da Jupiter indica reduzir). */
+export const MAX_ACCOUNTS_REDUZIDO = 40;
+
+/** A transação montada não cabe numa transação Solana — nunca é devolvida ao navegador. */
+export class TransacaoGrandeError extends Error {
+  constructor(readonly contas: number, readonly bytes: number) {
+    super(`Jupiter: transação grande demais (${contas} contas / ${bytes} bytes; limite ${MAX_CONTAS_TX} / ${MAX_BYTES_TX})`);
+    this.name = "TransacaoGrandeError";
+  }
+}
+
+/** Contas travadas (estáticas + via lookup table) e tamanho serializado (com 1 assinatura). */
+export function tamanhoDaTransacao(tx: VersionedTransaction): { contas: number; bytes: number } {
+  const viaAlt = tx.message.addressTableLookups.reduce((n, l) => n + l.writableIndexes.length + l.readonlyIndexes.length, 0);
+  // O web3.js serializa a mensagem num buffer de 1232 bytes: acima disso ele LANÇA — também é "não cabe".
+  let bytes: number;
+  try { bytes = tx.serialize().length; } catch { bytes = MAX_BYTES_TX + 1; }
+  return { contas: tx.message.staticAccountKeys.length + viaAlt, bytes };
+}
 
 /** Teto de compute units de uma transação Solana. */
 export const CU_TETO = 1_400_000;
@@ -382,7 +421,11 @@ export async function montarTransacaoJupiter(build: JupBuild, taker: string): Pr
   if (String(build.transactionVersion ?? "0") !== "0") {
     throw new Error(`Jupiter: transactionVersion ${build.transactionVersion} não suportada (só v0)`);
   }
-  const sim = await simularCu(compilar(build, taker, CU_TETO));
+  const rascunho = compilar(build, taker, CU_TETO);
+  // Antes de simular: uma transação que não cabe nunca sai daqui (o limite de CU não muda o tamanho).
+  const t = tamanhoDaTransacao(rascunho);
+  if (t.contas > MAX_CONTAS_TX || t.bytes > MAX_BYTES_TX) throw new TransacaoGrandeError(t.contas, t.bytes);
+  const sim = await simularCu(rascunho);
   const limite = sim.cu != null ? Math.min(CU_TETO, Math.ceil(sim.cu * 1.2)) : CU_TETO;
   if (sim.cu == null) console.warn("[jupiter]", JSON.stringify({ tipo: "simulacao", porque: sim.porque, limite }));
   const tx = compilar(build, taker, limite);
