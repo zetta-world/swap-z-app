@@ -1064,3 +1064,29 @@ Resultado do deploy (15/10): `main` → `1611042` (fast-forward, CI verde); prod
 READY nesse SHA (código `2b8118d`). Sem `LIFI_INTEGRATOR` ainda: LI.FI cotando com taxa 0% e lista não executável;
 smoke 25/25; runtime errors: nenhum. Rollback: `dpl_DCsP5Gbz6kyu9Y1RubfoZ3t9ZN3D` (`a19d2c1`).
 
+## L-060 — Ativação da taxa LI.FI concluída; configuração errada não derruba mais o cross-chain (16/10/2026)
+
+**Ativação (dono, 16/10).** `LIFI_INTEGRATOR` e `LIFI_API_KEY` definidos na Vercel. Duas tentativas derrubaram TODA
+cotação LI.FI em produção (cross-chain fora do ar por minutos, cada vez), diagnosticadas pelo log de produção:
+1. key/secret colados como valor de `LIFI_INTEGRATOR` → 400/1011 *"/integrator must be an alphanumeric string
+   (additionally "-", "_", and "." are allowed) with a maximum length of 23 characters"*;
+2. a MÁSCARA da key do painel (a key completa só aparece na criação) colada em `LIFI_API_KEY` → 401/1010
+   *"Invalid API key"*. Contornado apagando a key (é opcional) e depois corrigido com a key salva na criação.
+Produção final (16/10 01:31 UTC, só cotação): ETH→Arbitrum, ETH→Optimism e USDC Ethereum→Base com lista não
+executável e cotação firme; "LIFI Fixed Fee" 0,0125 (1% Z-SWAP + 0,25% LI.FI); taxa divulgada 100 bps; smoke
+25/25; sem avisos/erros no log. **O cross-chain saindo de EVM cobra a taxa do plano desde então.** Evidência:
+`lifi-upstream-01-20261015/activation-20261016/`.
+
+**Proteção (`12b898f`).** `lerIntegradorLiFi`: remove aspas nas pontas e prefixo `LIFI_INTEGRATOR=` colado;
+exige a regra do LI.FI; inválido → sem taxa LI.FI, cotação segue, alerta com tamanho/classes de caractere e
+NUNCA o valor. `fetchLiFiQuote`: 401 com key → refaz uma vez SEM a key (opcional) e avisa. Alertas Telegram com
+dedup (`lifi:integrator-invalido`, `lifi:key-recusada`). Prova: 9 casos novos em `lifi-upstream-01.test.ts`;
+em `7072e60` 7 falham (os dois incidentes reproduzidos); 4 quebras deliberadas detectadas. Gates no SHA exato
+`12b898f` (tree `727d8a1f9bafaeee3786db46d81d0efb975b8e6b`): `npm ci` 0 · lint 0/145 · type-check 0 · suíte
+329/4794 ×2 · build 0 · audit-gate OK · CI 38875298148 · preview `dpl_4SMypHFBeLHB6j6NUBzMNBhSjndW` smoke 25/25,
+LI.FI cotando (o preview mostrou taxa 0%: `LIFI_INTEGRATOR` aparentemente não definido em **Preview** — sem
+aviso de valor inválido no log; a regra validada é a mesma que o LI.FI já aceita em produção).
+
+**Pendências do dono:** definir `LIFI_INTEGRATOR` também em Preview, se quiser o preview igual à produção;
+apagar no painel do LI.FI a key cujo valor completo ninguém tem. Resultado do deploy: no commit seguinte.
+

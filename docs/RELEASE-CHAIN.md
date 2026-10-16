@@ -353,3 +353,12 @@ Base `00c9eece2c92a99a03ef10482909aa945978ef42`. Delta: `lib/api/lifi.ts` (`taxa
 `app/api/quote/route.ts` (`taxaAceita` da LI.FI). Gates, CI 38825991656 e preview `dpl_4LQyCmZ7rdyaSLqwHenMpwVtDtfV`
 em PASS (ledger L-059). Desvios: escopo (sem SQL). Autorização: missão LIFI-UPSTREAM-01 do dono (15/10).
 Condição antes do merge: CI verde no SHA deste commit.
+
+
+## Atualização L-060 — candidato proteção da configuração LI.FI
+
+RELEASE_CANDIDATE = THIS_RELEASE_CANDIDATE_COMMIT (docs-only, filho de `12b898f074cf5c2362f4c0327b964773dd0bd70e`).
+Base `7072e60b0923fceac81d8a2fcffbb98f7b4ab48d`. Delta: `lib/api/lifi.ts` (validação do integrator, refazer sem key
+em 401) e `app/api/quote/route.ts` (avisos). Gates, CI 38875298148 e preview `dpl_4SMypHFBeLHB6j6NUBzMNBhSjndW` em
+PASS (ledger L-060). Desvios: escopo (sem SQL). Autorização: missão LIFI-UPSTREAM-01 do dono. Condição antes do
+merge: CI verde no SHA deste commit; depois do deploy, a produção tem de seguir cobrando 100 bps no LI.FI.

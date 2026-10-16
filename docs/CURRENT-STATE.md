@@ -12,6 +12,12 @@
 
 ---
 
+## Atualização L-060 — taxa LI.FI ativa (16/10/2026)
+
+O cross-chain saindo de redes EVM cobra a taxa do plano via LI.FI (`LIFI_INTEGRATOR=zswap` + key). Um valor
+errado nessas variáveis não derruba mais as cotações (`12b898f`): a taxa LI.FI desliga e um alerta diz o motivo.
+Taxa na Solana segue desligada (rodada própria pendente).
+
 ## Atualização L-059 — taxa LI.FI pronta para ativar (15/10/2026)
 
 Integrator `zswap` cadastrado e validado na API real; a detecção da taxa (somada à do LI.FI) foi corrigida em
