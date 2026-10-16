@@ -384,9 +384,14 @@ Condição antes do merge: CI verde neste SHA. Stop: 401/403, 429 persistente, `
 Resultado: `main` → `a738e7c` (fast-forward), produção `dpl_3VqE1Ex1RGta87E7gVHUffX1kT82` READY; smoke só-cotação PASS
 (Jupiter autenticada, 0 × 401/403/429, 100 bps). Rollback: `06bff5c`.
 
-## Atualização L-062B — Jupiter Swap V2 `/build` (certificado; NÃO é candidato)
+## Atualização L-062B — candidato Jupiter Swap V2 `/build`
 
+RELEASE_CANDIDATE = THIS_RELEASE_CANDIDATE_COMMIT (docs-only, filho de `2fcf9f2350f9bd610f0f924291d9f11dde3e67e7`).
 CERTIFIED_FEATURE_SHA = `6722b5c5b2a33ab920c2d54f925f61015f546b4a` (tree `06e739c444e9cd053fbdb28a1c2bdc2682dae7db`),
-base `2a06326`. Delta: Jupiter na Swap V2 Router `/build`, transação montada no servidor (ledger L-062B). Gates, CI
-38952568486 e preview `dpl_Dp1VzZxEUhyTHVghX6iXgqpFDnyo` em PASS. **Não marcado RELEASE_CANDIDATE**: produção aguarda
-autorização explícita do dono. Rollback previsto: `2a06326` (`/swap/v1` autenticada).
+base `2a0632616dc5883805aff44ac577dde0e39e9337`. Delta: Jupiter na Swap V2 Router `/build`, transação montada no
+servidor (ledger L-062B) — `lib/api/jupiter.ts`, `api/quote/route.ts`, `lib/admin/deps.ts`, `admin/api/swap-guard`,
+`lib/solana/{conta-de-taxa,rpc-servidor}.ts`, testes, fixture, docs; nada de tiers, contas de taxa, LI.FI, EVM, CEX,
+DCA, Autopilot, Founder; sem SQL. Gates, CI 38952568486 e preview `dpl_Dp1VzZxEUhyTHVghX6iXgqpFDnyo` em PASS.
+Autorização: dono, 16/10 ("autorizo a produção da L-062B"). Condição antes do merge: CI verde neste SHA. Stop:
+401/403, 429 persistente, sem `x-api-key`, vazamento, transação não-v0 ou recusada pelo guard, taxa não confirmada
+na instrução, regressão Solana. Rollback: `2a06326` (`/swap/v1` autenticada).
