@@ -178,7 +178,8 @@ interface SwapArgs {
  * L-062A: é também o ÚNICO lugar que monta a URL (`configJupiter().base` + path) e
  * aplica os headers comuns (`x-api-key`) sem sobrescrever os da chamada. Toda falha
  * vira `JupiterError` com `tipo` (limite=429 · chave=401/403 · http · conexao) e
- * `modo` (autenticada/sem-chave), e sai um log `[jupiter] {modo,tipo,status,host}`
+ * `modo` (autenticada/sem-chave), e sai um log `[jupiter] {modo,tipo,status,host}` (também no
+ * sucesso, `tipo: "ok"`)
  * — sem a chave, que também é tirada do corpo de erro devolvido pela Jupiter.
  */
 export interface OpcoesJupiter {
@@ -223,6 +224,8 @@ async function jupFetch(path: string, init: RequestInit = {}, opts: OpcoesJupite
     const rotulo = path.startsWith("/swap") ? "Jupiter swap" : "Jupiter";
     throw new JupiterError(`${rotulo} ${res.status} [${cfg.modo}]: ${text.slice(0, 240)}`, tipo, cfg.modo, res.status);
   }
+  // Sucesso também deixa rastro (sem segredo): é o que prova, nos logs, se a chamada foi autenticada.
+  console.info("[jupiter]", JSON.stringify({ modo: cfg.modo, tipo: "ok", status: res.status, host }));
   return res;
 }
 

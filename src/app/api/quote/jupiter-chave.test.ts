@@ -38,6 +38,7 @@ beforeEach(() => {
   vi.stubEnv("JUPITER_BASE_URL", "");
   vi.stubEnv("LIFI_INTEGRATOR", "");
   vi.spyOn(console, "warn").mockImplementation(() => {});
+  vi.spyOn(console, "info").mockImplementation(() => {});
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     const u = String(url);
     if (u.includes("jup.ag")) {

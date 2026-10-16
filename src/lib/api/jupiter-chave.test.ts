@@ -30,6 +30,7 @@ beforeEach(() => {
     return resposta(c);
   }));
   vi.spyOn(console, "warn").mockImplementation(() => {});
+  vi.spyOn(console, "info").mockImplementation(() => {});
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
@@ -43,6 +44,23 @@ describe("A · chave presente → api.jup.ag + x-api-key", () => {
     expect(chamadas[1].url).toBe("https://api.jup.ag/swap/v1/swap");
     expect(chamadas.every((c) => c.headers.get("x-api-key") === CHAVE)).toBe(true);
     expect(configJupiter().modo).toBe("autenticada");
+  });
+
+  it("sucesso também é registrado: modo autenticada, host api.jup.ag, sem a chave", async () => {
+    vi.stubEnv("JUPITER_API_KEY", CHAVE);
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    await fetchJupiterQuote(ARGS);
+    const linha = JSON.stringify(info.mock.calls);
+    expect(linha).toContain('\\"modo\\":\\"autenticada\\"');
+    expect(linha).toContain('\\"tipo\\":\\"ok\\"');
+    expect(linha).toContain("api.jup.ag");
+    expect(linha).not.toContain(CHAVE);
+  });
+
+  it("sucesso sem chave é registrado como sem-chave", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    await fetchJupiterQuote(ARGS);
+    expect(JSON.stringify(info.mock.calls)).toContain('\\"modo\\":\\"sem-chave\\"');
   });
 
   it("chave com espaço em volta é aparada", async () => {
