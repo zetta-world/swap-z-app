@@ -395,3 +395,9 @@ DCA, Autopilot, Founder; sem SQL. Gates, CI 38952568486 e preview `dpl_Dp1VzZxEU
 Autorização: dono, 16/10 ("autorizo a produção da L-062B"). Condição antes do merge: CI verde neste SHA. Stop:
 401/403, 429 persistente, sem `x-api-key`, vazamento, transação não-v0 ou recusada pelo guard, taxa não confirmada
 na instrução, regressão Solana. Rollback: `2a06326` (`/swap/v1` autenticada).
+
+Resultado L-062B (16/10): `main` → `a675ddb`, produção `dpl_HcK5h3H8LYxgd6qqamhsXvFMrUoZ` — **STOP** (transação de
+65 contas em rota longa) e **rollback** para `dpl_AcHcoSLXYEeWB1qvMQE9NXqpimrn` (`2a06326`). `a675ddb` deixa de ser
+candidato. Correção: CERTIFIED_FEATURE_SHA = `d86c963d65431ea3e99458d4bee2512d08b6d7e7` (tree
+`3fbf5d6436a41f4eb54119d1b09345fcd898abec`), CI 38976037886, preview `dpl_Ef1BQyPLcNKA81ydYCn31WLNRHAi` PASS. **Não
+marcado RELEASE_CANDIDATE** — nova autorização do dono necessária.

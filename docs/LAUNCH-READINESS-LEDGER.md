@@ -1207,3 +1207,22 @@ JUP→WIF sem taxa com transação; lista com e sem carteira, sem payload execut
 200 api.jup.ag` (1 por requisição); 0 × 401/403/429; 0 simulação no teto.
 
 **Produção: NÃO feita** — aguarda autorização explícita do dono.
+
+Produção de `a675ddb` (16/10, autorizada pelo dono): `main` `2a06326` → `a675ddb` (fast-forward), CI 38970070855,
+`dpl_HcK5h3H8LYxgd6qqamhsXvFMrUoZ` READY. Smoke: 7/7 HTTP 200, taxa 100 confirmada na instrução, `[jupiter]
+autenticada` 0 × 401/403/429 — **mas** a firme JUP→WIF (rota de 5 trechos) saiu com **65 contas** (limite 64):
+simulação `TooManyAccountLocks`. Causa: na v1 a Jupiter montava a transação dentro do limite; no `/build` é nosso e
+não estava implementado. Impacto: só rotas longas, recusadas no preflight da carteira (`skipPreflight: false`), sem
+perda de fundos. **STOP** + **rollback** autorizado pelo dono: `dpl_AcHcoSLXYEeWB1qvMQE9NXqpimrn` (`2a06326`, v1
+autenticada) promovido de volta, conferido por cotação real (formato v1, 100 bps).
+
+**Correção C1b `d86c963`:** a transação montada é medida antes de simular/devolver (contas estáticas + via ALT ≤ 64,
+≤ 1232 bytes; estouro de serialização conta como "não cabe"); não coube → refaz UMA vez com `maxAccounts=40` (taxa
+preservada); ainda não coube → 502, nunca transação inválida. 6 testes novos (inclusive o caso da produção); 4 quebras
+deliberadas detectadas. Prova real na mainnet (sem chave, nada assinado): 5 rotas de até 5 trechos com 40–55 contas e
+918–1210 bytes, simulação sem erro. Recert no SHA exato `d86c963` (tree `3fbf5d6436a41f4eb54119d1b09345fcd898abec`):
+`npm ci` 0 · lint 0/145 · type-check 0 · suíte 332/4866 ×2 · build 0 · audit-gate OK · 0 chave no bundle · CI
+38976037886. Preview `dpl_Ef1BQyPLcNKA81ydYCn31WLNRHAi` (só cotação): 9/9 HTTP 200, firmes v0 com 19–55 contas e
+593–1229 bytes, taxa confirmada (USDC/wSOL); **a nova tentativa disparou de verdade** (JUP→BONK: 56 contas/1281 bytes
+→ refeita, 1212 bytes, 200); 10 × `[jupiter] autenticada ok`, 0 × 401/403/429. Produção da correção: aguarda o dono
+(depois do rollback a Vercel não promove a `main` sozinha — exige promoção explícita).

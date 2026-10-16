@@ -1,6 +1,6 @@
 # PLANO — Jupiter Swap V2, caminho Router `/build` (L-062B, 16/10/2026)
 
-Status: 🔴 produção revertida (16/10, transação acima de 64 contas); correção 7 em recertificação na branch `feat/jupiter-swap-v2` · rodada: L-062B
+Status: 🟡 produção revertida (16/10, transação acima de 64 contas); correção 7 certificada em `feat/jupiter-swap-v2@d86c963` (CI 38976037886, preview PASS); **produção aguarda nova autorização do dono** · rodada: L-062B
 
 ## Decisão do dono (16/10)
 
