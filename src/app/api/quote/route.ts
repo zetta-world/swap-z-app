@@ -10,7 +10,7 @@ import {
   fetchLiFiQuote, isLiFiSupported, LIFI_CHAIN_IDS, LIFI_NATIVE, integradorLiFi, lerIntegradorLiFi, taxaDoIntegradorNaCotacao,
 } from "@/lib/api/lifi";
 import {
-  fetchJupiterQuote, fetchJupiterSwap, JUPITER_SOL_MINT,
+  fetchJupiterQuote, fetchJupiterSwap, JUPITER_SOL_MINT, configJupiter,
 } from "@/lib/api/jupiter";
 import {
   normalizeZeroX, normalizeLiFi, normalizeJupiter,
@@ -410,6 +410,28 @@ export async function GET(req: NextRequest) {
     slippageBps,
     ...(contaJupiter ? { platformFeeBps: taxaJupiter.bps } : {}),
   };
+  /**
+   * Chave da Jupiter (L-062A). Sem chave a Jupiter segue pela `lite-api` (o swap não para), mas em
+   * PRODUÇÃO isso é falha de configuração e o dono precisa saber — não fingir que é autenticada.
+   * Chave recusada → a chamada é refeita sem ela (`jupFetch`) e o dono é avisado. Nunca a chave no texto.
+   */
+  const jupOpts = {
+    aoRecusarChave: (status: number) => notifyTelegram(
+      `⚠️ JUPITER_API_KEY recusada pela Jupiter (HTTP ${status}). Os swaps Solana seguem SEM a chave (lite-api, limite menor, 429 mais cedo). Corrija o valor na Vercel.`,
+      { dedupKey: "jupiter:chave-recusada", meta: { kind: "jupiter_chave_recusada", status } }),
+  };
+  if (isSameChainSolana) {
+    const cfgJup = configJupiter();
+    if (cfgJup.incoerencia) {
+      console.warn(`[jupiter] configuração incoerente: ${cfgJup.incoerencia}`);
+      notifyTelegram(`⚠️ JUPITER config: ${cfgJup.incoerencia}.`, { dedupKey: "jupiter:config", meta: { kind: "jupiter_config_incoerente" } });
+    }
+    if (cfgJup.modo === "sem-chave" && process.env.VERCEL_ENV === "production") {
+      console.warn("[jupiter] produção SEM JUPITER_API_KEY — usando lite-api (sem chave)");
+      notifyTelegram("⚠️ Produção sem JUPITER_API_KEY: os swaps Solana estão na lite-api (sem chave, 0,5 req/s, 429 em pico). Configure a chave na Vercel.",
+        { dedupKey: "jupiter:sem-chave", meta: { kind: "jupiter_sem_chave" } });
+    }
+  }
 
   // ─── Firm single-source path ────────────────────────────────────────
   if (mode === "quote") {
@@ -576,13 +598,13 @@ export async function GET(req: NextRequest) {
         if (!isSameChainSolana) {
           return NextResponse.json({ error: "jupiter_solana_only" }, { status: 400 });
         }
-        const quote = await fetchJupiterQuote(jupArgs);
+        const quote = await fetchJupiterQuote(jupArgs, jupOpts);
         const swap  = await fetchJupiterSwap({
           quoteResponse:    quote,
           userPublicKey:    taker,
           wrapAndUnwrapSol: true,
           ...(contaJupiter ? { feeAccount: contaJupiter } : {}),
-        });
+        }, jupOpts);
         // ⚠️ AGUARDADO pelo mesmo motivo dos dois caminhos acima.
         await recordEvent("swap_intent", { wallet: taker, meta: { source, fromChain: "solana", toChain: "solana", sellToken, buyToken } });
         return NextResponse.json(
@@ -656,7 +678,7 @@ export async function GET(req: NextRequest) {
   // Jupiter: same-chain Solana only
   if (isSameChainSolana) {
     tasks.push(
-      fetchJupiterQuote(jupArgs)
+      fetchJupiterQuote(jupArgs, jupOpts)
         .then(normalizeJupiter)
         .catch((e) => {
           console.warn("[quote/list] Jupiter failed:", e instanceof Error ? e.message : e);

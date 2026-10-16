@@ -26,6 +26,8 @@
  * de DEX ficam vazios" diz tudo.
  */
 
+import { configJupiter } from "@/lib/api/jupiter";
+
 export type DepImpact = "critical" | "degraded" | "cosmetic";
 
 export interface ExternalDep {
@@ -79,11 +81,15 @@ export const EXTERNAL_DEPS: ExternalDep[] = [
     purpose: "cotação e montagem de transação para todo swap em Solana",
     breaks: "TODO swap de Solana para. Foi exatamente o que aconteceu em 29/07 sem ninguém ver.",
     impact: "critical",
-    probe: probe(
-      `${process.env.JUPITER_BASE_URL ?? "https://lite-api.jup.ag/swap/v1"}` +
-      "/quote?inputMint=So11111111111111111111111111111111111111112" +
-      "&outputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&amount=10000000&slippageBps=50",
-    ),
+    // Mesma base e mesma chave do swap (`configJupiter`, L-062A): a sonda mede o caminho real.
+    probe: () => {
+      const cfg = configJupiter();
+      return probe(
+        `${cfg.base}/quote?inputMint=So11111111111111111111111111111111111111112` +
+        "&outputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&amount=10000000&slippageBps=50",
+        { headers: { Accept: "application/json", ...cfg.headers } },
+      )();
+    },
   },
   {
     id: "zerox", name: "0x (EVM)",
