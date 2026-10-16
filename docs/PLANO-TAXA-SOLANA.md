@@ -1,6 +1,6 @@
 # PLANO — Taxa da plataforma na Solana (16/10/2026)
 
-Status: 🟡 código pronto (C1); falta site institucional e produção · dono: decisão de 16/10 · rodada: L-061
+Status: 🟢 em produção (16/10, `0f64e3a`); falta site institucional · ⚠️ chave Jupiter prioritária (429 na `lite-api`) · dono: decisão de 16/10 · rodada: L-061
 
 ## Decisão do dono (16/10)
 

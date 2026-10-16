@@ -1121,3 +1121,11 @@ escopo). Em SOL→JUP a cotação mostra a taxa calculada sobre o JUP recebido c
 e montou a transação; conferir no primeiro recebimento real em SOL. Pendências: site institucional ("No Solana
 platform fee" nas docs), chave da Jupiter. Resultado do deploy: no commit seguinte.
 
+Resultado do deploy (16/10): `main` → `0f64e3a` (fast-forward, CI verde); produção `dpl_6bYoZFKmpjVhdxK6xzdTf9aKFCCE`
+READY (código `5f42b44`). Só cotação: SOL→USDC e USDC→SOL com `platformFee` 100 bps, transação montada e taxa
+divulgada 1%; JUP→WIF sem taxa; LI.FI EVM segue 1%; lista não executável; FAQ do Founders novo; smoke 25/25.
+⚠️ **Jupiter 429 "Too many requests"** em rajadas (`lite-api` sem chave) — derrubou cotações firmes SOL→JUP e
+JUP→WIF no smoke, na produção nova, na anterior e no preview; repetida, SOL→JUP volta ok com 1%. É o motivo 4 de
+11/08 na prática: **a chave da Jupiter passa a ser prioridade** (usuário real em pico pode pegar o limite).
+Rollback: `dpl_ApxmhgHQEzo2NHQmdHGjFjaBBA3A` (`166fd5b`).
+
