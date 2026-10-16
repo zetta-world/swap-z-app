@@ -1094,3 +1094,30 @@ Resultado do deploy (16/10): `main` → `f64c5e2` (fast-forward, CI verde); prod
 READY (código `12b898f`). Só cotação: LI.FI segue cobrando 1% nas três rotas ("LIFI Fixed Fee" 0,0125, taxa divulgada
 100 bps), lista não executável, smoke 25/25, sem avisos/erros no log. Rollback: `dpl_Fk4xVsGwszBgWz17iRjyEBVUzev8`.
 
+## L-061 — Taxa da plataforma na Solana (16/10/2026)
+
+**Decisão do dono (16/10), revertendo a de 11/08:** cobrar na Solana com a mesma escada das EVM (1% · 0,50% ·
+0,25% · 0,10%), recebendo por rede na carteira `H7zwzP8PDfcp6ZQ4bd4zmXFRSpgwAYxjU7voJXMCKL5T`, taxa em USDC e SOL;
+ficar na Jupiter Metis (Swap V2 é rodada futura); chave da Jupiter pendente do dono. Plano:
+`docs/PLANO-TAXA-SOLANA.md` (motivos de 11/08 revistos com cotação real: piso de 50 bps e gás patrocinado não se
+aplicam à Metis; 20% não documentado; API sem chave continua).
+
+**Contas de taxa (conferidas na rede 16/10):** USDC `En1J8udXpzyAwuziqdpWWHvHV7p95RG1b2iAgpcvxNuo` e wSOL
+`7PPDQWck54V79XwgThz9hcPJQTwWbRT8aP4TV9iT5qFW`, ambas da dona `H7zw…`, inicializadas. ⚠️ Não podem ser fechadas
+("recuperar aluguel"): o código detecta e desliga a taxa (o swap segue) com alerta.
+
+**Código (`5f42b44`):** `lib/solana/conta-de-taxa.ts` (conta por par + conferência na rede com cache);
+`platformFeeBps` + `feeAccount` sempre juntos na Jupiter; taxa divulgada por par; LI.FI saindo da Solana com o
+integrator; ZION, painel de receita, fonte de verdade pública e o FAQ do Founders ("solana-other-fees" dizia que
+não havia fee na Solana — reescrito em en/pt/es/zh). Testes: `taxa-solana.test.ts` (14; em `166fd5b` 10 falham);
+travas antigas da decisão de 11/08 reescritas; 4 quebras deliberadas detectadas. Gates no SHA exato `5f42b44`
+(tree `900a62f201a8e83b163435df950976108452d2b4`): `npm ci` 0 · lint 0/145 · type-check 0 · suíte 330/4806 ×2 ·
+build 0 · audit-gate OK · CI 38893612041 · preview `dpl_5CSfJRnf6kQ5FJzUWbzgUJgka5B9` (só cotação, nada assinado):
+SOL→USDC e SOL→JUP com `platformFee` 100 bps e transação montada; JUP→WIF sem taxa; lista não executável; FAQ do
+Founders novo; smoke 25/25.
+
+**Observações:** cotação firme JUP→WIF dá `upstream_failed` também na produção anterior (pré-existente, fora do
+escopo). Em SOL→JUP a cotação mostra a taxa calculada sobre o JUP recebido com `feeAccount` wSOL — Jupiter aceitou
+e montou a transação; conferir no primeiro recebimento real em SOL. Pendências: site institucional ("No Solana
+platform fee" nas docs), chave da Jupiter. Resultado do deploy: no commit seguinte.
+

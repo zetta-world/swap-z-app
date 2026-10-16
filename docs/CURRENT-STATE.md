@@ -12,6 +12,11 @@
 
 ---
 
+## Atualização L-061 — taxa na Solana (16/10/2026)
+
+A Solana passa a cobrar a mesma escada das EVM (Jupiter em pares com USDC ou SOL; LI.FI saindo da Solana).
+Contas de taxa USDC `En1J8…` e wSOL `7PPDQ…` da carteira `H7zw…`. Conta indisponível → swap segue sem taxa + alerta.
+
 ## Atualização L-060 — taxa LI.FI ativa (16/10/2026)
 
 O cross-chain saindo de redes EVM cobra a taxa do plano via LI.FI (`LIFI_INTEGRATOR=zswap` + key). Um valor

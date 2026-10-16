@@ -362,3 +362,11 @@ Base `7072e60b0923fceac81d8a2fcffbb98f7b4ab48d`. Delta: `lib/api/lifi.ts` (valid
 em 401) e `app/api/quote/route.ts` (avisos). Gates, CI 38875298148 e preview `dpl_4SMypHFBeLHB6j6NUBzMNBhSjndW` em
 PASS (ledger L-060). Desvios: escopo (sem SQL). Autorização: missão LIFI-UPSTREAM-01 do dono. Condição antes do
 merge: CI verde no SHA deste commit; depois do deploy, a produção tem de seguir cobrando 100 bps no LI.FI.
+
+
+## Atualização L-061 — candidato taxa na Solana
+
+RELEASE_CANDIDATE = THIS_RELEASE_CANDIDATE_COMMIT (docs-only, filho de `5f42b444849c574397d7435016d8d96cf310ee06`).
+Base `166fd5be9c28fb2ffaaffd9413bf61c40f492698`. Delta: taxa da plataforma na Solana (ledger L-061). Gates, CI
+38893612041 e preview `dpl_5CSfJRnf6kQ5FJzUWbzgUJgka5B9` em PASS. Desvios: escopo (sem SQL). Autorização: decisões
+do dono de 16/10 (cobrar na Solana; mesma escada; Metis; wSOL). Condição antes do merge: CI verde neste SHA.
