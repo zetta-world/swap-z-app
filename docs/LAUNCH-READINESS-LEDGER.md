@@ -1173,3 +1173,37 @@ warning/error (nenhum alerta `jupiter:*` nem `taxa-solana`). Segredo: 38 chunks 
 `x-api-key`, `api.jup.ag` ou `lite-api`; 0 source map servido (0/38 `.map` 200); respostas da API sem esses termos; o
 código só loga modo/tipo/status/host (valor da chave nunca lido nesta rodada). Smoke de rotas 25/25. Rollback:
 `06bff5c` (deploy anterior de produção).
+
+## L-062B — Jupiter Swap V2, caminho Router `/build` (16/10/2026)
+
+**Decisão do dono (16/10):** Router `/build` em vez do Meta-Aggregator `/order` — no `/build` a Jupiter não cobra
+nada e a taxa continua `platformFeeBps` + `feeAccount` (escada 100/50/25/10 inteira, 100% nossa); no `/order` a taxa
+de integrador tem mínimo de 50 bps, a Jupiter fica com 20% e cobra a própria do usuário. Plano:
+`docs/PLANO-JUPITER-SWAP-V2.md`.
+
+**Medido na API real (sem chave, só cotação):** `/build` exige `taker`; não devolve `platformFee` — com taxa, o
+`feeAccount` aparece nas contas da `swapInstruction`; programas = os da allowlist do guard. Prova real: `/build` →
+transação montada por este código → `simulateTransaction` na mainnet (taker `H7zw…`, nada assinado): SOL→USDC 10 bps
+(conta USDC) e SOL→JUP 25 bps (conta wSOL) **sem erro**, guard aprova.
+
+**Código (`6722b5c`, branch `feat/jupiter-swap-v2`):** `lib/api/jupiter.ts` — `GET /swap/v2/build` (uma chamada
+por cotação; o firme era `/quote` + `/swap`); transação v0 montada no servidor (ALTs e blockhash da resposta, pagador =
+taker, limite de CU = simulação sem assinatura × 1,2, teto 1,4 M; simulação falhou → teto + log; preço de CU com teto
+1.000.000 µlamports); taxa só confirmada com o `feeAccount` na instrução (senão "TAXA NÃO RETIDA" + taxa divulgada 0);
+sem chave = `api.jup.ag` sem header (a `lite-api` saiu); lista sem carteira cota com a carteira de taxa como taker.
+Contrato com o navegador inalterado (`ExecuteSwap` e guard intocados). Sonda de saúde e sonda do guard no `/build`.
+RPC do servidor compartilhado em `lib/solana/rpc-servidor.ts`. Escada, contas de taxa, LI.FI, EVM: intocados.
+
+**Testes:** `src/lib/api/jupiter-chave.test.ts` (39, com a resposta real `__fixtures__/jupiter-build-20261016.json`),
+`src/app/api/quote/jupiter-chave.test.ts` (15, rota real), A33/taxa-solana/taxa adaptados. No código anterior 49 de 74
+falham. 6 quebras deliberadas detectadas (taxa sempre "confirmada", CU sem simulação, `feeAccount` fora do `/build`,
+preço sem teto, rota divulgando taxa sem confirmação, ordem das instruções — esta só depois de um teste novo de ordem).
+Gates no SHA exato `6722b5c` (tree `06e739c444e9cd053fbdb28a1c2bdc2682dae7db`): `npm ci` 0 · lint 0/145 · type-check 0 ·
+suíte 332/4860 ×2 · build 0 · audit-gate OK (R-03) · 0 host/chave Jupiter no bundle do navegador · CI 38952568486.
+
+**Preview `dpl_Dp1VzZxEUhyTHVghX6iXgqpFDnyo` (só cotação, nada assinado):** 6/6 HTTP 200; SOL→USDC e USDC→SOL firmes
+com taxa 100 confirmada na conta USDC, SOL→JUP na conta wSOL, transação v0 com limite de CU da simulação (88 k–327 k);
+JUP→WIF sem taxa com transação; lista com e sem carteira, sem payload executável. Logs: 6 × `[jupiter] autenticada ok
+200 api.jup.ag` (1 por requisição); 0 × 401/403/429; 0 simulação no teto.
+
+**Produção: NÃO feita** — aguarda autorização explícita do dono.

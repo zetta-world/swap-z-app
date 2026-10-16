@@ -383,3 +383,10 @@ Condição antes do merge: CI verde neste SHA. Stop: 401/403, 429 persistente, `
 `x-api-key`, vazamento, regressão Solana, divergência de taxa.
 Resultado: `main` → `a738e7c` (fast-forward), produção `dpl_3VqE1Ex1RGta87E7gVHUffX1kT82` READY; smoke só-cotação PASS
 (Jupiter autenticada, 0 × 401/403/429, 100 bps). Rollback: `06bff5c`.
+
+## Atualização L-062B — Jupiter Swap V2 `/build` (certificado; NÃO é candidato)
+
+CERTIFIED_FEATURE_SHA = `6722b5c5b2a33ab920c2d54f925f61015f546b4a` (tree `06e739c444e9cd053fbdb28a1c2bdc2682dae7db`),
+base `2a06326`. Delta: Jupiter na Swap V2 Router `/build`, transação montada no servidor (ledger L-062B). Gates, CI
+38952568486 e preview `dpl_Dp1VzZxEUhyTHVghX6iXgqpFDnyo` em PASS. **Não marcado RELEASE_CANDIDATE**: produção aguarda
+autorização explícita do dono. Rollback previsto: `2a06326` (`/swap/v1` autenticada).

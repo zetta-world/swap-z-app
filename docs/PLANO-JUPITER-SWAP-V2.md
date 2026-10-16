@@ -1,6 +1,6 @@
 # PLANO — Jupiter Swap V2, caminho Router `/build` (L-062B, 16/10/2026)
 
-Status: 🟡 em implementação na branch `feat/jupiter-swap-v2` · decisão do dono: 16/10 · rodada: L-062B
+Status: 🟡 código certificado em `feat/jupiter-swap-v2@6722b5c` (gates + CI 38952568486 + preview autenticado); **produção aguarda autorização do dono** · rodada: L-062B
 
 ## Decisão do dono (16/10)
 
