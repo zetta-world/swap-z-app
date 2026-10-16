@@ -8,7 +8,7 @@
  * ⚠️⚠️ NÃO É UMA SEGUNDA FONTE DE VERDADE. Cada linha do bloco sai de uma constante que o PRODUTO já
  * usa para cobrar, limitar ou exibir:
  *   · redes ............ `chains.ts` (`CHAINS`, `comingSoon`)
- *   · taxas ............ `tier/fees.ts` (`TIER_FEE_BPS`, `CONTA_TAXA_SOLANA`, `MOTIVOS_SOLANA_SEM_TAXA`)
+ *   · taxas ............ `tier/fees.ts` (`TIER_FEE_BPS`, `REGRA_TAXA_SOLANA`, `SOLANA_COBRA_DESDE`)
  *   · planos ........... `tier/types.ts` (`TIER_DAILY_ANALYSES`, `BANCADA_COTAS`, `FEATURE_TIER`)
  *   · preço mensal ..... `pricing/plans.ts` (`normalMonthlyUsd` — o que `/pricing` mostra)
  *   · preço Founders ... `pricing/plans.ts` (`precoPublicoUsd` — `null` enquanto PROVISÓRIO)
@@ -25,7 +25,7 @@
  * é estável entre chamadas, então fica no prefixo cacheável. Tamanho medido no teste.
  */
 import { CHAINS } from "@/lib/chains";
-import { TIER_FEE_BPS, CONTA_TAXA_SOLANA, MOTIVOS_SOLANA_SEM_TAXA } from "@/lib/tier/fees";
+import { TIER_FEE_BPS, REGRA_TAXA_SOLANA, SOLANA_COBRA_DESDE } from "@/lib/tier/fees";
 import { ALL_TIERS, BANCADA_COTAS, FEATURE_TIER, TIER_DAILY_ANALYSES, type Tier } from "@/lib/tier/types";
 import { PLAN_TIERS, FOUNDERS_PRICE_STATUS, normalMonthlyUsd, precoPublicoUsd } from "@/lib/pricing/plans";
 import { CONFIG_APROVADA } from "@/lib/founders-sale/config";
@@ -46,7 +46,7 @@ const usd = (n: number) => `$${n % 1 === 0 ? n.toLocaleString("en-US") : n.toFix
 
 export interface FatosDaPlataforma {
   redes: { disponiveis: string[]; emBreve: string[] };
-  taxas: { evm: Record<Tier, number>; solanaCobra: boolean; solanaMotivo: string };
+  taxas: { evm: Record<Tier, number>; solanaCobra: boolean; solanaRegra: string };
   planos: Array<{
     tier: Tier; analisesZionPorDia: number; backtestsPor24h: number; ativosPorBacktest: number;
     historicoMaxDias: number; mesasDePapel: number; capitalMaxUsd: number; orcamentoDiarioUnidades: number;
@@ -91,8 +91,9 @@ export function fatosDaPlataforma(): FatosDaPlataforma {
     },
     taxas: {
       evm: { ...TIER_FEE_BPS },
-      solanaCobra: CONTA_TAXA_SOLANA != null,
-      solanaMotivo: MOTIVOS_SOLANA_SEM_TAXA[0],
+      // ⚠️ 16/10 (L-061): a Solana passou a cobrar — decisão do dono que reverte a de 11/08.
+      solanaCobra: Boolean(SOLANA_COBRA_DESDE),
+      solanaRegra: REGRA_TAXA_SOLANA.join("; "),
     },
     planos: ALL_TIERS.map((t) => {
       const c = BANCADA_COTAS[t];
@@ -157,8 +158,8 @@ export function blocoDeFatos(f: FatosDaPlataforma = fatosDaPlataforma()): string
     "",
     `PLATFORM SWAP FEE on SUPPORTED EVM routes WHERE THE FEE MECHANISM IS ACTIVE, by plan: ${ALL_TIERS.map((t) => `${NOME[t]} ${pct(f.taxas.evm[t])}`).join(" · ")}. Never generalize this fee to every network or route.`,
     f.taxas.solanaCobra
-      ? "Solana: the plan fee applies."
-      : `Solana: NO platform fee (owner decision; reason: ${f.taxas.solanaMotivo}). Network/gas costs are separate from the platform fee.`,
+      ? `Solana: the SAME plan fee applies (rules: ${f.taxas.solanaRegra}). Network/gas costs are separate from the platform fee.`
+      : "Solana: NO platform fee. Network/gas costs are separate from the platform fee.",
     "",
     "PLANS (ZION analyses per day · Workbench backtests per rolling 24h · assets per backtest · max history · paper desks · max capital):",
     ...f.planos.map((p) =>

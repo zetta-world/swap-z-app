@@ -19,6 +19,7 @@ import {
 import type { ChainId } from "@/lib/chains";
 import { envNumber } from "@/lib/env-number";
 import { bpsEfetivos, destinatarioDaTaxa } from "@/lib/tier/fees";
+import { contaDeTaxaParaPar } from "@/lib/solana/conta-de-taxa";
 import { getSession } from "@/lib/auth/session";
 import { getTierForWallet } from "@/lib/tier/check";
 import type { Tier } from "@/lib/tier/types";
@@ -380,17 +381,34 @@ export async function GET(req: NextRequest) {
     integrator:  integrador ?? undefined,
   };
   /**
-   * ⚠️ A JUPITER NÃO RECEBE TAXA (Fase 9.2). O `platformFeeBps` exige um
-   * `feeAccount` — CONTA DE TOKEN da Solana, não carteira — e ela ainda não
-   * existe. `bpsEfetivos("...", "solana")` já devolve 0, então nada é pedido:
-   * a ausência aqui é DECLARADA, não esquecimento.
+   * ⚠️⚠️ A JUPITER COBRA DESDE 16/10 (L-061; decisão do dono, revertendo a de 11/08).
+   *
+   * `platformFeeBps` na cotação e `feeAccount` no `/swap` andam JUNTOS, e o `feeAccount` é a conta
+   * de token do dono para um dos mints do par (USDC, senão SOL) — conferida NA REDE antes. Par sem
+   * USDC/SOL, conta ausente ou RPC fora → sem taxa, swap segue, taxa divulgada 0. A taxa divulgada
+   * desta rota é `taxaJupiter`, nunca a da família.
    */
-  // Jupiter args (Solana-only). Native SOL → wrapped SOL mint per Jupiter convention.
+  const jupInput  = sellToken === "native" ? JUPITER_SOL_MINT : sellToken;
+  const jupOutput = buyToken  === "native" ? JUPITER_SOL_MINT : buyToken;
+  let contaJupiter: string | null = null;
+  let taxaJupiter = { ...taxa, bps: 0, pct: 0 };
+  if (isSameChainSolana && taxa.bps > 0) {
+    const c = await contaDeTaxaParaPar(jupInput, jupOutput);
+    if (c.conta) {
+      contaJupiter = c.conta;
+      taxaJupiter = taxa;
+    } else if ("porque" in c && c.porque) {
+      console.warn(`[taxa-solana] conta de taxa indisponível — swap segue SEM taxa: ${c.porque}`);
+      notifyTelegram(`⚠️ TAXA SOLANA desligada neste par: ${c.porque}. Os swaps seguem sem taxa até corrigir (conta de token USDC/wSOL da carteira de taxa).`,
+        { dedupKey: "taxa-solana:conta", meta: { kind: "taxa_solana_conta", porque: c.porque } });
+    }
+  }
   const jupArgs = {
-    inputMint:   sellToken === "native" ? JUPITER_SOL_MINT : sellToken,
-    outputMint:  buyToken  === "native" ? JUPITER_SOL_MINT : buyToken,
+    inputMint:   jupInput,
+    outputMint:  jupOutput,
     amount:      sellAmount,
     slippageBps,
+    ...(contaJupiter ? { platformFeeBps: taxaJupiter.bps } : {}),
   };
 
   // ─── Firm single-source path ────────────────────────────────────────
@@ -563,12 +581,13 @@ export async function GET(req: NextRequest) {
           quoteResponse:    quote,
           userPublicKey:    taker,
           wrapAndUnwrapSol: true,
+          ...(contaJupiter ? { feeAccount: contaJupiter } : {}),
         });
         // ⚠️ AGUARDADO pelo mesmo motivo dos dois caminhos acima.
         await recordEvent("swap_intent", { wallet: taker, meta: { source, fromChain: "solana", toChain: "solana", sellToken, buyToken } });
         return NextResponse.json(
           {
-            ok: true, mode, source, taxa,
+            ok: true, mode, source, taxa: taxaJupiter,
             result: { quote, swap },
             normalized: normalizeJupiter(quote),
           },
@@ -661,7 +680,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json(
     // ⚠️ LIFI-UPSTREAM-01: cross-chain aqui é só LiFi — a taxa divulgada é a dele.
-    { ok: true, mode, quotes, taxa: isCrossChain ? taxaLiFi : taxa, isCrossChain },
+    { ok: true, mode, quotes, taxa: isCrossChain ? taxaLiFi : isSameChainSolana ? taxaJupiter : taxa, isCrossChain },
     {
       // When a taker is present the amounts come from the firm upstream quote
       // for THAT wallet (the response no longer carries calldata — A33): keep it

@@ -27,7 +27,7 @@ interface Dados {
   receitaRealTetoUsd: number;
   taxaPorPlano: Record<Tier, number>;
   projecao: Array<{ volumeUsd: number; porPlano: Record<Tier, number> }>;
-  solanaSemTaxa: string[];
+  solanaRegra: string[];
   naoMedido: string[];
   fetchedAt: string;
 }
@@ -259,10 +259,10 @@ export default function ReceitaPanel() {
           {/* ── A SOLANA, e por que não cobra ────────────────────────── */}
           <div style={{ marginTop: 8, borderTop: "1px solid var(--adm-border)", paddingTop: 6 }}>
             <div style={{ fontSize: 11, color: "var(--adm-ink-3)" }}>
-              <b>SOLANA: sem taxa por DECISÃO</b> — não por falta de endereço
+              <b>SOLANA: cobra desde 16/10</b> — decisão do dono que reverte a de 11/08
             </div>
             <ul style={{ margin: "3px 0 0", paddingLeft: 14 }}>
-              {data.solanaSemTaxa.map((m, i) => (
+              {(data.solanaRegra ?? []).map((m, i) => (
                 <li key={i} style={{ color: "var(--adm-ink-4)", fontSize: 11, lineHeight: 1.6 }}>{m}</li>
               ))}
             </ul>

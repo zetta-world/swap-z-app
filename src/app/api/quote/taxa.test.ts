@@ -187,9 +187,11 @@ describe("taxa pedida e não retida vira alerta", () => {
   });
 });
 
-describe("a Solana não cobra — e a ausência é declarada", () => {
-  it("a Jupiter não recebe platformFeeBps", () => {
-    expect(jup).not.toContain('params.set("platformFeeBps"');
+describe("a Solana cobra desde 16/10 (L-061) — e a taxa e a conta andam juntas", () => {
+  /** Comportamento provado em `taxa-solana.test.ts`; aqui, só a forma. */
+  it("a Jupiter recebe platformFeeBps só quando pedido, e o /swap a conta de taxa", () => {
+    expect(jup).toContain('if ((args.platformFeeBps ?? 0) > 0) params.set("platformFeeBps"');
+    expect(jup).toContain("...(args.feeAccount ? { feeAccount: args.feeAccount } : {})");
   });
 
   /** A família da cadeia decide, e `bpsEfetivos` devolve 0 sem conta. */

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { lerTodasPorChave } from "@/lib/supabase/paginar";
-import { TIER_FEE_BPS, receitaUsd, MOTIVOS_SOLANA_SEM_TAXA } from "@/lib/tier/fees";
+import { TIER_FEE_BPS, receitaUsd, REGRA_TAXA_SOLANA } from "@/lib/tier/fees";
 import { separarPorAtribuicao, temIdentidadeAssinada } from "@/lib/admin/atribuicao";
 import type { Tier } from "@/lib/tier/types";
 
@@ -213,7 +213,7 @@ export async function GET(): Promise<NextResponse> {
     projecao,
     // ⚠️ RM-12: leitura por chave (sem repetir nem pular linha), mas NÃO é retrato num instante.
     natureza: "painel_nao_ledger",
-    solanaSemTaxa: MOTIVOS_SOLANA_SEM_TAXA,
+    solanaRegra: REGRA_TAXA_SOLANA,
     naoMedido: [
       "⚠️ o livro NÃO guarda o plano de quem operou, então a receita real é o "
         + "TETO (tudo cobrado a 1%), não uma estimativa. Para o número exato, o "
@@ -224,7 +224,7 @@ export async function GET(): Promise<NextResponse> {
         + "aceita `confirmed` e taxa de quem não tem sessão assinada. Ela conta "
         + "no volume (a troca aconteceu na cadeia) mas NÃO na arrecadação — "
         + "sai em NÃO ATRIBUÍDO, porque não há a quem perguntar",
-      "só EVM cobra — a Solana está sem taxa por decisão registrada",
+      "EVM e Solana cobram (Solana desde 16/10): na Jupiter só pares com USDC ou SOL; outros pares saem sem taxa",
       "⚠️ NÃO é número contábil: soma de leituras paginadas (por chave), não um retrato do livro num "
         + "instante só. Conciliação/tesouraria tem de vir de uma agregação SQL única",
       "a taxa é retida no token de saída, então o valor em dólar depende do "

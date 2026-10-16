@@ -37,11 +37,12 @@ describe("RM-09 · 1. cada fato do bloco É a constante do produto", () => {
     expect(emBreve).toContain("ZETTA Chain");
   });
 
-  it("taxas: EVM pelo TIER_FEE_BPS de cada plano; Solana sem taxa (decisão registrada)", () => {
+  it("taxas: EVM pelo TIER_FEE_BPS de cada plano; Solana cobra a mesma escada desde 16/10 (decisão do dono)", () => {
     const linha = BLOCO.split("\n").find((l) => l.startsWith("PLATFORM SWAP FEE"))!;
     for (const [t, bps] of Object.entries(TIER_FEE_BPS)) expect(linha).toMatch(new RegExp(`${t}\\s${(bps / 100).toString().replace(".", "\\.")}%`, "i"));
-    expect(BLOCO).toMatch(/Solana: NO platform fee/);
-    expect(fatosDaPlataforma().taxas.solanaCobra).toBe(false);
+    expect(BLOCO).toMatch(/Solana: the SAME plan fee applies/);
+    expect(BLOCO).not.toMatch(/Solana: NO platform fee/);
+    expect(fatosDaPlataforma().taxas.solanaCobra).toBe(true);   // 16/10: decisão do dono (L-061)
   });
 
   it("planos: análises/dia, backtests/24h, ativos, histórico, mesas e orçamento são os de tier/types e cotas", () => {

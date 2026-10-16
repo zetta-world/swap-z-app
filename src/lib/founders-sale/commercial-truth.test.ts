@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CHAINS } from "@/lib/chains";
-import { TIER_FEE_BPS, CONTA_TAXA_SOLANA } from "@/lib/tier/fees";
+import { TIER_FEE_BPS, SOLANA_COBRA_DESDE } from "@/lib/tier/fees";
 import { messages } from "@/lib/i18n/messages";
 import {
   BENEFICIOS,
@@ -89,9 +89,11 @@ describe("Founders commercial truth — redes, fees e Pilot", () => {
     expect(CHAINS.filter((c) => c.comingSoon).map((c) => c.name)).toEqual(["ZETTA Chain"]);
   });
 
-  it("fees são a escada EVM e Solana permanece sem platform fee", () => {
+  // ⚠️ 16/10 (L-061): decisão do dono — a Solana passou a cobrar a MESMA escada. O FAQ público
+  // ("solana-other-fees") foi reescrito junto; antes dizia que não havia fee na Solana.
+  it("fees são a mesma escada nas EVM e na Solana (desde 16/10)", () => {
     expect(TIER_FEE_BPS).toEqual({ free: 100, pro: 50, trader: 25, pilot: 10 });
-    expect(CONTA_TAXA_SOLANA).toBeNull();
+    expect(SOLANA_COBRA_DESDE).toBe("2026-10-16");
   });
 
   it("Pilot 5.000 é padrão de estratégia própria; modo mesa fica separado", () => {

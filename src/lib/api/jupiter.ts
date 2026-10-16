@@ -81,6 +81,11 @@ interface QuoteArgs {
   slippageBps?: number;   // 1-5000 (default 50)
   /** Skip indirect routes — only direct AMM pairs. Defaults false. */
   onlyDirectRoutes?: boolean;
+  /**
+   * Taxa da plataforma (L-061, 16/10). ⚠️ Só com `feeAccount` no `/swap` da MESMA cotação — a rota
+   * decide os dois juntos (`lib/solana/conta-de-taxa.ts`). O `outAmount` volta já líquido.
+   */
+  platformFeeBps?: number;
 }
 
 interface SwapArgs {
@@ -89,6 +94,8 @@ interface SwapArgs {
   wrapAndUnwrapSol?: boolean;
   /** Optional priority fee tip in lamports. */
   prioritizationFeeLamports?: number | "auto";
+  /** CONTA DE TOKEN que recebe a taxa (mint de um dos lados). Exigida quando a cotação teve `platformFeeBps`. */
+  feeAccount?: string;
 }
 
 
@@ -133,6 +140,7 @@ export async function fetchJupiterQuote(args: QuoteArgs): Promise<JupQuote> {
     swapMode:     "ExactIn",
   });
   if (args.onlyDirectRoutes) params.set("onlyDirectRoutes", "true");
+  if ((args.platformFeeBps ?? 0) > 0) params.set("platformFeeBps", String(args.platformFeeBps));
 
   const res = await jupFetch(`${JUPITER_BASE}/quote?${params.toString()}`, {
     headers: { Accept: "application/json" },
@@ -157,6 +165,7 @@ export async function fetchJupiterSwap(args: SwapArgs): Promise<JupSwapResponse>
     wrapAndUnwrapSol: args.wrapAndUnwrapSol ?? true,
     dynamicComputeUnitLimit: true,
     prioritizationFeeLamports: args.prioritizationFeeLamports ?? "auto",
+    ...(args.feeAccount ? { feeAccount: args.feeAccount } : {}),
   };
   const res = await jupFetch(`${JUPITER_BASE}/swap`, {
     method:  "POST",

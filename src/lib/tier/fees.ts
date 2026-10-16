@@ -103,75 +103,39 @@ export function receitaUsd(volumeUsd: number, tier: Tier): number {
 export const CARTEIRA_TAXA_EVM = "0x904126D219dC6c1f7c019303EC743Ad45F473c1F";
 
 /**
- * A carteira que recebe a taxa na Solana — dada pelo dono em 11/08.
+ * A carteira DONA das contas de taxa na Solana — dada pelo dono em 16/10 (substitui `EWPta…`, de 11/08).
  *
- * ⚠️ CONFERIDA: base58 válido, 32 bytes, e NA CURVA ed25519 — ou seja, é
- * carteira de verdade, com chave privada, e não um PDA de programa (para o
- * qual ninguém consegue assinar).
+ * ⚠️ ELA NÃO É, SOZINHA, O QUE A JUPITER PEDE. O `feeAccount` é uma CONTA DE TOKEN desta carteira
+ * para o mint em que a taxa é cobrada (USDC ou wSOL) — ver `lib/solana/conta-de-taxa.ts`, que também
+ * confere na rede que a conta é desta dona. No LI.FI saindo da Solana, a taxa vai para a carteira SVM
+ * cadastrada no portal (que é esta).
  *
- * ⚠️ E ELA NÃO É, SOZINHA, O QUE A JUPITER PEDE. Isto aqui é a DONA das contas
- * de taxa; o `platformFeeBps` exige um `feeAccount`, que é uma CONTA DE TOKEN
- * (ATA) derivada desta carteira PARA CADA MINT recebido. Diferente de EVM,
- * onde um endereço recebe qualquer ERC-20.
- *
- * Guardar a dona aqui e a conta em outro campo é o que impede o erro fácil:
- * passar a carteira onde a Jupiter espera a conta de token faria a cotação ser
- * recusada — ou aceita apontando para lugar nenhum.
+ * `SWAP_FEE_WALLET_SOLANA` no ambiente sobrescreve.
  */
-export const CARTEIRA_TAXA_SOLANA = "EWPtaW726VUcs2DA7q73b9vAJyyXJLynE8pH6TZGvd5L";
+export const CARTEIRA_TAXA_SOLANA = "H7zwzP8PDfcp6ZQ4bd4zmXFRSpgwAYxjU7voJXMCKL5T";
 
 /**
- * ⚠️ SOLANA SEM TAXA — POR DECISÃO, NÃO POR FALTA DE ENDEREÇO (11/08).
+ * ⚠️⚠️ A SOLANA COBRA TAXA DESDE 16/10 — decisão do dono que REVERTE a de 11/08.
  *
- * A carteira existe e está registrada acima. O que não existe é a conta de
- * token, e a decisão de não criá-la agora foi tomada com QUATRO motivos, todos
- * conferidos na documentação oficial da Jupiter:
- *
- * 1. ⚠️ O PISO DE 50 bps QUEBRA A ESCADA. O `referralFee` aceita 50-255 bps.
- *    Nossos degraus de `trader` (25) e `pilot` (10) ficam ABAIXO do mínimo.
- *    Cobrar 50 na Solana faria o Pilot pagar 5× o que paga em EVM — a escada
- *    diz "plano melhor paga menos", e isso a contradiz na cara do cliente.
- *
- * 2. ⚠️ LIGAR A TAXA TIRA O GÁS PATROCINADO DO USUÁRIO. A documentação de
- *    gasless é explícita: a subvenção automática *"does not fire when
- *    `referralAccount` and `referralFee` are set"*. Hoje quem tem menos de
- *    0,01 SOL num swap acima de ~$10 tem o gás pago pela Jupiter. Cobrar 0,5%
- *    custaria ao usuário MAIS que 0,5% — e justamente ao usuário novo, que é
- *    quem menos tem SOL.
- *
- * 3. A Jupiter aparentemente RETÉM 20% da taxa de integração (visto num deck,
- *    não no spec — marcado como A CONFERIR). Se for verdade, 1% cobrado vira
- *    0,8% recebido.
- *
- * 4. E o app roda na API SEM CHAVE (`lite-api`, 0,5 req/s). A própria Jupiter
- *    recomenda chave para produção. Cobrar taxa de cliente enquanto se depende
- *    do nível gratuito é frágil na ordem errada.
- *
- * ⚠️ O QUE ISTO NÃO É: não é "esquecemos de configurar". Ligar depois é uma
- * linha — preencher este campo com uma ATA criada. O que está registrado aqui
- * é o PORQUÊ de não estar ligado, para que a tela de amanhã diga "decidimos"
- * em vez de "falta".
+ * Em 11/08 a Solana ficou sem taxa por quatro motivos. Revistos em 16/10 contra a API que o app
+ * usa (Jupiter Metis `/swap/v1`), com cotação real:
+ *   1. "piso de 50 bps" — NÃO vale na Metis: `platformFeeBps` 10/25/50/100 aceitos (era do programa
+ *      de indicação antigo). A escada inteira cabe.
+ *   2. "perde gás patrocinado" — não se aplica: gasless é da API Ultra, não da Metis.
+ *   3. "Jupiter retém 20%" — não documentado para a Metis ("zero protocol fees"); conferir no
+ *      primeiro recebimento.
+ *   4. "API sem chave" — continua: chave da Jupiter pendente do dono. E (novo) a Metis "não é mais
+ *      mantida ativamente"; migração para Swap V2 é rodada separada. Riscos aceitos pelo dono.
+ * Plano: `docs/PLANO-TAXA-SOLANA.md`. Trava: `lib/solana/conta-de-taxa.ts`.
  */
-export const CONTA_TAXA_SOLANA: string | null = null;
+export const SOLANA_COBRA_DESDE = "2026-10-16";
 
-/** Os motivos, para quem lê a tela e não o código. */
-/**
- * ⚠️ DECISÃO DO DONO, CONFIRMADA EM 11/08: a Solana NÃO cobra taxa, ponto.
- *
- * Isto deixou de ser "pendente até alguém resolver" e virou posição do
- * produto. Os quatro motivos abaixo continuam sendo os motivos, e o primeiro
- * sozinho já bastaria: o piso de 50 bps da Jupiter é MAIOR que a taxa
- * prometida ao `trader` (25) e ao `pilot` (10) — cobrar lá significaria cobrar
- * do assinante mais do que o plano dele promete.
- *
- * ⚠️ NÃO "LIGAR DEPOIS" SEM REVISITAR ISTO. Quem for mexer aqui está mexendo
- * numa decisão, não num TODO esquecido.
- */
-export const MOTIVOS_SOLANA_SEM_TAXA = [
-  "o piso de 50 bps da Jupiter é maior que a taxa dos planos trader (25) e pilot (10)",
-  "ligar a taxa desliga o gás patrocinado da Jupiter para quem tem pouco SOL",
-  "a Jupiter aparentemente retém 20% da taxa de integração (a conferir no spec)",
-  "o app usa a API sem chave (0,5 req/s), que a própria Jupiter não recomenda para produção",
+/** Como a Solana cobra — para a tela, o ZION e o painel de receita (o "porquê" de cada caso). */
+export const REGRA_TAXA_SOLANA = [
+  "mesma escada das EVM (free 1% · pro 0,50% · trader 0,25% · pilot 0,10%)",
+  "Jupiter: cobrada em USDC quando um dos lados é USDC, em SOL quando um dos lados é SOL; outros pares sem taxa",
+  "LI.FI saindo da Solana: cobrada com o integrator cadastrado",
+  "conta de taxa ausente ou RPC fora: sem taxa e o swap segue (nunca quebra um swap)",
 ] as const;
 
 /**
@@ -188,14 +152,12 @@ export type FamiliaCadeia = "evm" | "solana";
 export function destinatarioDaTaxa(familia: FamiliaCadeia = "evm"): string | null {
   if (familia === "solana") {
     /**
-     * ⚠️ AQUI VAI A CONTA DE TOKEN, NUNCA A CARTEIRA. A validação por tamanho
-     * não distingue as duas — uma carteira base58 tem 32-44 caracteres e
-     * passaria — então quem decide é o CAMPO, não o formato. Devolver a
-     * carteira aqui seria mandar à Jupiter algo que ela não aceita, com a
-     * aparência de configuração correta.
+     * ⚠️ Aqui vai a CARTEIRA dona (destino da família). A CONTA DE TOKEN que a Jupiter exige é
+     * escolhida por PAR em `lib/solana/conta-de-taxa.ts` — par sem USDC/SOL sai sem taxa lá,
+     * mesmo com a família tendo destino.
      */
-    const s = (process.env.SWAP_FEE_ACCOUNT_SOLANA ?? "").trim();
-    return s.length >= 32 ? s : CONTA_TAXA_SOLANA;
+    const s = (process.env.SWAP_FEE_WALLET_SOLANA ?? "").trim();
+    return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s) ? s : CARTEIRA_TAXA_SOLANA;
   }
   const r = (process.env.SWAP_FEE_RECIPIENT ?? "").trim();
   return r.length >= 8 ? r : CARTEIRA_TAXA_EVM;

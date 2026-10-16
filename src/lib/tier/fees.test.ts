@@ -9,14 +9,14 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   TIER_FEE_BPS, taxaPct, receitaUsd, equilibrioMensalUsd,
-  destinatarioDaTaxa, bpsEfetivos, CARTEIRA_TAXA_EVM, CARTEIRA_TAXA_SOLANA, CONTA_TAXA_SOLANA, MOTIVOS_SOLANA_SEM_TAXA,
+  destinatarioDaTaxa, bpsEfetivos, CARTEIRA_TAXA_EVM, CARTEIRA_TAXA_SOLANA,  REGRA_TAXA_SOLANA, SOLANA_COBRA_DESDE,
 } from "@/lib/tier/fees";
 import { getAddress, isAddress } from "viem";
 import type { Tier } from "@/lib/tier/types";
 
 const PLANOS: Tier[] = ["free", "pro", "trader", "pilot"];
 const envOriginal = process.env.SWAP_FEE_RECIPIENT;
-beforeEach(() => { delete process.env.SWAP_FEE_RECIPIENT; delete process.env.SWAP_FEE_ACCOUNT_SOLANA; });
+beforeEach(() => { delete process.env.SWAP_FEE_RECIPIENT; delete process.env.SWAP_FEE_WALLET_SOLANA; });
 afterEach(() => {
   if (envOriginal === undefined) delete process.env.SWAP_FEE_RECIPIENT;
   else process.env.SWAP_FEE_RECIPIENT = envOriginal;
@@ -108,40 +108,25 @@ describe("a carteira que recebe", () => {
    * Aplicar a carteira de EVM na Solana seria inventar um destinatário.
    */
   /**
-   * ⚠️ A CARTEIRA DA SOLANA ESTÁ REGISTRADA, e mesmo assim não se cobra —
-   * porque a Jupiter pede CONTA DE TOKEN, não carteira. Separar os dois campos
-   * é o que impede o erro fácil de mandar um no lugar do outro.
+   * ⚠️⚠️ 16/10 (L-061): decisão do dono — a Solana COBRA a mesma escada (revertendo 11/08).
+   * A carteira aqui é a DONA; a conta de token que a Jupiter exige é escolhida por par e conferida
+   * na rede em `lib/solana/conta-de-taxa.ts` (testada em `taxa-solana.test.ts`).
    */
-  it("a carteira Solana está registrada e é válida", () => {
-    expect(CARTEIRA_TAXA_SOLANA).toBe("EWPtaW726VUcs2DA7q73b9vAJyyXJLynE8pH6TZGvd5L");
-    expect(CARTEIRA_TAXA_SOLANA.length).toBeGreaterThanOrEqual(32);
+  it("a carteira Solana dona é a dada pelo dono em 16/10", () => {
+    expect(CARTEIRA_TAXA_SOLANA).toBe("H7zwzP8PDfcp6ZQ4bd4zmXFRSpgwAYxjU7voJXMCKL5T");
   });
 
-  /**
-   * ⚠️ A DECISÃO FICA ESCRITA, não implícita. "Solana sem taxa" tem que ser
-   * legível como ESCOLHA com motivos, senão daqui a um mês alguém lê como
-   * pendência e liga sem saber o que está desligando junto.
-   */
-  it("os motivos da Solana sem taxa estão registrados", () => {
-    expect(MOTIVOS_SOLANA_SEM_TAXA.length).toBe(4);
-    const juntos = MOTIVOS_SOLANA_SEM_TAXA.join(" ");
-    expect(juntos).toContain("50 bps");     // o piso que quebra a escada
-    expect(juntos).toContain("gás");        // o benefício que se perde
+  it("a reversão fica ESCRITA, com data e regra (não um TODO esquecido)", () => {
+    expect(SOLANA_COBRA_DESDE).toBe("2026-10-16");
+    const juntas = REGRA_TAXA_SOLANA.join(" ");
+    expect(juntas).toContain("mesma escada");
+    expect(juntas).toContain("USDC");
+    expect(juntas).toMatch(/nunca quebra um swap/);
   });
 
-  it("mas a CONTA de token ainda não existe, então Solana não cobra", () => {
-    expect(CONTA_TAXA_SOLANA).toBeNull();
-    expect(destinatarioDaTaxa("solana")).toBeNull();
-    for (const t of PLANOS) expect(bpsEfetivos(t, "solana"), t).toBe(0);
-  });
-
-  /**
-   * ⚠️ A TRAVA QUE A PERGUNTA DO DONO EXPÔS: a carteira NÃO pode virar o
-   * destinatário da Solana por descuido. Uma carteira base58 passa em qualquer
-   * validação por tamanho — quem decide é o CAMPO, não o formato.
-   */
-  it("a carteira Solana não vira feeAccount por descuido", () => {
-    expect(destinatarioDaTaxa("solana")).not.toBe(CARTEIRA_TAXA_SOLANA);
+  it("Solana tem destino e a escada vale nela", () => {
+    expect(destinatarioDaTaxa("solana")).toBe(CARTEIRA_TAXA_SOLANA);
+    for (const t of PLANOS) expect(bpsEfetivos(t, "solana"), t).toBe(TIER_FEE_BPS[t]);
   });
 
   it("e a carteira Solana não vaza para o lado EVM", () => {
@@ -151,18 +136,15 @@ describe("a carteira que recebe", () => {
 
   it("a carteira de EVM NÃO vaza para o lado Solana", () => {
     process.env.SWAP_FEE_RECIPIENT = CARTEIRA_TAXA_EVM;
-    expect(destinatarioDaTaxa("solana")).toBeNull();
-    expect(bpsEfetivos("free", "solana")).toBe(0);
+    expect(destinatarioDaTaxa("solana")).toBe(CARTEIRA_TAXA_SOLANA);
   });
 
-  it("com conta Solana configurada, Solana passa a cobrar", () => {
-    process.env.SWAP_FEE_ACCOUNT_SOLANA = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM";
-    expect(destinatarioDaTaxa("solana")).toBeTruthy();
-    expect(bpsEfetivos("free", "solana")).toBe(TIER_FEE_BPS.free);
-  });
-
-  it("endereço curto demais não conta como configurado", () => {
-    process.env.SWAP_FEE_ACCOUNT_SOLANA = "abc";
-    expect(destinatarioDaTaxa("solana")).toBeNull();
+  it("o ambiente sobrescreve a dona Solana; valor que não é base58 é ignorado", () => {
+    process.env.SWAP_FEE_WALLET_SOLANA = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM";
+    expect(destinatarioDaTaxa("solana")).toBe("9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM");
+    process.env.SWAP_FEE_WALLET_SOLANA = "abc";
+    expect(destinatarioDaTaxa("solana")).toBe(CARTEIRA_TAXA_SOLANA);
+    process.env.SWAP_FEE_WALLET_SOLANA = CARTEIRA_TAXA_EVM;
+    expect(destinatarioDaTaxa("solana")).toBe(CARTEIRA_TAXA_SOLANA);
   });
 });

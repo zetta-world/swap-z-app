@@ -64,7 +64,7 @@ Changing a public badge requires updating `PUBLIC_PRODUCT_CERTIFICATION`, its da
 |---|---|---|---|---|---|
 | ZION advisory | `PUBLIC_FACT` | Available according to the tier quota. | Assistance is informational; it can be wrong. | `BENEFICIOS`, `TIER_DAILY_ANALYSES` | 2026-10-07 |
 | Reduced EVM fee | `PUBLIC_WITH_QUALIFIER` | Free 1.00%, Pro 0.50%, Trader 0.25%, Pilot 0.10%. | Only on supported EVM routes where the Z-SWAP fee mechanism is active. | `TAXA_SWAP_BPS`, `TIER_FEE_BPS` | 2026-10-07 |
-| Solana Z-SWAP platform fee | `PUBLIC_WITH_QUALIFIER` | No Z-SWAP platform fee currently. | Network, DEX, aggregator, bridge or exchange fees can still apply. | commercial closure + current fee module | 2026-10-07 |
+| Solana Z-SWAP platform fee | `PUBLIC_WITH_QUALIFIER` | Same plan fee as EVM since 2026-10-16: Jupiter swaps where USDC or SOL is one side, and LI.FI routes leaving Solana. Other Solana pairs: no Z-SWAP fee. | Network, DEX, aggregator, bridge or exchange fees can still apply. If the fee token account is unavailable, the swap proceeds without the Z-SWAP fee. | owner decision 16/10 (L-061) + `tier/fees.ts` + `lib/solana/conta-de-taxa.ts` | 2026-10-16 |
 | Priority support | `PUBLIC_WITH_QUALIFIER` | Available from Trader as an asynchronous priority queue. | No hard SLA, human 24/7 coverage, concierge or personal CEO obligation. | `POLITICA_SUPORTE_PRIORITARIO` | 2026-10-07 |
 | CEX Autopilot | `IMPLEMENTED_DISABLED` | Infrastructure exists, but public use is disabled. | It is not an available Founder benefit. | `BENEFICIOS.cex_autopilot` | 2026-10-07 |
 | Arbitrage scanner | `A_CONFIRMAR` | Its place in the Founder offer is still to be confirmed. | Never show an available check mark. | `BENEFICIOS.arb_scanner` | 2026-10-07 |
