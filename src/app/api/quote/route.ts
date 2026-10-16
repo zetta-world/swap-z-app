@@ -7,7 +7,7 @@ import {
   fetchZeroXPrice, fetchZeroXQuote, isZeroXSupported, ZEROX_CHAIN_IDS, ZEROX_NATIVE, tokenDaTaxa,
 } from "@/lib/api/zerox";
 import {
-  fetchLiFiQuote, isLiFiSupported, LIFI_CHAIN_IDS, LIFI_NATIVE, integradorLiFi, taxaDoIntegradorNaCotacao,
+  fetchLiFiQuote, isLiFiSupported, LIFI_CHAIN_IDS, LIFI_NATIVE, integradorLiFi, lerIntegradorLiFi, taxaDoIntegradorNaCotacao,
 } from "@/lib/api/lifi";
 import {
   fetchJupiterQuote, fetchJupiterSwap, JUPITER_SOL_MINT,
@@ -133,6 +133,12 @@ function alertarTaxaNaoRetida(args: {
 export async function GET(req: NextRequest) {
   const zeroXKey = process.env.ZEROX_API_KEY;
   const lifiKey  = process.env.LIFI_API_KEY;        // optional — free tier works without
+  // ⚠️ Key recusada pelo LI.FI: a cotação é refeita sem ela (ver `fetchLiFiQuote`) e o dono é avisado.
+  const aoRecusarChave = (detalhe: string) => {
+    console.warn(`[lifi] LIFI_API_KEY recusada pelo LI.FI — cotando sem a key: ${detalhe.slice(0, 120)}`);
+    notifyTelegram("⚠️ LIFI_API_KEY recusada pelo LI.FI (\"Invalid API key\"). As cotações seguem SEM a key (mesma taxa). Corrija o valor na Vercel: a key completa, salva na criação — não a máscara do painel.",
+      { dedupKey: "lifi:key-recusada", meta: { kind: "lifi_key_recusada" } });
+  };
 
   const params = req.nextUrl.searchParams;
   const mode   = params.get("mode") === "quote" ? "quote" : "list";
@@ -351,6 +357,14 @@ export async function GET(req: NextRequest) {
    * de contador que esta casa já pagou caro.
    */
   const integrador = integradorLiFi();
+  // ⚠️ Variável preenchida e recusada pela regra do LI.FI: a taxa LI.FI fica desligada (o
+  // cross-chain segue no ar) e o motivo é dito — sem o valor.
+  const leituraIntegrador = lerIntegradorLiFi(process.env.LIFI_INTEGRATOR);
+  if (leituraIntegrador.motivo) {
+    console.warn(`[lifi] ${leituraIntegrador.motivo} — taxa LI.FI DESLIGADA`);
+    notifyTelegram(`⚠️ ${leituraIntegrador.motivo}. A taxa LI.FI está DESLIGADA até corrigir o valor (deve ser só o nome do integrator, ex.: zswap).`,
+      { dedupKey: "lifi:integrator-invalido", meta: { kind: "lifi_integrator_invalido" } });
+  }
   const taxaLiFi = integrador ? taxa : { ...taxa, bps: 0, pct: 0 };
   const lfArgs = {
     fromChainId: LIFI_CHAIN_IDS[fromChain as ChainId]!,
@@ -459,7 +473,7 @@ export async function GET(req: NextRequest) {
         if (!isLiFiSupported(fromChain as ChainId) || !isLiFiSupported(toChain as ChainId)) {
           return NextResponse.json({ error: "lifi_unsupported_chain" }, { status: 400 });
         }
-        const q = await fetchLiFiQuote(lfArgs, lifiKey);
+        const q = await fetchLiFiQuote(lfArgs, lifiKey, { aoRecusarChave });
         /**
          * ⚠️⚠️ O DESTINO QUE VOLTOU TEM DE SER O QUE FOI PEDIDO.
          * (auditoria da ponte, 23/08)
@@ -610,7 +624,7 @@ export async function GET(req: NextRequest) {
       console.info("[quote/list] LiFi skipped: no taker (connect wallet for cross-chain quotes)");
     } else {
       tasks.push(
-        fetchLiFiQuote(lfArgs, lifiKey)
+        fetchLiFiQuote(lfArgs, lifiKey, { aoRecusarChave })
           .then(normalizeLiFi)
           .catch((e) => {
             console.warn("[quote/list] LiFi failed:", e instanceof Error ? e.message : e);

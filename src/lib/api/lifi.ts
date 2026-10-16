@@ -165,8 +165,38 @@ interface QuoteArgs {
  * `referrer` saiu: no LiFi ele é só rastreio, nunca foi destinatário de taxa.
  */
 export function integradorLiFi(): string | null {
-  const v = (process.env.LIFI_INTEGRATOR ?? "").trim();
-  return v.length > 0 ? v : null;
+  return lerIntegradorLiFi(process.env.LIFI_INTEGRATOR).valor;
+}
+
+/**
+ * ⚠️⚠️ VALOR INVÁLIDO NÃO PODE DERRUBAR O CROSS-CHAIN (16/10, ativação).
+ *
+ * Na ativação, o valor gravado na Vercel não era só `zswap`, e o LI.FI recusou TODA cotação:
+ * *"/integrator must be an alphanumeric string (additionally "-", "_", and "." are allowed)
+ * with a maximum length of 23 characters"* (400/1011). Um erro de digitação numa variável
+ * tirou Bridge e swap entre redes do ar.
+ *
+ * Agora: aspas nas pontas e o prefixo `LIFI_INTEGRATOR=` colado por engano são removidos; o
+ * que sobra tem de seguir a regra do LI.FI. Se não seguir, a taxa LI.FI fica DESLIGADA (a
+ * cotação segue sem taxa e a tela diz 0%) e `motivo` diz o porquê — tamanho e classes de
+ * caractere, NUNCA o valor (a key pode ter sido colada aqui por engano).
+ */
+export const INTEGRADOR_LIFI_VALIDO = /^[A-Za-z0-9._-]{1,23}$/;
+
+export function lerIntegradorLiFi(bruto: string | undefined): { valor: string | null; motivo: string | null } {
+  let v = (bruto ?? "").trim();
+  if (!v) return { valor: null, motivo: null };
+  v = v.replace(/^LIFI_INTEGRATOR\s*=\s*/i, "").trim();
+  v = v.replace(/^(["'`])(.*)\1$/, "$2").trim();
+  if (INTEGRADOR_LIFI_VALIDO.test(v)) return { valor: v, motivo: null };
+  const classes = [
+    v.length > 23 ? `mais de 23 caracteres (${v.length})` : `${v.length} caracteres`,
+    /\s/.test(v) ? "espaço" : "",
+    /["'`]/.test(v) ? "aspas" : "",
+    /=/.test(v) ? "sinal '='" : "",
+    /[^A-Za-z0-9._\-\s"'`=]/.test(v) ? "outros caracteres fora de letras/números/-/_/." : "",
+  ].filter(Boolean).join(", ");
+  return { valor: null, motivo: `LIFI_INTEGRATOR inválido para o LI.FI: ${classes}` };
 }
 
 /**
@@ -174,7 +204,11 @@ export function integradorLiFi(): string | null {
  * Designed to be called from server routes — never include LiFi key in
  * the browser bundle.
  */
-export async function fetchLiFiQuote(args: QuoteArgs, integratorKey?: string): Promise<LfQuote> {
+export async function fetchLiFiQuote(
+  args: QuoteArgs,
+  integratorKey?: string,
+  opcoes: { aoRecusarChave?: (detalhe: string) => void } = {},
+): Promise<LfQuote> {
   // LiFi's /v1/quote REQUIRES fromAddress to build the signable route — it
   // rejects requests without it ("querystring must have required property
   // 'fromAddress'", code 1011). An empty/undefined taker would otherwise be
@@ -197,7 +231,8 @@ export async function fetchLiFiQuote(args: QuoteArgs, integratorKey?: string): P
   if (args.toAddress)   params.set("toAddress",   args.toAddress);
   if (args.slippageBps) params.set("slippage", (args.slippageBps / 10_000).toString());
   /**
-   * ⚠️ A TAXA SÓ VAI COM DESTINATÁRIO (Fase 9.2, 11/08). A LI.FI recebe a
+   * ⚠️ A TAXA SÓ VAI COM INTEGRATOR CADASTRADO (LIFI-UPSTREAM-01; antes, Fase 9.2,
+   * exigia só destinatário e o LI.FI recusava tudo). A LI.FI recebe a
    * taxa como FRAÇÃO (0.01 = 1%), não em pontos-base — mandar `100` ali seria
    * pedir 10.000%. A conversão fica aqui, no ponto de contato, e não em quem
    * chama: quem chama fala em bps, que é a unidade da escada.
@@ -207,14 +242,26 @@ export async function fetchLiFiQuote(args: QuoteArgs, integratorKey?: string): P
     params.set("integrator", args.integrator);
   }
 
-  const res = await fetch(`${LIFI_BASE}/quote?${params.toString()}`, {
+  const pedir = (comChave: boolean) => fetch(`${LIFI_BASE}/quote?${params.toString()}`, {
     headers: {
       Accept: "application/json",
-      ...(integratorKey ? { "x-lifi-api-key": integratorKey } : {}),
+      ...(comChave && integratorKey ? { "x-lifi-api-key": integratorKey } : {}),
     },
     // Same-chain quotes change every block; don't cache aggressively
     next: { revalidate: 5 },
   });
+  let res = await pedir(true);
+  /**
+   * ⚠️⚠️ KEY RECUSADA NÃO DERRUBA O CROSS-CHAIN (16/10, ativação). Uma key colada errada na
+   * Vercel fez o LI.FI responder 401 "Invalid API key" (1010) a TODA cotação. A key é
+   * opcional (atribuição e limite próprio): sem ela a cotação sai igual, com a mesma taxa.
+   * Então: 401 com key → refaz SEM a key e avisa quem chamou. Sem key, 401 é erro mesmo.
+   */
+  if (res.status === 401 && integratorKey) {
+    const detalhe = (await res.text().catch(() => "")).slice(0, 200);
+    opcoes.aoRecusarChave?.(detalhe);
+    res = await pedir(false);
+  }
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
     throw new Error(`LiFi ${res.status}: ${errText.slice(0, 240)}`);

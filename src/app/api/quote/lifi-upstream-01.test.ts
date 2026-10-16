@@ -176,3 +176,99 @@ describe("LIFI-UPSTREAM-01 · a própria `fetchLiFiQuote` (sem depender da rota 
   });
 });
 
+
+describe("LIFI-UPSTREAM-01 · valor inválido em LIFI_INTEGRATOR não derruba o cross-chain (16/10)", () => {
+  /** O LI.FI real recusa integrator fora de [A-Za-z0-9._-]{1,23} — inclusive sem `fee`. */
+  function servidorComRegraDoNome() {
+    const anterior = vi.mocked(fetch).getMockImplementation()!;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      const integ = new URL(url).searchParams.get("integrator");
+      if (integ !== null && !/^[A-Za-z0-9._-]{1,23}$/.test(integ)) {
+        s.pedidos.push(new URL(url));
+        return Response.json({ message: "/integrator must be an alphanumeric string (additionally \"-\", \"_\", and \".\" are allowed) with a maximum length of 23 characters", code: 1011 }, { status: 400 });
+      }
+      return anterior(url, init);
+    }));
+  }
+
+  for (const [rotulo, valor] of [
+    ["a API key colada no lugar do nome", "a".repeat(64)],
+    ["nome com espaço no meio", "z swap"],
+    ["outros caracteres", "zswap!"],
+  ] as const) {
+    it(`${rotulo}: o LI.FI segue cotando, SEM taxa, e o motivo é dito sem o valor`, async () => {
+      vi.stubEnv("LIFI_INTEGRATOR", valor);
+      servidorComRegraDoNome();
+      const body = await (await pedir({ mode: "list", ...CROSS })).json();
+      expect(body.quotes.map((q: { source: string }) => q.source)).toEqual(["lifi"]);
+      expect(body.taxa).toMatchObject({ bps: 0 });
+      expect(s.pedidos.at(-1)!.searchParams.get("integrator")).toBeNull();
+      const aviso = vi.mocked(notifyTelegram).mock.calls.find((c) => String(c[0]).includes("LIFI_INTEGRATOR inválido"));
+      expect(aviso).toBeDefined();
+      expect(String(aviso![0])).not.toContain(valor);
+    });
+  }
+
+  for (const [rotulo, valor] of [
+    ["aspas em volta", '"zswap-portal"'],
+    ["prefixo do nome colado junto", "LIFI_INTEGRATOR=zswap-portal"],
+    ["espaços nas pontas", "  zswap-portal  "],
+  ] as const) {
+    it(`${rotulo}: é corrigido e a taxa vai com o integrator certo`, async () => {
+      vi.stubEnv("LIFI_INTEGRATOR", valor);
+      servidorComRegraDoNome();
+      const body = await (await pedir({ mode: "list", ...CROSS })).json();
+      expect(body.quotes).toHaveLength(1);
+      expect(s.pedidos.at(-1)!.searchParams.get("integrator")).toBe(CADASTRADO);
+      expect(body.taxa).toMatchObject({ bps: 100 });
+    });
+  }
+});
+
+describe("LIFI-UPSTREAM-01 · API key recusada não derruba o cross-chain (16/10)", () => {
+  function servidorQueRecusaAChave() {
+    const anterior = vi.mocked(fetch).getMockImplementation()!;
+    const comChave: boolean[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      const h = (init?.headers ?? {}) as Record<string, string>;
+      comChave.push(!!h["x-lifi-api-key"]);
+      if (h["x-lifi-api-key"]) return Response.json({ message: "Invalid API key", code: 1010 }, { status: 401 });
+      return anterior(url, init);
+    }));
+    return comChave;
+  }
+
+  it("key recusada: refaz SEM a key, a cotação chega com a taxa, e o dono é avisado", async () => {
+    vi.stubEnv("LIFI_INTEGRATOR", CADASTRADO);
+    vi.stubEnv("LIFI_API_KEY", "chave-colada-errada");
+    const comChave = servidorQueRecusaAChave();
+    const body = await (await pedir({ mode: "list", ...CROSS })).json();
+    expect(body.quotes.map((q: { source: string }) => q.source)).toEqual(["lifi"]);
+    expect(body.taxa).toMatchObject({ bps: 100 });
+    expect(comChave).toEqual([true, false]);
+    expect(vi.mocked(notifyTelegram).mock.calls.some((c) => String(c[0]).includes("LIFI_API_KEY recusada"))).toBe(true);
+  });
+
+  it("firme também: 200 com payload, sem upstream_failed", async () => {
+    vi.stubEnv("LIFI_INTEGRATOR", CADASTRADO);
+    vi.stubEnv("LIFI_API_KEY", "chave-colada-errada");
+    servidorQueRecusaAChave();
+    const r = await pedir({ mode: "quote", source: "lifi", ...CROSS });
+    expect(r.status).toBe(200);
+    expect((await r.json()).result.transactionRequest.data).toMatch(/^0xcafe/);
+  });
+
+  it("gêmea: key aceita → um pedido só, com a key, e nenhum aviso", async () => {
+    vi.stubEnv("LIFI_INTEGRATOR", CADASTRADO);
+    vi.stubEnv("LIFI_API_KEY", "chave-boa");
+    const comChave: boolean[] = [];
+    const anterior = vi.mocked(fetch).getMockImplementation()!;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      comChave.push(!!((init?.headers ?? {}) as Record<string, string>)["x-lifi-api-key"]);
+      return anterior(url, init);
+    }));
+    await pedir({ mode: "list", ...CROSS });
+    expect(comChave).toEqual([true]);
+    expect(vi.mocked(notifyTelegram).mock.calls.some((c) => String(c[0]).includes("LIFI_API_KEY recusada"))).toBe(false);
+  });
+});
