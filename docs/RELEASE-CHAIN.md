@@ -401,3 +401,14 @@ Resultado L-062B (16/10): `main` → `a675ddb`, produção `dpl_HcK5h3H8LYxgd6qq
 candidato. Correção: CERTIFIED_FEATURE_SHA = `d86c963d65431ea3e99458d4bee2512d08b6d7e7` (tree
 `3fbf5d6436a41f4eb54119d1b09345fcd898abec`), CI 38976037886, preview `dpl_Ef1BQyPLcNKA81ydYCn31WLNRHAi` PASS. **Não
 marcado RELEASE_CANDIDATE** — nova autorização do dono necessária.
+
+## Atualização L-062B — candidato correção (`/build` dentro dos limites da rede)
+
+RELEASE_CANDIDATE = THIS_RELEASE_CANDIDATE_COMMIT (docs-only, filho de `551454977f2d8a0b853a36366d82ccf5b3b4d95b`).
+CERTIFIED_FEATURE_SHA = `d86c963d65431ea3e99458d4bee2512d08b6d7e7` (tree `3fbf5d6436a41f4eb54119d1b09345fcd898abec`),
+base `a675ddb` (a `main`; produção em `2a06326` por rollback). Delta sobre `a675ddb`: transação medida (≤ 64 contas,
+≤ 1232 bytes) + nova tentativa com `maxAccounts=40` (`lib/api/jupiter.ts`, testes, docs). CI 38976037886, preview
+`dpl_Ef1BQyPLcNKA81ydYCn31WLNRHAi` PASS. Autorização: dono, 16/10 ("sim autorizo produção"). Condição antes do merge:
+CI verde neste SHA. Promoção explícita (a Vercel está em rollback). Stop: transação > 64 contas ou > 1232 bytes,
+simulação recusada por limite, 401/403, 429 persistente, taxa não confirmada, regressão Solana. Rollback:
+`dpl_AcHcoSLXYEeWB1qvMQE9NXqpimrn`.
