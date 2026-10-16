@@ -370,3 +370,10 @@ RELEASE_CANDIDATE = THIS_RELEASE_CANDIDATE_COMMIT (docs-only, filho de `5f42b444
 Base `166fd5be9c28fb2ffaaffd9413bf61c40f492698`. Delta: taxa da plataforma na Solana (ledger L-061). Gates, CI
 38893612041 e preview `dpl_5CSfJRnf6kQ5FJzUWbzgUJgka5B9` em PASS. Desvios: escopo (sem SQL). Autorização: decisões
 do dono de 16/10 (cobrar na Solana; mesma escada; Metis; wSOL). Condição antes do merge: CI verde neste SHA.
+
+## Atualização L-062A — chave da Jupiter (certificado; NÃO é candidato)
+
+CERTIFIED_FEATURE_SHA = `37666e9ecc5b5ff71d602c5c8854d5d9fab5c657` (tree `edd57e1ed27097ca4bf07c49e1b69a579063482e`),
+base `06bff5c`. Delta: Jupiter autenticada com `JUPITER_API_KEY` (ledger L-062A). Gates, CI 38932931702 e preview
+`dpl_42NsuWMM4skUAjXpBHcta6XwiCRi` em PASS. **Não marcado RELEASE_CANDIDATE**: o dono não autorizou produção nesta
+rodada. Para promover: autorização explícita → commit docs marcando RC → fast-forward da `main` → smoke só-cotação.

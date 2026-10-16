@@ -1129,3 +1129,35 @@ JUP→WIF no smoke, na produção nova, na anterior e no preview; repetida, SOL�
 11/08 na prática: **a chave da Jupiter passa a ser prioridade** (usuário real em pico pode pegar o limite).
 Rollback: `dpl_ApxmhgHQEzo2NHQmdHGjFjaBBA3A` (`166fd5b`).
 
+## L-062A — Chave da Jupiter ativada no código (16/10/2026)
+
+**Contexto:** 429 em rajadas na `lite-api` sem chave (L-061). O dono criou a chave em portal.jup.ag e cadastrou
+`JUPITER_API_KEY` na Vercel (Production + Preview) em 16/10; o segredo vive só na Vercel, o código nunca o contém.
+Docs Jupiter (16/10): `api.jup.ag` + `x-api-key` em todos os planos (Free = 1 req/s; sem chave = 0,5 req/s) —
+`api.jup.ag` é o endpoint autenticado, **não** "nível pago" (comentário antigo corrigido). Plano:
+`docs/PLANO-JUPITER-CHAVE.md`. Swap V2 continua fora.
+
+**Código (`d799d9c` + `37666e9`, branch `feat/jupiter-api-key`):** `configJupiter()` — com chave, sempre
+`https://api.jup.ag/swap/v1` + `x-api-key`; `JUPITER_BASE_URL` só vale em `https://api.jup.ag`, outro host é
+ignorado (a chave nunca sai para ele) + alerta `jupiter:config`; sem chave, `lite-api` (base `api.jup.ag` sem chave é
+ignorada). `jupFetch()` aplica os headers comuns sem sobrescrever os da chamada. 401/403 → refaz uma vez sem a chave
++ alerta `jupiter:chave-recusada`. Produção sem chave → alerta `jupiter:sem-chave` (o swap segue).
+`JupiterError {tipo: limite|chave|http|conexao, modo}`, logs `[jupiter] {modo,tipo,status,host}` também no sucesso;
+a chave é censurada até do corpo de erro da Jupiter. Sonda de saúde com a mesma base/chave. Taxa Solana
+(`platformFeeBps`/`feeAccount`, escada, contas, fail-open) intocada.
+
+**Testes:** `src/lib/api/jupiter-chave.test.ts` (27) + `src/app/api/quote/jupiter-chave.test.ts` (10, rota real:
+escada 100/50/25/10 em `api.jup.ag` com `feeAccount`, conta inválida fail-open, alertas sem segredo). No código
+anterior 27 dos 35 testes de então falham. 5 quebras deliberadas detectadas (sem header, headers sobrescritos, sem censura, chave
+para host do override, sem retry 401/403). Gates no SHA exato `37666e9` (tree
+`edd57e1ed27097ca4bf07c49e1b69a579063482e`): `npm ci` 0 · lint 0/145 · type-check 0 · suíte 332/4843 ×2 · build 0 ·
+audit-gate OK (R-03) · 0 ocorrência de host/chave Jupiter no bundle do navegador · CI 38932931702 success.
+Intermitente fora do escopo: `cex/order/a131-livro-unico.test.ts` ("DÚVIDA não devolve") falhou 1 vez numa suíte
+pré-commit e 1 em 9 execuções isoladas; não importa Jupiter.
+
+**Preview `dpl_42NsuWMM4skUAjXpBHcta6XwiCRi` (só cotação, nada assinado, 6 requisições espaçadas):** todas HTTP 200;
+SOL→USDC, USDC→SOL e SOL→JUP firmes com `platformFee.feeBps` 100 e transação montada; JUP→WIF firme sem taxa e
+transação montada (antes dava 429); listas com taxa 100. Logs: 10 chamadas `[jupiter] modo autenticada, ok, 200,
+api.jup.ag`; **0 × 401/403/429**. 10/25/50 bps: só pela suíte (o preview sem sessão é plano free).
+
+**Produção: NÃO feita** — aguarda autorização explícita do dono. Sem evidência de produção nesta entrada.

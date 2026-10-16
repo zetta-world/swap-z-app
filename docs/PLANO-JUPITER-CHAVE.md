@@ -1,6 +1,6 @@
 # PLANO — Chave da Jupiter (L-062A, 16/10/2026)
 
-Status: 🟡 código pronto e testado na branch `feat/jupiter-api-key`; preview só-cotação; **produção aguarda autorização do dono** · rodada: L-062A
+Status: 🟡 código certificado em `feat/jupiter-api-key@37666e9` (gates + CI 38932931702 + preview autenticado, 0 × 401/403/429); **produção aguarda autorização do dono** · rodada: L-062A
 
 ## Contexto
 

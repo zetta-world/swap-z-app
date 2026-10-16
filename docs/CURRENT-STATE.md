@@ -12,6 +12,11 @@
 
 ---
 
+## Atualização L-062A — chave da Jupiter (16/10/2026)
+
+Código pronto e certificado em `feat/jupiter-api-key@37666e9` (preview autenticado: 0 × 401/403/429). Produção
+**ainda na `lite-api` sem chave** até o dono autorizar o deploy. Swap V2 fora.
+
 ## Atualização L-061 — taxa na Solana (16/10/2026)
 
 A Solana passa a cobrar a mesma escada das EVM (Jupiter em pares com USDC ou SOL; LI.FI saindo da Solana).
