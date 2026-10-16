@@ -18,6 +18,7 @@
  * segue, e quem chama avisa o dono. Cache curto: o "ok" vale 10 min; a falha, 1 min.
  */
 import { CARTEIRA_TAXA_SOLANA } from "@/lib/tier/fees";
+import { rpcSolanaServidor } from "@/lib/solana/rpc-servidor";
 
 export const MINT_USDC_SOLANA = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 export const MINT_WSOL = "So11111111111111111111111111111111111111112";
@@ -56,10 +57,6 @@ const cache = new Map<string, { ok: boolean; porque?: string; ate: number }>();
 /** Só para testes. */
 export function _limparCacheDeContas() { cache.clear(); }
 
-function rpcUrl(): string {
-  return (process.env.HELIUS_RPC_URL ?? process.env.NEXT_PUBLIC_SOLANA_RPC ?? "").trim()
-    || "https://api.mainnet-beta.solana.com";
-}
 
 /** A conta existe NA REDE, é do Token Program, do mint certo, da dona certa e não está congelada? */
 export async function contaDeTaxaValida(conta: string, mint: string, agora = Date.now()): Promise<{ ok: true } | { ok: false; porque: string }> {
@@ -71,7 +68,7 @@ export async function contaDeTaxaValida(conta: string, mint: string, agora = Dat
     return ok ? { ok: true as const } : { ok: false as const, porque: porque ?? "?" };
   };
   try {
-    const res = await fetch(rpcUrl(), {
+    const res = await fetch(rpcSolanaServidor(), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getAccountInfo", params: [conta, { encoding: "jsonParsed", commitment: "confirmed" }] }),

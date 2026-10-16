@@ -27,6 +27,7 @@
  */
 
 import { configJupiter } from "@/lib/api/jupiter";
+import { CARTEIRA_TAXA_SOLANA } from "@/lib/tier/fees";
 
 export type DepImpact = "critical" | "degraded" | "cosmetic";
 
@@ -85,8 +86,9 @@ export const EXTERNAL_DEPS: ExternalDep[] = [
     probe: () => {
       const cfg = configJupiter();
       return probe(
-        `${cfg.base}/quote?inputMint=So11111111111111111111111111111111111111112` +
-        "&outputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&amount=10000000&slippageBps=50",
+        `${cfg.base}/build?inputMint=So11111111111111111111111111111111111111112` +
+        "&outputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&amount=10000000&slippageBps=50" +
+        `&taker=${CARTEIRA_TAXA_SOLANA}`, // o `/build` exige um taker; só cotação, nada assinado
         { headers: { Accept: "application/json", ...cfg.headers } },
       )();
     },

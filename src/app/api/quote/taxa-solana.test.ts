@@ -1,7 +1,7 @@
 /**
  * TAXA NA SOLANA (16/10, L-061) — decisão do dono: cobrar na Solana com a mesma escada das EVM.
  *
- * Jupiter (Metis `/swap/v1`): `platformFeeBps` na cotação + `feeAccount` no `/swap`, e o
+ * Jupiter (Swap V2 `/build`, L-062B): `platformFeeBps` + `feeAccount` no mesmo `/build`, e o
  * `feeAccount` é CONTA DE TOKEN de um dos mints do par. Contas do dono (dona `H7zw…`):
  * USDC `En1J8…` e wSOL `7PPDQ…` (conferidas na rede 16/10; `off` desliga). Par sem USDC nem SOL → sem
  * taxa. A conta é conferida NA REDE antes de cobrar: ausente/fechada/RPC fora → sem taxa e o
@@ -23,7 +23,7 @@ const JUP = "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN";
 const WIF = "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm";
 
 const s = vi.hoisted(() => ({
-  jupQuote: vi.fn(), jupSwap: vi.fn(), lifi: vi.fn(),
+  jupQuote: vi.fn(), jupSwap: vi.fn(), jupFirm: vi.fn(), lifi: vi.fn(),
   contas: {} as Record<string, { mint: string; owner: string; state: string } | null>,
   rpcFora: false,
 }));
@@ -32,7 +32,7 @@ vi.mock("@/lib/admin/track", () => ({ recordEvent: vi.fn(async () => undefined),
 vi.mock("@/lib/admin/kill-switches", () => ({ checarKillSwitches: async () => ({ bloqueado: false }) }));
 vi.mock("@/lib/auth/session", () => ({ getSession: async () => null }));
 vi.mock("@/lib/tier/check", () => ({ getTierForWallet: async () => ({ tier: "free" }) }));
-vi.mock("@/lib/api/jupiter", async (orig) => ({ ...(await orig<typeof import("@/lib/api/jupiter")>()), fetchJupiterQuote: s.jupQuote, fetchJupiterSwap: s.jupSwap }));
+vi.mock("@/lib/api/jupiter", async (orig) => ({ ...(await orig<typeof import("@/lib/api/jupiter")>()), fetchJupiterQuote: s.jupQuote, fetchJupiterFirm: s.jupFirm }));
 vi.mock("@/lib/api/lifi", async (orig) => ({ ...(await orig<typeof import("@/lib/api/lifi")>()), fetchLiFiQuote: s.lifi }));
 
 import { GET } from "@/app/api/quote/route";
@@ -55,7 +55,7 @@ function rpcFalso() {
 const jupQ = (feeBps?: number) => ({
   inputMint: WSOL, outputMint: USDC, inAmount: "100000000", outAmount: "10476897", otherAmountThreshold: "10424512",
   slippageBps: 50, routePlan: [{ percent: 100, swapInfo: { label: "Raydium" } }],
-  platformFee: feeBps ? { amount: "105827", feeBps } : null,
+  platformFee: feeBps ? { feeBps, feeAccount: "conferida" } : undefined,
 });
 const pedir = (p: Record<string, string>) => GET(new NextRequest("http://localhost/api/quote?" + new URLSearchParams(p)));
 const SOL_SOL = (sell: string, buy: string) => ({ fromChain: "solana", toChain: "solana", sellToken: sell, buyToken: buy, sellAmount: "100000000" });
@@ -71,6 +71,8 @@ beforeEach(() => {
   };
   s.jupQuote.mockImplementation(async (a: { platformFeeBps?: number }) => jupQ(a.platformFeeBps));
   s.jupSwap.mockImplementation(async () => ({ swapTransaction: "A".repeat(200), lastValidBlockHeight: 1 }));
+  // L-062B: o firme é UMA chamada (`/build`); repassa os mesmos argumentos aos dois registros acima.
+  s.jupFirm.mockImplementation(async (a: object) => ({ quote: await s.jupQuote(a), swap: await s.jupSwap(a) }));
   s.lifi.mockImplementation(async () => ({
     tool: "x", action: { fromChainId: 1151111081099710, toChainId: 1, toAddress: EVM_TAKER },
     estimate: { fromAmount: "1", toAmount: "1", toAmountMin: "1", executionDuration: 60, approvalAddress: "", feeCosts: [] },

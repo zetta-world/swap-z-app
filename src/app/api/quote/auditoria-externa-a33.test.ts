@@ -27,7 +27,7 @@ const SOL_TAKER = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM";
 const s = vi.hoisted(() => ({
   flags: { disable_swap: false, maintenance_mode: false } as Record<string, boolean>,
   guard: vi.fn(),
-  zxQuote: vi.fn(), zxPrice: vi.fn(), lifi: vi.fn(), jupQuote: vi.fn(), jupSwap: vi.fn(),
+  zxQuote: vi.fn(), zxPrice: vi.fn(), lifi: vi.fn(), jupQuote: vi.fn(), jupFirm: vi.fn(),
 }));
 vi.mock("@/lib/rate-limit", () => ({ rateLimitDurable: async () => ({ ok: true }), getClientId: () => "a33" }));
 vi.mock("@/lib/admin/track", () => ({ recordEvent: vi.fn(async () => undefined), notifyTelegram: vi.fn(), logSecurity: vi.fn() }));
@@ -36,7 +36,7 @@ vi.mock("@/lib/auth/session", () => ({ getSession: async () => null }));
 vi.mock("@/lib/tier/check", () => ({ getTierForWallet: async () => ({ tier: "free" }) }));
 vi.mock("@/lib/api/zerox", async (orig) => ({ ...(await orig<typeof import("@/lib/api/zerox")>()), fetchZeroXQuote: s.zxQuote, fetchZeroXPrice: s.zxPrice }));
 vi.mock("@/lib/api/lifi", async (orig) => ({ ...(await orig<typeof import("@/lib/api/lifi")>()), fetchLiFiQuote: s.lifi }));
-vi.mock("@/lib/api/jupiter", async (orig) => ({ ...(await orig<typeof import("@/lib/api/jupiter")>()), fetchJupiterQuote: s.jupQuote, fetchJupiterSwap: s.jupSwap }));
+vi.mock("@/lib/api/jupiter", async (orig) => ({ ...(await orig<typeof import("@/lib/api/jupiter")>()), fetchJupiterQuote: s.jupQuote, fetchJupiterFirm: s.jupFirm }));
 
 import { GET } from "@/app/api/quote/route";
 
@@ -117,7 +117,7 @@ beforeEach(() => {
   s.zxPrice.mockImplementation(async () => zxPreco());
   s.lifi.mockImplementation(async () => lifiQ());
   s.jupQuote.mockImplementation(async () => jupQ());
-  s.jupSwap.mockImplementation(async () => jupSwap());
+  s.jupFirm.mockImplementation(async () => ({ quote: jupQ(), swap: jupSwap() }));
 });
 afterEach(() => vi.unstubAllEnvs());
 
@@ -205,7 +205,7 @@ describe("A33 · NO EXECUTABLE PAYLOAD FROM LIST MODE", () => {
     const q = body.quotes.find((x: { source: string }) => x.source === "jupiter");
     expect(q).toBeDefined();
     semPayload([q]);
-    expect(s.jupSwap).not.toHaveBeenCalled();
+    expect(s.jupFirm).not.toHaveBeenCalled(); // L-062B: a lista nunca monta transação
   });
 
   it("a comparação continua: valores, rota e ranking chegam intactos", async () => {

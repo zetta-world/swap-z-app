@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { JUPITER_ALLOWED_PROGRAMS, verifyJupiterTransaction, extractProgramIds } from "@/lib/swap/solana-guard";
-import { fetchJupiterQuote, fetchJupiterSwap, JUPITER_SOL_MINT } from "@/lib/api/jupiter";
+import { fetchJupiterFirm, JUPITER_SOL_MINT } from "@/lib/api/jupiter";
 import { VersionedTransaction, PublicKey } from "@solana/web3.js";
 
 export const dynamic = "force-dynamic";
@@ -149,10 +149,11 @@ export async function POST(): Promise<NextResponse> {
 
   for (const c of cases) {
     try {
-      const quote = await fetchJupiterQuote({
-        inputMint: c.inputMint, outputMint: c.outputMint, amount: c.amount, slippageBps: 50,
+      // L-062B: a transação agora é montada por nós (`/build` + `montarTransacaoJupiter`) — é
+      // exatamente ela que o guard precisa aprovar.
+      const { swap } = await fetchJupiterFirm({
+        inputMint: c.inputMint, outputMint: c.outputMint, amount: c.amount, slippageBps: 50, taker: PROBE_TAKER,
       });
-      const swap = await fetchJupiterSwap({ quoteResponse: quote, userPublicKey: PROBE_TAKER });
       const tx = VersionedTransaction.deserialize(Buffer.from(swap.swapTransaction, "base64"));
       const verdict = verifyJupiterTransaction(tx);
       const programs = extractProgramIds(tx);

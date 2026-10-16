@@ -10,7 +10,7 @@ import {
   fetchLiFiQuote, isLiFiSupported, LIFI_CHAIN_IDS, LIFI_NATIVE, integradorLiFi, lerIntegradorLiFi, taxaDoIntegradorNaCotacao,
 } from "@/lib/api/lifi";
 import {
-  fetchJupiterQuote, fetchJupiterSwap, JUPITER_SOL_MINT, configJupiter,
+  fetchJupiterQuote, fetchJupiterFirm, JUPITER_SOL_MINT, configJupiter,
 } from "@/lib/api/jupiter";
 import {
   normalizeZeroX, normalizeLiFi, normalizeJupiter,
@@ -408,7 +408,20 @@ export async function GET(req: NextRequest) {
     outputMint:  jupOutput,
     amount:      sellAmount,
     slippageBps,
-    ...(contaJupiter ? { platformFeeBps: taxaJupiter.bps } : {}),
+    ...(contaJupiter ? { platformFeeBps: taxaJupiter.bps, feeAccount: contaJupiter } : {}),
+    ...(taker ? { taker } : {}),
+  };
+  /**
+   * L-062B: o `/build` não devolve `platformFee` — a taxa só é tratada como cobrada quando o
+   * `feeAccount` está nas contas da instrução de swap (`quote.platformFee`, ver `taxaNaInstrucao`).
+   * Pedida e ausente → alerta "TAXA NÃO RETIDA" e a taxa divulgada vira 0: a tela não promete
+   * o que a transação não cobra.
+   */
+  const taxaJupiterConfirmada = (quote: { platformFee?: unknown }) => {
+    if (!contaJupiter) return taxaJupiter;
+    alertarTaxaNaoRetida({ aceita: quote.platformFee ?? null, bps: taxaJupiter.bps, source: "jupiter",
+      fromChain: "solana", sellToken, buyToken });
+    return quote.platformFee ? taxaJupiter : { ...taxaJupiter, bps: 0, pct: 0 };
   };
   /**
    * Chave da Jupiter (L-062A). Sem chave a Jupiter segue pela `lite-api` (o swap não para), mas em
@@ -598,18 +611,12 @@ export async function GET(req: NextRequest) {
         if (!isSameChainSolana) {
           return NextResponse.json({ error: "jupiter_solana_only" }, { status: 400 });
         }
-        const quote = await fetchJupiterQuote(jupArgs, jupOpts);
-        const swap  = await fetchJupiterSwap({
-          quoteResponse:    quote,
-          userPublicKey:    taker,
-          wrapAndUnwrapSol: true,
-          ...(contaJupiter ? { feeAccount: contaJupiter } : {}),
-        }, jupOpts);
+        const { quote, swap } = await fetchJupiterFirm({ ...jupArgs, taker }, jupOpts);
         // ⚠️ AGUARDADO pelo mesmo motivo dos dois caminhos acima.
         await recordEvent("swap_intent", { wallet: taker, meta: { source, fromChain: "solana", toChain: "solana", sellToken, buyToken } });
         return NextResponse.json(
           {
-            ok: true, mode, source, taxa: taxaJupiter,
+            ok: true, mode, source, taxa: taxaJupiterConfirmada(quote),
             result: { quote, swap },
             normalized: normalizeJupiter(quote),
           },
@@ -676,10 +683,11 @@ export async function GET(req: NextRequest) {
   }
 
   // Jupiter: same-chain Solana only
+  let taxaJupiterLista = taxaJupiter;
   if (isSameChainSolana) {
     tasks.push(
       fetchJupiterQuote(jupArgs, jupOpts)
-        .then(normalizeJupiter)
+        .then((q) => { taxaJupiterLista = taxaJupiterConfirmada(q); return normalizeJupiter(q); })
         .catch((e) => {
           console.warn("[quote/list] Jupiter failed:", e instanceof Error ? e.message : e);
           return null;
@@ -702,7 +710,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json(
     // ⚠️ LIFI-UPSTREAM-01: cross-chain aqui é só LiFi — a taxa divulgada é a dele.
-    { ok: true, mode, quotes, taxa: isCrossChain ? taxaLiFi : isSameChainSolana ? taxaJupiter : taxa, isCrossChain },
+    { ok: true, mode, quotes, taxa: isCrossChain ? taxaLiFi : isSameChainSolana ? taxaJupiterLista : taxa, isCrossChain },
     {
       // When a taker is present the amounts come from the firm upstream quote
       // for THAT wallet (the response no longer carries calldata — A33): keep it

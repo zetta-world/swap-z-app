@@ -171,9 +171,11 @@ describe("tokenDaTaxa — a taxa sai em QUALQUER direção", () => {
  * mensagem em vez de silêncio.
  */
 describe("taxa pedida e não retida vira alerta", () => {
-  it("a rota alerta nos DOIS agregadores", () => {
+  // L-062B: a Jupiter (`/build`) também confirma a taxa — pela conta na instrução de swap.
+  it("a rota alerta nos TRÊS agregadores (0x, LI.FI, Jupiter)", () => {
     expect(rota).toContain("function alertarTaxaNaoRetida");
-    expect((rota.match(/alertarTaxaNaoRetida\(\{/g) ?? []).length).toBe(2);
+    expect((rota.match(/alertarTaxaNaoRetida\(\{/g) ?? []).length).toBe(3);
+    expect(rota).toMatch(/alertarTaxaNaoRetida\(\{ aceita: quote\.platformFee[\s\S]{0,80}source: "jupiter"/);
   });
 
   /**
@@ -189,9 +191,11 @@ describe("taxa pedida e não retida vira alerta", () => {
 
 describe("a Solana cobra desde 16/10 (L-061) — e a taxa e a conta andam juntas", () => {
   /** Comportamento provado em `taxa-solana.test.ts`; aqui, só a forma. */
-  it("a Jupiter recebe platformFeeBps só quando pedido, e o /swap a conta de taxa", () => {
-    expect(jup).toContain('if ((args.platformFeeBps ?? 0) > 0) params.set("platformFeeBps"');
-    expect(jup).toContain("...(args.feeAccount ? { feeAccount: args.feeAccount } : {})");
+  // L-062B: um só `/build` leva os dois — e taxa sem conta (ou o contrário) nem chega a ser pedida.
+  it("a Jupiter recebe platformFeeBps só quando pedido, sempre junto da conta de taxa", () => {
+    expect(jup).toContain('params.set("platformFeeBps", String(fee));');
+    expect(jup).toContain('params.set("feeAccount", args.feeAccount!);');
+    expect(jup).toContain("if ((fee > 0) !== !!args.feeAccount)");
   });
 
   /** A família da cadeia decide, e `bpsEfetivos` devolve 0 sem conta. */
