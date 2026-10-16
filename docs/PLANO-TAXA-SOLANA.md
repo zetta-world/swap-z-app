@@ -1,6 +1,6 @@
 # PLANO — Taxa da plataforma na Solana (16/10/2026)
 
-Status: 🟢 em produção (16/10, `0f64e3a`); falta site institucional · ⚠️ chave Jupiter prioritária (429 na `lite-api`) · dono: decisão de 16/10 · rodada: L-061
+Status: 🟢 concluído (16/10): app `0f64e3a` em produção + site institucional `zettaceo/z-swap@5159089` · ⚠️ chave Jupiter prioritária (429 na `lite-api`) · dono: decisão de 16/10 · rodada: L-061
 
 ## Decisão do dono (16/10)
 
@@ -34,7 +34,7 @@ Status: 🟢 em produção (16/10, `0f64e3a`); falta site institucional · ⚠�
    `feeAccount` no `/swap`, sempre os dois juntos.
 4. 🟢 **LI.FI saindo da Solana**: taxa do plano com o integrator cadastrado (a taxa vai para a carteira SVM do
    portal).
-5. 🟡 **Divulgação**: taxa divulgada por cotação = a que de fato é pedida; fatos do ZION, painel/rota de
+5. 🟢 **Divulgação**: taxa divulgada por cotação = a que de fato é pedida; fatos do ZION, painel/rota de
    receita, `ZSWAP-PUBLIC-SOURCE-OF-TRUTH.md`; site institucional (repo separado) em seguida.
    Founders: texto fala em "rotas EVM onde o mecanismo está ativo" — continua verdadeiro, **não tocado**.
 6. ⚪ **Fora do escopo**: Swap V2, chave Jupiter (dono), consolidação de tesouraria, A33 (intocado), EVM.
