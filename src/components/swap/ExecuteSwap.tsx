@@ -4,6 +4,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { motion } from "framer-motion";
 import { CheckCircle2, X, ArrowRight, AlertTriangle, Loader2, ExternalLink, Globe } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   useAccount, useChainId, usePublicClient, useSendTransaction,
@@ -321,6 +322,16 @@ export default function ExecuteSwap({
   useEffect(() => {
     if (phase === "tx_confirmed") fireSwapStrike();
   }, [phase]);
+
+  // W1 (só UI, nada de envio/confirmação): swap confirmado → os saldos mostrados ficam velhos.
+  // Invalida as leituras (Solana: `saldo-solana`; EVM: `balance` do wagmi) para Swap, Portfólio e
+  // chip relerem uma vez — sem polling.
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (phase !== "tx_confirmed") return;
+    void queryClient.invalidateQueries({ queryKey: ["saldo-solana"] });
+    void queryClient.invalidateQueries({ queryKey: ["balance"] });
+  }, [phase, queryClient]);
 
   // Auto-close 2.5 s after confirmation so the user sees the success state
   // briefly without having to dismiss manually.

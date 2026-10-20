@@ -92,7 +92,7 @@ export default function AccountMenu({ compact = false }: { compact?: boolean }) 
                 <Wallet className="w-4 h-4 text-cyan" />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">{connector?.name ?? t("topbar.accountConnected")}</div>
+                <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">{connector?.name ?? t("topbar.accountConnected")} · EVM</div>
                 <div className="font-mono text-sm text-ink truncate">{shortenAddress(address, 8, 6)}</div>
               </div>
             </div>
@@ -102,6 +102,7 @@ export default function AccountMenu({ compact = false }: { compact?: boolean }) 
               <div className="priv-value font-display font-bold text-base text-ink">
                 {balance ? `${formatAmount(parseFloat(balance.formatted), 4)} ${balance.symbol}` : "—"}
               </div>
+              <div className="mt-2 font-sans text-[10px] leading-snug text-ink-4 normal-case tracking-normal">{t("topbar.balanceSeparate")}</div>
             </div>
           </div>
 

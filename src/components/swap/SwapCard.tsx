@@ -25,7 +25,7 @@ import { assessMevExposure, mevAdvice } from "@/lib/swap/mev-guard";
 import { assessTokenSafety, isNativeToken, nativeSafety, type TokenSafety } from "@/lib/swap/token-safety";
 import type { Token } from "@/lib/tokens";
 import { useQuotes } from "@/lib/hooks/useQuotes";
-import { useTokenBalance, type TokenBalance } from "@/lib/hooks/useTokenBalance";
+import { useTokenBalance, saldoPronto, type TokenBalance } from "@/lib/hooks/useTokenBalance";
 import { useTokenPrices, tokenPriceKey } from "@/lib/hooks/useTokenPrices";
 import type { ListQuote } from "@/lib/api/quote-types";
 
@@ -302,7 +302,8 @@ export default function SwapCard({ lockedMode }: SwapCardProps = {}) {
    * Com `pct = 1` o cálculo devolve o saldo EXATO, dígito por dígito.
    */
   const onPercent = (pct: number) => {
-    if (!fromBalance || fromBalance.isZero || !fromToken) return;
+    // W1: 25%/50%/MAX só com saldo LIDO desta conta — nunca com saldo desconhecido ou desatualizado.
+    if (!saldoPronto(fromBalance) || !fromToken) return;
     const dec = fromToken.decimals;
     // Reserva de gás — só faz sentido no token nativo, que é quem paga a taxa.
     const reserva = fromToken.address === "native" ? BigInt(toBaseUnits("0.001", dec)) : 0n;
@@ -693,13 +694,19 @@ function SideBox({
   balance?: TokenBalance;
   onPercent?: (pct: number) => void;
 }) {
-  const balanceText = balance
-    ? balance.loading
+  const t = useT();
+  // W1: erro é "indisponível" (com "tentar de novo"), desatualizado mostra o último valor marcado —
+  // nunca um zero inventado.
+  const balanceText = !balance
+    ? "—"
+    : balance.status === "LOADING"
       ? "…"
-      : balance.error
-        ? "—"
-        : balance.display
-    : "—";
+      : balance.status === "ERROR"
+        ? t("topbar.balanceUnavailable")
+        : balance.status === "STALE"
+          ? `${balance.display} (${t("topbar.balanceStale")})`
+          : balance.display;
+  const podeTentarDeNovo = balance?.status === "ERROR" || balance?.status === "STALE";
 
   return (
     <div className="thor-token-slot rounded-xl border border-white/5 bg-bg-1/30 p-3.5 sm:p-4 hover:border-white/10 transition-colors">
@@ -710,12 +717,21 @@ function SideBox({
             Balance:{" "}
             <span className={cn(
               "font-bold",
-              balance && !balance.isZero ? "text-ink-2" : "text-ink-3",
+              balance?.status === "READY_POSITIVE" ? "text-ink-2" : balance?.status === "ERROR" ? "text-red/80" : "text-ink-3",
             )}>
               {balanceText}
             </span>
             {balance?.usdValue !== null && balance?.usdValue !== undefined && balance.usdValue > 0 && (
               <span className="text-ink-4"> · {formatUsd(balance.usdValue)}</span>
+            )}
+            {podeTentarDeNovo && (
+              <button
+                type="button"
+                onClick={() => balance?.refetch()}
+                className="ml-1.5 text-cyan/80 hover:text-cyan underline underline-offset-2"
+              >
+                {t("topbar.balanceRetry")}
+              </button>
             )}
           </span>
         )}
@@ -742,7 +758,7 @@ function SideBox({
               zero. Ver o cálculo de `inUsd` acima. */}
           {usdValue == null ? "—" : formatUsd(usdValue)}
         </span>
-        {editable && onPercent && balance && !balance.isZero && (
+        {editable && onPercent && saldoPronto(balance) && (
           <div className="flex gap-1 flex-shrink-0">
             {[
               { label: "25%", pct: 0.25 },

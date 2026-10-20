@@ -89,7 +89,8 @@ export default function ZionExecuteRouter({ card, onClose }: Props) {
         const reserved = applyNativeGasReserve({
           token:            fromToken,
           requestedAmount:  card.from.amount,
-          balanceFormatted: sellBalance.formatted,
+          // W1: saldo desconhecido não vira "0" — sem leitura, a reserva não é aplicada (como antes).
+          balanceFormatted: sellBalance.status === "READY_POSITIVE" ? sellBalance.formatted : "",
           nativePriceUsd:   sellPriceUsd,
         });
         setAmountIn(reserved.amount);
