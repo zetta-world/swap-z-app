@@ -43,7 +43,7 @@ class ErroRpc extends Error {
   constructor(readonly tipo: TipoErroSaldo) { super(tipo); }
 }
 
-async function chamar(method: string, params: unknown[]): Promise<{ result: unknown }> {
+async function chamar(method: string, params: unknown[]): Promise<{ result: unknown; texto: string }> {
   let res: Response;
   try {
     res = await fetch(rpcSolanaServidor(), {
@@ -61,22 +61,26 @@ async function chamar(method: string, params: unknown[]): Promise<{ result: unkn
   if (res.status === 429) throw new ErroRpc("limite");
   if (!res.ok) throw new ErroRpc("rpc");
   let j: { result?: unknown; error?: { code?: number } };
-  try { j = await res.json(); } catch { throw new ErroRpc("resposta"); }
+  let texto: string;
+  try { texto = await res.text(); j = JSON.parse(texto); } catch { throw new ErroRpc("resposta"); }
   if (j.error) {
     const c = j.error.code;
     throw new ErroRpc(c === 403 ? "proibido" : c === 429 ? "limite" : "rpc");
   }
   if (j.result === undefined) throw new ErroRpc("resposta");
-  return { result: j.result };
+  return { result: j.result, texto };
 }
 
 async function lerAgora(owner: string, mint: string): Promise<LeituraSaldo> {
   try {
     if (mint === MINT_NATIVO) {
-      const { result } = await chamar("getBalance", [owner, { commitment: "confirmed" }]);
+      const { result, texto } = await chamar("getBalance", [owner, { commitment: "confirmed" }]);
       const r = result as { context?: { slot?: number }; value?: unknown };
-      if (typeof r?.value !== "number" || !Number.isSafeInteger(r.value) || r.value < 0) throw new ErroRpc("resposta");
-      return { ok: true, owner, mint, raw: String(r.value), decimals: DECIMAIS_SOL, contas: 1, slot: r.context?.slot ?? null };
+      // ⚠️ Lamports são u64: acima de 2^53 (~9 M SOL) o `JSON.parse` arredonda. O inteiro é lido do
+      // TEXTO, dígito por dígito (visto no preview 20/10: carteira com 11.175.975.344.469.535 lamports).
+      const exato = /"value"\s*:\s*(\d+)\s*[,}]/.exec(texto.slice(texto.indexOf('"result"')))?.[1];
+      if (typeof r?.value !== "number" || r.value < 0 || !exato) throw new ErroRpc("resposta");
+      return { ok: true, owner, mint, raw: BigInt(exato).toString(), decimals: DECIMAIS_SOL, contas: 1, slot: r.context?.slot ?? null };
     }
     // Filtro por MINT: pega contas do Token Program E do Token-2022, e todas as contas do mesmo
     // mint (ATA + contas auxiliares) — o saldo é a SOMA, em inteiro.

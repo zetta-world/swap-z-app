@@ -58,6 +58,14 @@ describe("leitura no servidor · valores", () => {
     expect(pedidos[0].headers.has("origin")).toBe(false);
   });
 
+  it("⚠️ SOL acima de 2^53 lamports (visto no preview: 11.175.975.344.469.535) → exato, dígito por dígito", async () => {
+    resposta = () => new Response('{"jsonrpc":"2.0","result":{"context":{"apiVersion":"4.3.2","slot":9},"value":11175975344469535},"id":1}');
+    expect(await lerSaldoSolana(DONO, "native")).toMatchObject({ ok: true, raw: "11175975344469535" });
+    _limparCacheDeSaldos();
+    resposta = () => new Response('{"jsonrpc":"2.0","result":{"context":{"slot":9},"value":18446744073709551615},"id":1}');
+    expect(await lerSaldoSolana(DONO, "native")).toMatchObject({ ok: true, raw: "18446744073709551615" });
+  });
+
   it("SOL zero REAL (a rede respondeu 0) → ok, raw 0", async () => {
     resposta = () => ok({ context: { slot: 1 }, value: 0 });
     expect(await lerSaldoSolana(DONO, "native")).toMatchObject({ ok: true, raw: "0" });
