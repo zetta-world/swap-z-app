@@ -1237,3 +1237,35 @@ payload executável; LI.FI EVM 100. **A nova tentativa disparou em produção** 
 nas respostas, 38 chunks do navegador sem chave/host Jupiter, 0 source map. Smoke de rotas 25/25. Rollback:
 `dpl_AcHcoSLXYEeWB1qvMQE9NXqpimrn` (`2a06326`). **Pendente:** primeiro swap real assinado (sugerido: o dono, valor
 pequeno, conferindo a taxa na conta).
+
+## L-063 — W1: carteiras, saldos e mobile (20/10/2026)
+
+**Incidente (dono, Android + Phantom):** `Balance: —` no Swap e duas leituras indisponíveis no Portfólio com a carteira
+conectada (Phantom: ≈0,263 SOL / ≈11,501 USDC); sem como adicionar a 2ª carteira no celular. Sem perda de fundos.
+
+**Causa raiz comprovada:** o navegador lia saldo no RPC público (`NEXT_PUBLIC_SOLANA_RPC` não existe → `clusterApiUrl`),
+que responde **403 a toda requisição com `Origin`** (medido: sem `Origin` 200; com `Origin` de qualquer site 403;
+User-Agent/Referer irrelevantes; CORS 200). O erro ainda era modelado como `isZero: true`. Botão "+" era
+`hidden sm:inline-flex`. Valores reais conferidos pelo servidor: `H7zw…` 0,25190507 SOL e 11,501 USDC.
+
+**Código (`de77dae` + `70ba76a`, branch `fix/w1-carteiras-saldos`):** `/api/solana/saldo` (leitura restrita no RPC do
+servidor; só `getBalance`/`getTokenAccountsByOwner` por mint; validação, rate limit por IP + global, timeout, cache 10 s
++ dedup; erro tipado, nunca 0; u64 exato); `useTokenBalance` com TanStack (chave dono+mint compartilhada; 6 estados;
+resposta de outro dono descartada; retry só transitório; relê ao reconectar/voltar/confirmar swap; sem polling); Swap
+"indisponível · Tentar de novo"/"desatualizado", MAX só com saldo lido; Portfólio/ZION tratam erro como indisponível;
+chip Solana na mesma leitura; "+" visível no celular; menus "Phantom · Solana"/"· EVM". 1 efeito de UI no `ExecuteSwap`
+(invalida saldos em `tx_confirmed`) — envio/confirmação intocados. Plano: `docs/PLANO-W1-CARTEIRAS-SALDOS.md`.
+
+**Testes:** 3 arquivos novos (56 testes) + A32 adaptado; no código de produção os 3 falham; 7 quebras deliberadas
+detectadas. Gates no SHA exato `70ba76a` (tree `955a37a9cb82abd025685f24af57262ebf162387`): `npm ci` 0 · lint 0/144 ·
+type-check 0 · suíte 335/4922 ×2 · build 0 · 0 credencial no bundle · **audit-gate R-03 FALHOU** (alertas novos de
+terceiros publicados em 19–20/10: `follow-redirects` 1.16.0 via `wagmi→@wagmi/connectors→@base-org/account→
+@coinbase/cdp-sdk→axios`, e `vite` ≤8.1.5; lockfile idêntico ao da `main` — a `main` falha igual no próximo CI). CI
+39502270015: lint/type-check/testes OK, falha só no passo do audit.
+
+**Preview `swap-z-o4xy0g5z2-…` (só leitura, nada assinado):** 7/7 saldos iguais à rede; QA headless 360/1440 com Phantom
+simulada só-conexão: PASS (ver evidência). **Não feito:** Android/Phantom real (roteiro manual no plano).
+
+**⚠️ W3 (achado, não corrigido):** `ExecuteSwap` envia e confirma pela conexão do navegador no RPC público → 403;
+swap Solana fora do Jito provavelmente falha no envio hoje (sem perda de fundos). **W2:** descoberta de todos os tokens.
+Produção: não autorizada. Rollback: produção segue em `986ae75`.

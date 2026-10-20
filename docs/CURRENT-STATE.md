@@ -12,6 +12,12 @@
 
 ---
 
+## Atualização L-063 — W1 carteiras/saldos (20/10/2026)
+
+Produção segue em `986ae75` (saldos Solana quebrados no navegador: RPC público dá 403 a navegador). Correção em
+`fix/w1-carteiras-saldos@70ba76a`, preview conferido; release bloqueado pelo audit-gate (alertas novos de terceiros) e
+pelo QA Android pendente. W3 (envio de swap Solana pelo mesmo RPC) é o próximo risco.
+
 ## Atualização L-062B — Jupiter Swap V2 `/build` (16/10/2026)
 
 Em produção desde 16/10 (`main` `fd4172f`, código `d86c963`, `dpl_HcXiT1J7SwzXYNS87oRgq33UQeRc` promovido): Jupiter
