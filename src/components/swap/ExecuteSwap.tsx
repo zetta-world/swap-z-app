@@ -13,10 +13,8 @@ import {
 import { useWallet } from "@solana/wallet-adapter-react";
 import { VersionedTransaction } from "@solana/web3.js";
 import { verifyJupiterTransaction, guardMode, shouldBlock } from "@/lib/swap/solana-guard";
-import { assessMevExposure } from "@/lib/swap/mev-guard";
 import { assessImpact } from "@/lib/swap/impact-guard";
 import { impactoDaCotacao } from "@/lib/swap/impacto";
-import { decideTip, sendViaJito, sendNarrative, type JitoSendResult } from "@/lib/swap/jito";
 import { erc20Abi, type Hex } from "viem";
 import { findToken, type Token } from "@/lib/tokens";
 import { useTokenPrices, tokenPriceKey } from "@/lib/hooks/useTokenPrices";
@@ -539,26 +537,9 @@ export default function ExecuteSwap({
         // Antes, o histórico só ganhava a linha DEPOIS de `sendRawTransaction` voltar — e o envio pelo
         // RPC público do navegador dava 403 (o dono assinou, viu "403" e não ficou rastro nem aqui nem
         // na Phantom). O fluxo inteiro mora em `lib/solana/executar-swap.ts` (testado ponta a ponta).
-        // ─── ENVIO PRIVADO (auditoria 01/08) ───────────────────────────
-        //
-        // Solana é a ÚNICA rede em que a proteção contra reordenação depende de
-        // nós: aqui quem transmite somos nós, não a carteira do usuário. O
-        // `mev-guard` deixou essa dívida registrada; isto a paga.
-        //
-        // A gorjeta sai de uma fração da EXPOSIÇÃO calculada (notional ×
-        // slippage) e nunca pode custar mais que o roubo que evita — pagar
-        // $0,30 para proteger $0,50 seria mudar o prejuízo de lugar.
-        //
-        // FALLBACK OBRIGATÓRIO: se o block engine falhar, segue pelo RPC
-        // normal. Um swap que não executa é pior que um swap sem bundle — e a
-        // tela dirá qual dos dois aconteceu, em vez de exibir escudo que não
-        // houve.
-        // W3: Jito continua DESLIGADO por padrão (`NEXT_PUBLIC_SOLANA_JITO`). Ligado, recebe a MESMA
-        // transação assinada; sem aceite, o servidor transmite a MESMA (a rede aceita uma vez só).
-        const exposureUsd = assessMevExposure({
-          chain: "solana", notionalUsd: notionalUsd ?? null, slippageBps,
-        }).stealableUsd;
-        const tip = decideTip(exposureUsd, solUsd);
+        // ⚠️ W3-B: o envio é SÓ pelo servidor (`executarSwapSolana`). O caminho Jito saía do navegador sem
+        // a validação do vínculo cotação↔taxa — e `NEXT_PUBLIC_SOLANA_JITO` está "on" nos bundles servidos.
+        // (A proteção MEV via Jito volta quando o SERVIDOR submeter ao Jito depois de validar — ver PLANO-W3.)
         const capturada: { sig: string | null } = { sig: null };
         const r = await executarSwapSolana({
           owner: sol.publicKey.toBase58(),
@@ -580,13 +561,6 @@ export default function ExecuteSwap({
             if (!sol.signTransaction) throw new Error(tImp("swap.solNoSign"));
             return sol.signTransaction(t);
           },
-          enviarJito: tip.useJito
-            ? async (b64) => {
-                const sent: JitoSendResult = await sendViaJito(b64);
-                setSendNote(sendNarrative(sent, tip.tipLamports));
-                return sent.signature;
-              }
-            : undefined,
           ui: { fase: setPhase, erro: setError, nota: setSendNote, assinatura: (x) => { capturada.sig = x; setSolSig(x); } },
           texto: (k) => tImp(`swap.${k}`),
         });

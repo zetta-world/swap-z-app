@@ -88,11 +88,23 @@ const QUOTE_DAILY_MAX = envNumber(process.env.QUOTE_DAILY_MAX, 25_000, { positiv
  * O plano de quem está cotando. Sem sessão é `free` — que é o plano de quem
  * não assinou, e portanto a taxa mais alta. Nunca lança: uma falha de
  * resolução vira `free`, nunca "sem taxa".
+ *
+ * ⚠️⚠️ W3-A (2ª auditoria, 21/10): A TARIFA É DE QUEM PAGA. Antes o plano vinha da carteira da
+ * SESSÃO mesmo quando o pagador (`taker`) era outra — sessão de A (Pilot) baratiava a troca de B.
+ * Agora o plano da sessão só vale quando a sessão É o pagador (EVM sem distinção de caixa; Solana
+ * exato). Pagador diferente → Free até ESSA carteira se autenticar. Sem pagador (lista indicativa,
+ * nada a assinar) a tela mostra o plano da sessão.
+ * Consequência conhecida: quem assina o plano com uma carteira e opera com outra (ex.: sessão
+ * Solana, swap EVM) paga Free na outra até autenticá-la — não existe vínculo entre carteiras.
  */
-async function tierDoCotante(): Promise<Tier> {
+export function mesmaCarteira(a: string, b: string): boolean {
+  return a.startsWith("0x") || b.startsWith("0x") ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+async function tierDoCotante(pagador: string | undefined): Promise<Tier> {
   try {
     const s = await getSession();
     if (!s) return "free";
+    if (pagador && !mesmaCarteira(s.sub, pagador)) return "free";
     const { tier } = await getTierForWallet(s.sub, s.chain);
     return tier;
   } catch { return "free"; }
@@ -335,7 +347,7 @@ export async function GET(req: NextRequest) {
    * "a taxa é zero neste caso".
    */
   const familiaCadeia = fromChain === "solana" ? "solana" : "evm";
-  const planoDoCotante = await tierDoCotante();
+  const planoDoCotante = await tierDoCotante(taker);   // W3-A: o plano é o do PAGADOR
   const taxa = {
     tier: planoDoCotante,
     bps: bpsEfetivos(planoDoCotante, familiaCadeia),

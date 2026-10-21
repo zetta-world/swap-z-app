@@ -1,7 +1,7 @@
 # PLANO — W3: transmissão, confirmação e histórico de swaps Solana (21/10/2026)
 
-Status: 🟡 PARCIAL — correções da revisão independente (21/10) aplicadas; aguardando 2ª auditoria antes de qualquer pedido de
-teste com fundos; bloqueio de release: audit-gate R-03 (rodada de dependências separada); produção NÃO autorizada
+Status: 🟡 PARCIAL — 2ª auditoria (NO-GO) tratada: W3-A e W3-B corrigidos; W3-C e W3-D só desenhados
+(`docs/PROPOSTA-W3-TRAVA-E-RECONCILIACAO.md`); audit-gate bloqueado; produção e teste com fundos NÃO autorizados
 
 ## Incidente
 
@@ -97,3 +97,19 @@ só programas permitidos, **vínculo HMAC válido e não expirado com hash idên
 Não é proxy (método e RPC fixos). Não custodial (sem chave; bytes intactos). Abuso residual: alguém com uma cotação
 legítima pode transmitir a PRÓPRIA transação assinada — que é exatamente o uso previsto; não há como transmitir transação de
 terceiros (exige assinatura do pagador) nem transação não cotada pela Z-SWAP (exige vínculo).
+
+## 2ª auditoria independente (21/10) — NO-GO tratado
+
+- **W3-A (bloqueador) — tarifa da carteira errada**: reproduzido (sessão de A Pilot + taker B → B pagava 10 bps).
+  Corrigido: o plano da sessão só vale quando a sessão É o pagador (`mesmaCarteira`: EVM sem caixa, Solana exato); pagador
+  diferente → Free. Vale para Jupiter, 0x e LI.FI (a taxa é calculada uma vez, para o `taker`). Lista sem taker mostra o
+  plano da sessão (nada a assinar). Efeito: quem assina o plano numa carteira e opera com outra paga Free nela até
+  autenticá-la — não há vínculo entre carteiras (Founder Pass continua por carteira, sem outra mudança). Os demais usos de
+  plano (ZION, pools, bancada) são acesso a recurso e seguem pela sessão.
+- **W3-B (bloqueador) — Jito contornava o vínculo**: configuração REAL medida nos bundles servidos (sem decriptar nada):
+  `NEXT_PUBLIC_SOLANA_JITO` está **"on" em Preview e Production** — o ramo "desligado" foi eliminado na compilação; em
+  produção (`986ae75`) swaps com exposição ≥ $25 tentam o block engine direto do navegador. Corrigido no código: o fluxo tem
+  UM caminho de envio (servidor, com vínculo); o caminho Jito saiu do `ExecuteSwap`/`executarSwapSolana` e testes travam a
+  volta de envio alternativo. Ação do dono recomendada: `NEXT_PUBLIC_SOLANA_JITO=off` na Vercel (não alterado aqui).
+- **W3-C**: reproduzido entre dois navegadores; trava durável desenhada (migration proposta, não aplicada).
+- **W3-D**: livro aceita conteúdo financeiro declarado; reconciliação por assinatura e classes de verificação propostas.

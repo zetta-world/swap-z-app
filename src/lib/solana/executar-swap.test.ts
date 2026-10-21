@@ -183,15 +183,6 @@ describe("⚠️ anti-duplicação", () => {
     expect((await executarSwapSolana(montar({ historico: aparelho2.api }).d)).resultado).toBe("confirmada");
   });
 
-  it("Jito aceita → servidor NÃO é chamado; Jito falha → servidor transmite a MESMA transação (mesma assinatura)", async () => {
-    const a = montar({ enviarJito: async (b64) => assinaturaDe(VersionedTransaction.deserialize(Buffer.from(b64, "base64"))) });
-    await executarSwapSolana(a.d);
-    expect(a.transmitir).not.toHaveBeenCalled();
-    const b = montar({ enviarJito: async () => { throw new Error("jito down"); } });
-    await executarSwapSolana(b.d);
-    expect(b.transmitir).toHaveBeenCalledTimes(1);
-    expect(b.transmitir.mock.calls[0][2]).toBe(b.h.get()[0].txHash);
-  });
 });
 
 describe("Phantom: compatibilidade e não-custódia", () => {
@@ -284,5 +275,47 @@ describe("reconciliação depois de recarregar a página", () => {
   it("'solicitada' abandonada há > 10 min (nunca assinada) → cancelada; registros antigos sem etapa → intocados", async () => {
     expect(await reconciliarUma({ ...base, ts: 0, status: "pending", etapa: "solicitada" } as TxHistoryEntry, 11 * 60_000)).toMatchObject({ etapa: "cancelada" });
     expect(await reconciliarUma({ ...base, ts: 0, status: "pending" } as TxHistoryEntry)).toBeNull();
+  });
+});
+
+/**
+ * ⚠️⚠️ W3-B (2ª auditoria, 21/10): NENHUM CAMINHO DE ENVIO CONTORNA O SERVIDOR.
+ * `NEXT_PUBLIC_SOLANA_JITO` está "on" nos bundles servidos (Preview e Production); o caminho Jito
+ * mandava a transação do navegador ao block engine sem vínculo/taxa/programas. Estas travas falham se
+ * alguém religar um envio alternativo sem paridade com `/api/solana/transmitir`.
+ */
+describe("⚠️⚠️ W3-B: um único caminho de envio — o servidor com vínculo", () => {
+  it("mesmo com NEXT_PUBLIC_SOLANA_JITO=on, o swap é transmitido SÓ por `transmitir`, com o vínculo da cotação", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SOLANA_JITO", "on");
+    const fetchEspiao = vi.fn();
+    vi.stubGlobal("fetch", fetchEspiao);
+    const { d, transmitir } = montar({ vinculo: "V" });
+    await executarSwapSolana(d);
+    expect(transmitir).toHaveBeenCalledTimes(1);
+    expect(transmitir.mock.calls[0][3]).toBe("V");
+    expect(fetchEspiao).not.toHaveBeenCalled();   // nenhuma chamada de rede fora do transmissor
+    vi.unstubAllEnvs(); vi.unstubAllGlobals();
+  });
+
+  it("o fluxo não tem dependência de envio alternativo (sem `enviarJito` nas dependências)", async () => {
+    const { readFileSync } = await import("node:fs");
+    // Remove só comentários de bloco e LINHAS de comentário (um `//` dentro de URL não é comentário).
+    const fluxo = readFileSync("src/lib/solana/executar-swap.ts", "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(fluxo).not.toMatch(/enviarJito|sendViaJito|block-engine|sendRawTransaction|sendTransaction\(/);
+    expect([...fluxo.matchAll(/await transmitir\(/g)]).toHaveLength(1);
+  });
+
+  it("nenhum código do navegador chama a Jito ou envia transação Solana direto à rede", async () => {
+    const { readFileSync, readdirSync, statSync } = await import("node:fs");
+    const path = await import("node:path");
+    const fontes = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
+      const p = path.join(dir, n);
+      return statSync(p).isDirectory() ? fontes(p) : /\.(ts|tsx)$/.test(n) && !/\.test\./.test(n) ? [p] : [];
+    });
+    const ofensores = fontes("src").filter((f) => !f.endsWith(path.join("swap", "jito.ts"))).filter((f) => {
+      const t = readFileSync(f, "utf8");
+      return /sendViaJito\(|\.sendRawTransaction\(|\.sendTransaction\(\s*(signed|tx|transaction)\b/.test(t) && /"use client"/.test(t);
+    });
+    expect(ofensores).toEqual([]);
   });
 });

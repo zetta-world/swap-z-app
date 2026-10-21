@@ -9,9 +9,15 @@
  *   1. bloqueia se a carteira tem tentativa que ainda pode pousar (anti-duplicação)
  *   2. registra `solicitada` (antes de pedir assinatura)
  *   3. carteira assina (recusou → `cancelada`) → `assinada` + assinatura pública
- *   4. envia (Jito opcional → fallback no servidor com a MESMA transação)
+ *   4. envia PELO SERVIDOR (único caminho — ver W3-B abaixo)
  *        nao_enviada → `envio_falhou` · incerta → `envio_incerto` · enviada → `pendente`
  *   5. acompanha o status on-chain: confirmada (err nulo) · falhou_na_rede · expirada · em aberto
+ *
+ * ⚠️⚠️ W3-B (2ª auditoria, 21/10): UM ÚNICO CAMINHO DE ENVIO. O caminho Jito mandava a transação do
+ * NAVEGADOR direto ao block engine, sem passar pela validação do servidor (assinatura, programas,
+ * VÍNCULO com a cotação/taxa). E ele estava LIGADO: `NEXT_PUBLIC_SOLANA_JITO` é "on" em Preview e
+ * Production (o ramo "desligado" foi eliminado na compilação dos bundles servidos). Foi removido do
+ * fluxo; religar exige paridade — o servidor validar e então submeter ao Jito — e um teste trava isso.
  *
  * NÃO-CUSTODIAL: só a carteira assina (`assinar`). Nada aqui toca chave; a transação assinada bruta
  * vai ao servidor para transmissão e NUNCA ao histórico.
@@ -41,8 +47,6 @@ export interface DepsSwapSolana {
   };
   /** A CARTEIRA assina — única fonte de assinatura. */
   assinar: (tx: VersionedTransaction) => Promise<VersionedTransaction>;
-  /** Jito opcional (desligado por padrão). Devolve a assinatura aceita, ou null. */
-  enviarJito?: (b64: string) => Promise<string | null>;
   transmitir?: typeof transmitirAssinada;
   acompanhar?: (sig: string, lvbh: number) => ReturnType<typeof acompanharAteDesfecho>;
   ui: {
@@ -86,13 +90,8 @@ export async function executarSwapSolana(d: DepsSwapSolana): Promise<{ historyId
   marcar("assinada", { txHash: sig });
   d.ui.assinatura(sig);
 
-  // 4. Envio: Jito (se ligado) e, sem aceite, o servidor com a MESMA transação (idempotente).
-  let envio: Envio | null = null;
-  if (d.enviarJito) {
-    const aceita = await d.enviarJito(b64).catch(() => null);
-    if (aceita === sig) envio = { estado: "enviada", assinatura: sig };
-  }
-  if (!envio) envio = await transmitir(b64, d.owner, sig, d.vinculo);
+  // 4. Envio: SÓ pelo servidor (valida assinatura, programas e o vínculo cotação↔taxa).
+  const envio: Envio = await transmitir(b64, d.owner, sig, d.vinculo);
 
   if (envio.estado === "nao_enviada") {
     marcar("envio_falhou", { motivo: envio.motivo.slice(0, 120) });
