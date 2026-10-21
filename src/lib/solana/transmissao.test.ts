@@ -17,7 +17,7 @@ vi.mock("@/lib/rate-limit", () => ({
   getClientId: () => "ip",
 }));
 
-import { consultarStatus, transmitir, validarTransacaoAssinada, assinaturaDe } from "@/lib/solana/transmissao";
+import { consultarStatus, transmitir, validarTransacaoAssinada, assinaturaDe, base58 } from "@/lib/solana/transmissao";
 import { POST } from "@/app/api/solana/transmitir/route";
 import { GET } from "@/app/api/solana/status/route";
 
@@ -152,7 +152,7 @@ describe("envio — 3 desfechos, e HTTP não é sinônimo de 'não enviou'", () 
 });
 
 describe("status on-chain — confirmada só com err nulo", () => {
-  const SIG = "5".repeat(87);
+  const SIG = base58(new Uint8Array(64).fill(7));
   const status = (v: unknown) => (c: Corpo) => c.method === "getSignatureStatuses" ? ok({ context: { slot: 1 }, value: [v] }) : ok(1000);
 
   it("confirmed/finalized com err nulo → confirmada", async () => {
@@ -248,10 +248,12 @@ describe("sincronização de operações (volume/receita) — só confirmada, s�
 });
 
 describe("rota /api/solana/status", () => {
-  it("assinatura inválida → 400; válida → estado", async () => {
+  it("assinatura inválida → 400 (inclusive base58 que não tem 64 bytes — achado no preview); válida → estado", async () => {
     expect((await GET(new NextRequest("http://localhost/api/solana/status?sig=abc"))).status).toBe(400);
+    expect((await GET(new NextRequest(`http://localhost/api/solana/status?sig=${"1".repeat(30)}${"2".repeat(57)}`))).status).toBe(400);
+    expect(pedidos).toHaveLength(0);
     rpc = (c) => c.method === "getSignatureStatuses" ? ok({ value: [null] }) : ok(1000);
-    const r = await GET(new NextRequest(`http://localhost/api/solana/status?sig=${"5".repeat(87)}&lvbh=999`));
+    const r = await GET(new NextRequest(`http://localhost/api/solana/status?sig=${base58(new Uint8Array(64).fill(7))}&lvbh=999`));
     expect(await r.json()).toMatchObject({ ok: true, estado: "expirada" });
   });
 });

@@ -25,7 +25,7 @@ import { createPublicKey, verify } from "node:crypto";
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { rpcSolanaServidor } from "@/lib/solana/rpc-servidor";
 import { JUPITER_ALLOWED_PROGRAMS } from "@/lib/swap/solana-guard";
-import { assinaturaDe, base58 } from "@/lib/solana/assinatura";
+import { assinaturaDe, base58, deBase58 } from "@/lib/solana/assinatura";
 
 export const MAX_BYTES_TX = 1232;
 const JUPITER_V6 = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
@@ -43,8 +43,9 @@ const SPKI_ED25519 = Buffer.from("302a300506032b6570032100", "hex");
 
 export { base58, assinaturaDe };
 
+/** Assinatura Solana bem formada: base58 que decodifica em EXATAMENTE 64 bytes. */
 export const assinaturaValidaFormato = (s: unknown): s is string =>
-  typeof s === "string" && /^[1-9A-HJ-NP-Za-km-z]{64,90}$/.test(s);
+  typeof s === "string" && /^[1-9A-HJ-NP-Za-km-z]{64,90}$/.test(s) && deBase58(s)?.length === 64;
 
 export type Validacao =
   | { ok: true; tx: VersionedTransaction; bytes: Buffer; assinatura: string }
