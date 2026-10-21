@@ -21,12 +21,12 @@ export type Desfecho =
   | { estado: "indefinido"; motivo: string };   // ainda pendente/desconhecido quando o acompanhamento acabou
 
 /** Envia a transação assinada. `assinatura` é a derivada localmente (a mesma que a rede usará). */
-export async function transmitirAssinada(txBase64: string, owner: string, assinatura: string, vinculo?: string): Promise<Envio> {
+export async function transmitirAssinada(txBase64: string, owner: string, assinatura: string, vinculo?: string, mensagemOriginal?: string): Promise<Envio> {
   let res: Response;
   try {
     res = await fetch("/api/solana/transmitir", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ tx: txBase64, owner, vinculo }), cache: "no-store",
+      body: JSON.stringify({ tx: txBase64, owner, vinculo, mensagemOriginal }), cache: "no-store",
     });
   } catch {
     // Não sabemos se o servidor chegou a transmitir.

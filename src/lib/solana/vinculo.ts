@@ -7,21 +7,23 @@
  *   Na cotação firme (`/api/quote`), o servidor monta a transação e emite um token HMAC com:
  *     h = sha256(mensagem que ELE montou) · o = pagador · b = bps de taxa que ELE decidiu ·
  *     f = conta de taxa (ou null quando o fail-open legítimo desligou a taxa) · x = expiração.
- *   Na transmissão, a mensagem ASSINADA tem de ter exatamente aquele hash, o pagador tem de bater e o
- *   token tem de ser válido e não expirado. Qualquer adulteração — tirar a taxa, mudar a conta de
+ *   Na transmissão, exige-se aquele hash ou a extensão Lighthouse restrita descrita abaixo; o pagador e o
+ *   token têm de ser válidos e o token não expirado. Qualquer adulteração — tirar a taxa, mudar a conta de
  *   taxa, outra rota, outro valor — muda o hash e é recusada ANTES do RPC.
  *
  * O navegador não forja: não tem o segredo. Nada do token vem de parâmetro declarado pelo navegador.
  *
- * ⚠️ LIMITE CONHECIDO: se a carteira alterar a mensagem ao assinar (algumas inserem asserções), o hash
- * não bate e o envio é recusado sem transmitir — o mesmo resultado que a allowlist de programas já dava.
- * Liberar exige evidência real de qual alteração a carteira faz.
+ * Compatibilidade Lighthouse: o hash original permanece obrigatório. A carteira pode acrescentar
+ * somente um sufixo de asserções reconhecidas, mediante comparação restrita com a mensagem original
+ * autenticada pelo mesmo HMAC. Nenhum campo financeiro ou privilégio é excluído da comparação.
  *
  * Segredo: `TX_VINCULO_SECRET`, ou derivado de `AUTH_JWT_SECRET` com separação de domínio. Sem nenhum,
  * nada é emitido e a transmissão recusa (falha fechada).
  */
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import type { VersionedTransaction } from "@solana/web3.js";
+import { VersionedMessage, type VersionedTransaction } from "@solana/web3.js";
+
+import { extensaoLighthouse } from "@/lib/solana/lighthouse";
 
 const VALIDADE_MS = 3 * 60_000;   // > validade do blockhash (~60–90 s) com folga; nunca permanente
 
@@ -66,8 +68,8 @@ export function emitirVinculo(a: { mensagem: Uint8Array; owner: string; bps: num
 
 export type ConferenciaVinculo = { ok: true; dados: DadosVinculo } | { ok: false; motivo: string };
 
-/** A transação assinada é EXATAMENTE a que o servidor cotou para este pagador, e o token é válido? */
-export function conferirVinculo(token: unknown, tx: VersionedTransaction, agora = Date.now()): ConferenciaVinculo {
+/** Authenticate the quoted message, then require exact bytes or a restricted assertion suffix. */
+export function conferirVinculo(token: unknown, tx: VersionedTransaction, agora = Date.now(), mensagemOriginal?: unknown): ConferenciaVinculo {
   const k = chave();
   if (!k) return { ok: false, motivo: "vinculo_indisponivel" };
   if (typeof token !== "string" || token.length > 1024) return { ok: false, motivo: "vinculo_ausente" };
@@ -86,7 +88,19 @@ export function conferirVinculo(token: unknown, tx: VersionedTransaction, agora 
   }
   if (agora > d.x) return { ok: false, motivo: "vinculo_expirado" };
   if (tx.message.staticAccountKeys[0]?.toBase58() !== d.o) return { ok: false, motivo: "vinculo_pagador" };
-  if (hashDaMensagem(tx.message.serialize()) !== d.h) return { ok: false, motivo: "vinculo_mensagem_diferente" };
+  if (hashDaMensagem(tx.message.serialize()) !== d.h) {
+    // The browser supplies evidence, not authority: authenticate the original bytes
+    // with the EXISTING HMAC before considering the narrowly allowed extension.
+    try {
+      if (typeof mensagemOriginal !== "string" || mensagemOriginal.length > 1644) throw new Error("original");
+      const bytes = Buffer.from(mensagemOriginal, "base64");
+      if (bytes.toString("base64") !== mensagemOriginal || hashDaMensagem(bytes) !== d.h) throw new Error("hash");
+      const original = VersionedMessage.deserialize(bytes);
+      if (original.version !== 0 || tx.message.version !== 0
+          || !Buffer.from(original.serialize()).equals(bytes)
+          || !extensaoLighthouse(original, tx.message)) throw new Error("extension");
+    } catch { return { ok: false, motivo: "vinculo_mensagem_diferente" }; }
+  }
   if ((d.b > 0) !== (d.f !== null)) return { ok: false, motivo: "vinculo_taxa_inconsistente" };
   return { ok: true, dados: d };
 }

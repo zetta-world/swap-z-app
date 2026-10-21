@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
 import { transmitir, validarTransacaoAssinada } from "@/lib/solana/transmissao";
-import { conferirVinculo } from "@/lib/solana/vinculo";
+import { LIGHTHOUSE } from "@/lib/solana/lighthouse";
+import { hashDaMensagem, conferirVinculo } from "@/lib/solana/vinculo";
 import { marcarTentativa, reservarTransmissao } from "@/lib/solana/em-voo";
 
 export const runtime = "nodejs";
@@ -31,7 +32,7 @@ const ANTES = { fase: "antes_do_rpc" } as const;
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const tamanho = Number(req.headers.get("content-length") ?? "0");
   if (tamanho > 4096) return NextResponse.json({ ok: false, ...ANTES, erro: "grande_demais" }, { status: 413, headers: SEM_CACHE });
-  let corpo: { tx?: unknown; owner?: unknown; vinculo?: unknown };
+  let corpo: { tx?: unknown; owner?: unknown; vinculo?: unknown; mensagemOriginal?: unknown };
   try {
     const texto = await req.text();
     if (texto.length > 4096) return NextResponse.json({ ok: false, ...ANTES, erro: "grande_demais" }, { status: 413, headers: SEM_CACHE });
@@ -52,10 +53,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ok: false, ...ANTES, erro: v.motivo }, { status: 400, headers: SEM_CACHE });
   }
   // W3: só a transação que a Z-SWAP cotou (hash, pagador, taxa decidida no servidor) — ver `vinculo.ts`.
-  const vin = conferirVinculo(corpo.vinculo, v.tx);
+  const vin = conferirVinculo(corpo.vinculo, v.tx, Date.now(), corpo.mensagemOriginal);
   if (!vin.ok) {
     console.warn("[sol-tx]", JSON.stringify({ recusada: vin.motivo }));
     return NextResponse.json({ ok: false, ...ANTES, erro: vin.motivo }, { status: 400, headers: SEM_CACHE });
+  }
+  const assertions = v.tx.message.compiledInstructions.filter(ix =>
+    v.tx.message.staticAccountKeys[ix.programIdIndex]?.toBase58() === LIGHTHOUSE);
+  if (assertions.length) {
+    // Only after HMAC + signatures: structural evidence, never signed bytes or token.
+    console.info("[sol-tx-lighthouse]", JSON.stringify({
+      origem: hashDaMensagem(v.tx.message.serialize()) === vin.dados.h ? "na_cotacao" : "apos_cotacao",
+      variantes: assertions.map(ix => ix.data[0]),
+    }));
   }
   /**
    * ⚠️ W3-C: reserva DURÁVEL por carteira antes do RPC. Só chega aqui quem provou a assinatura da

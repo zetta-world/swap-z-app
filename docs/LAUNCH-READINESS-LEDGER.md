@@ -1349,3 +1349,7 @@ controlados (homologação privada, sem lançamento público). Operação financ
 **Evidência local:** suíte 341/5059 · tipos · lint 0 erros · build · audit-gate OK · SQL T24/T24b/T25 + regressão de ACL
 02/14/17 em Postgres 17.6.1.127 descartável (cadeia 0001→0078, reaplicação idempotente) · E2E W4 12/12 · 0 Jito e 0
 credencial no bundle. Fee accounts (`En1J8…`, `7PPDQ…`): 1 transação cada (criação, 16/10) — nenhum swap com taxa pousou.
+
+## PHANTOM-LIGHTHOUSE-20261021 — correção restrita
+CURRENT_DEVELOPMENT. PHASE_BASE_SHA=bc6f67acbe6f3f0391ea998cb9a645a15fa7659b.
+Missão do dono de21/10: compatibilidade Phantom/Lighthouse preservando W3/W3-C/W3-D/W4. Branch codex/phantom-lighthouse-20261021 isolada; plano PLANO-PHANTOM-LIGHTHOUSE-20261021.md. PR/CI/Preview autorizados; produção depende de aprovação final. Nenhum fundo movimentado.
