@@ -12,6 +12,40 @@ import {
 } from "@solana/web3.js";
 
 const s = vi.hoisted(() => ({ rl: true }));
+/**
+ * W3-C: banco falso com a MESMA semântica de `solana_tx_reservar`/`solana_tx_marcar` (0077). A
+ * atomicidade real (advisory lock + índice único) é provada contra PostgreSQL em
+ * `supabase/tests/24_solana_tx_em_voo.sql` — aqui se prova o comportamento da ROTA.
+ */
+const banco = vi.hoisted(() => {
+  type Linha = { carteira: string; assinatura: string; lvbh: number; estado: string; desfecho: string | null };
+  const b = { linhas: [] as Linha[], fora: false, chamadas: [] as string[] };
+  const rpc = async (nome: string, a: Record<string, unknown>) => {
+    b.chamadas.push(nome);
+    if (b.fora) return { data: null, error: { message: "banco fora" } };
+    if (nome === "solana_tx_reservar") {
+      const propria = b.linhas.find((l) => l.assinatura === a.p_assinatura);
+      if (propria) {
+        if (propria.estado !== "resolvida") return { data: { resultado: "retransmissao" }, error: null };
+        if (propria.desfecho !== "nao_enviada") return { data: { resultado: "ja_resolvida", desfecho: propria.desfecho }, error: null };
+      }
+      const aberta = b.linhas.find((l) => l.carteira === a.p_carteira && l.estado !== "resolvida" && l.assinatura !== a.p_assinatura);
+      if (aberta) return { data: { resultado: "bloqueada", assinatura: aberta.assinatura, valido_ate_bloco: aberta.lvbh }, error: null };
+      if (propria) { propria.estado = "reservada"; propria.desfecho = null; }
+      else b.linhas.push({ carteira: String(a.p_carteira), assinatura: String(a.p_assinatura), lvbh: Number(a.p_valido_ate_bloco), estado: "reservada", desfecho: null });
+      return { data: { resultado: "reservada" }, error: null };
+    }
+    if (nome === "solana_tx_marcar") {
+      const l = b.linhas.find((x) => x.assinatura === a.p_assinatura && x.estado !== "resolvida");
+      if (!l) return { data: false, error: null };
+      l.estado = String(a.p_estado); l.desfecho = (a.p_desfecho as string | null) ?? null;
+      return { data: true, error: null };
+    }
+    return { data: null, error: { message: "rpc desconhecida" } };
+  };
+  return { b, rpc };
+});
+vi.mock("@/lib/supabase/server", () => ({ getSupabaseAdmin: () => ({ rpc: banco.rpc }) }));
 vi.mock("@/lib/rate-limit", () => ({
   rateLimitDurable: async () => ({ ok: s.rl, retryAfter: 30, remaining: 0, resetAt: 0 }),
   getClientId: () => "ip",
@@ -43,7 +77,8 @@ function txSwap(opts: { pagador?: Keypair; assinante?: Keypair; extra?: Transact
 const b64 = (tx: VersionedTransaction) => Buffer.from(tx.serialize()).toString("base64");
 /** O vínculo que o SERVIDOR emitiria na cotação para a mensagem desta transação. */
 const vin = (tx: VersionedTransaction, bps = 100, f: string | null = "En1J8udXpzyAwuziqdpWWHvHV7p95RG1b2iAgpcvxNuo") =>
-  emitirVinculo({ mensagem: tx.message.serialize(), owner: tx.message.staticAccountKeys[0].toBase58(), bps, feeAccount: f })!;
+  emitirVinculo({ mensagem: tx.message.serialize(), owner: tx.message.staticAccountKeys[0].toBase58(), bps, feeAccount: f, validoAteBloco: LVBH })!;
+const LVBH = 300_000_000;
 
 type Corpo = { method: string; params: unknown[] };
 let pedidos: { url: string; headers: Headers; corpo: Corpo }[] = [];
@@ -52,6 +87,7 @@ const ok = (result: unknown) => Response.json({ jsonrpc: "2.0", id: 1, result })
 
 beforeEach(() => {
   s.rl = true; pedidos = [];
+  banco.b.linhas = []; banco.b.fora = false; banco.b.chamadas = [];
   vi.stubEnv("HELIUS_RPC_URL", RPC_SECRETO);
   vi.stubEnv("AUTH_JWT_SECRET", "segredo-de-sessao-de-teste-0123456789");
   vi.stubEnv("TX_VINCULO_SECRET", "");
@@ -330,7 +366,7 @@ describe("⚠️⚠️ revisão: vínculo cotação ↔ transação (taxa decidi
     const outro = Keypair.generate();
     const txOutro = txSwap({ pagador: outro });
     const tx = txSwap();
-    const v = emitirVinculo({ mensagem: tx.message.serialize(), owner: outro.publicKey.toBase58(), bps: 100, feeAccount: "f" })!;
+    const v = emitirVinculo({ mensagem: tx.message.serialize(), owner: outro.publicKey.toBase58(), bps: 100, feeAccount: "f", validoAteBloco: LVBH })!;
     expect(conferirVinculo(v, tx)).toEqual({ ok: false, motivo: "vinculo_pagador" });
     void txOutro;
   });
@@ -345,14 +381,117 @@ describe("⚠️⚠️ revisão: vínculo cotação ↔ transação (taxa decidi
   it("sem segredo no servidor → nada é emitido e a transmissão recusa (falha fechada)", async () => {
     vi.stubEnv("AUTH_JWT_SECRET", "");
     const tx = txSwap();
-    expect(emitirVinculo({ mensagem: tx.message.serialize(), owner: owner(), bps: 0, feeAccount: null })).toBeNull();
+    expect(emitirVinculo({ mensagem: tx.message.serialize(), owner: owner(), bps: 0, feeAccount: null, validoAteBloco: LVBH })).toBeNull();
     expect(await (await postar({ tx: b64(tx), owner: owner(), vinculo: "a.b" })).json()).toMatchObject({ erro: "vinculo_indisponivel" });
   });
 
   it("o token não carrega segredo nem a transação: só hash, pagador, bps, conta, validade", () => {
     const tx = txSwap();
     const d = JSON.parse(Buffer.from(vin(tx).split(".")[0], "base64url").toString());
-    expect(Object.keys(d).sort()).toEqual(["b", "f", "h", "o", "v", "x"]);
+    expect(Object.keys(d).sort()).toEqual(["b", "f", "h", "l", "o", "v", "x"]);
     expect(JSON.stringify(d)).not.toContain("segredo");
+  });
+});
+
+describe("W3-C · trava DURÁVEL por carteira (entre aparelhos)", () => {
+  const owner = () => dono.publicKey.toBase58();
+  const assinaturasEnviadas = () => pedidos.filter((p) => p.corpo.method === "sendTransaction").length;
+
+  it("⚠️ reprodução do achado: 2 transações DIFERENTES da mesma carteira (2 aparelhos) → só a 1ª vai ao RPC", async () => {
+    const a = txSwap({ dados: 16 }), b = txSwap({ dados: 17 });
+    rpc = (c) => c.method === "sendTransaction" ? ok(c.params[0] === b64(a) ? assinaturaDe(a) : assinaturaDe(b))
+      : c.method === "getSignatureStatuses" ? ok({ value: [null] }) : ok(LVBH - 10);   // A ainda pode pousar
+    expect(await (await postar({ tx: b64(a), owner: owner(), vinculo: vin(a) })).json()).toMatchObject({ estado: "enviada" });
+    const r = await postar({ tx: b64(b), owner: owner(), vinculo: vin(b) });
+    expect(r.status).toBe(409);
+    expect(await r.json()).toMatchObject({ fase: "antes_do_rpc", erro: "anterior_em_aberto", assinaturaEmAberto: assinaturaDe(a) });
+    expect(assinaturasEnviadas()).toBe(1);
+  });
+
+  it("retransmissão da MESMA transação é permitida (a rede aceita a assinatura uma vez só)", async () => {
+    const a = txSwap();
+    rpc = (c) => c.method === "sendTransaction" ? ok(assinaturaDe(a)) : ok(null);
+    await postar({ tx: b64(a), owner: owner(), vinculo: vin(a) });
+    expect(await (await postar({ tx: b64(a), owner: owner(), vinculo: vin(a) })).json()).toMatchObject({ estado: "enviada" });
+    expect(assinaturasEnviadas()).toBe(2);
+  });
+
+  it("⚠️ SEM TTL: a anterior continua em aberto enquanto a altura não passou do valido_ate_bloco GRAVADO", async () => {
+    const a = txSwap({ dados: 16 }), b = txSwap({ dados: 18 });
+    banco.b.linhas.push({ carteira: owner(), assinatura: assinaturaDe(a), lvbh: LVBH, estado: "incerta", desfecho: null });
+    rpc = (c) => c.method === "getSignatureStatuses" ? ok({ value: [null] }) : c.method === "getBlockHeight" ? ok(LVBH) : ok(assinaturaDe(b));
+    expect((await postar({ tx: b64(b), owner: owner(), vinculo: vin(b) })).status).toBe(409);
+    expect(assinaturasEnviadas()).toBe(0);
+  });
+
+  it("a anterior EXPIROU (altura > valido_ate_bloco gravado, sem registro on-chain) → encerra e a nova vai", async () => {
+    const a = txSwap({ dados: 16 }), b = txSwap({ dados: 19 });
+    banco.b.linhas.push({ carteira: owner(), assinatura: assinaturaDe(a), lvbh: LVBH, estado: "incerta", desfecho: null });
+    rpc = (c) => c.method === "getSignatureStatuses" ? ok({ value: [null] }) : c.method === "getBlockHeight" ? ok(LVBH + 1) : ok(assinaturaDe(b));
+    expect(await (await postar({ tx: b64(b), owner: owner(), vinculo: vin(b) })).json()).toMatchObject({ estado: "enviada" });
+    expect(banco.b.linhas.find((l) => l.assinatura === assinaturaDe(a))).toMatchObject({ estado: "resolvida", desfecho: "expirada" });
+  });
+
+  it("a anterior CONFIRMOU on-chain → encerra e a nova vai", async () => {
+    const a = txSwap({ dados: 16 }), b = txSwap({ dados: 20 });
+    banco.b.linhas.push({ carteira: owner(), assinatura: assinaturaDe(a), lvbh: LVBH, estado: "enviada", desfecho: null });
+    rpc = (c) => c.method === "getSignatureStatuses" ? ok({ value: [{ slot: 9, err: null, confirmationStatus: "confirmed" }] }) : ok(assinaturaDe(b));
+    expect(await (await postar({ tx: b64(b), owner: owner(), vinculo: vin(b) })).json()).toMatchObject({ estado: "enviada" });
+  });
+
+  it("RPC fora ao checar a anterior → continua bloqueada (desconhecido não libera)", async () => {
+    const a = txSwap({ dados: 16 }), b = txSwap({ dados: 21 });
+    banco.b.linhas.push({ carteira: owner(), assinatura: assinaturaDe(a), lvbh: LVBH, estado: "incerta", desfecho: null });
+    rpc = () => new Response("x", { status: 502 });
+    expect((await postar({ tx: b64(b), owner: owner(), vinculo: vin(b) })).status).toBe(409);
+  });
+
+  it("⚠️ banco fora → FALHA FECHADA: 503 antes do RPC, nada transmitido", async () => {
+    banco.b.fora = true;
+    const a = txSwap();
+    const r = await postar({ tx: b64(a), owner: owner(), vinculo: vin(a) });
+    expect(r.status).toBe(503);
+    expect(await r.json()).toMatchObject({ fase: "antes_do_rpc", erro: "trava_indisponivel" });
+    expect(assinaturasEnviadas()).toBe(0);
+  });
+
+  it("recusa certa do RPC (preflight) → encerra como nao_enviada e a carteira fica livre", async () => {
+    const a = txSwap({ dados: 16 }), b = txSwap({ dados: 22 });
+    rpc = (c) => c.method === "sendTransaction" && c.params[0] === b64(a)
+      ? Response.json({ jsonrpc: "2.0", id: 1, error: { code: -32002, message: "sim", data: { err: "x" } } })
+      : ok(assinaturaDe(b));
+    expect(await (await postar({ tx: b64(a), owner: owner(), vinculo: vin(a) })).json()).toMatchObject({ estado: "nao_enviada" });
+    expect(await (await postar({ tx: b64(b), owner: owner(), vinculo: vin(b) })).json()).toMatchObject({ estado: "enviada" });
+  });
+
+  it("⚠️ terceiro não trava a carteira de outra pessoa: sem a assinatura dela nada é reservado", async () => {
+    const forjada = txSwap();
+    forjada.signatures[0] = new Uint8Array(64).fill(9);   // pagador = dono, assinatura que NÃO é dele
+    const r = await postar({ tx: b64(forjada), owner: owner(), vinculo: vin(forjada) });
+    expect(r.status).toBe(400);
+    expect(banco.b.chamadas).toEqual([]);
+  });
+
+  it("vínculo sem `l` (formato antigo) → recusado antes de reservar", async () => {
+    const tx = txSwap();
+    const [corpo] = vin(tx).split(".");
+    const d = JSON.parse(Buffer.from(corpo, "base64url").toString()); delete d.l;
+    const c2 = Buffer.from(JSON.stringify(d)).toString("base64url");
+    const { createHmac } = await import("node:crypto");
+    const k = createHmac("sha256", "segredo-de-sessao-de-teste-0123456789").update("zswap:tx-vinculo:v1").digest();
+    const tok = `${c2}.${createHmac("sha256", k).update(c2).digest("base64url")}`;
+    expect(await (await postar({ tx: b64(tx), owner: owner(), vinculo: tok })).json()).toMatchObject({ erro: "vinculo_formato" });
+    expect(banco.b.chamadas).toEqual([]);
+  });
+
+  it("status: confirmada encerra a trava; ⚠️ `expirada` com lvbh DA URL não encerra", async () => {
+    const a = txSwap();
+    banco.b.linhas.push({ carteira: owner(), assinatura: assinaturaDe(a), lvbh: LVBH, estado: "enviada", desfecho: null });
+    rpc = (c) => c.method === "getSignatureStatuses" ? ok({ value: [null] }) : ok(LVBH - 5);
+    await GET(new NextRequest(`http://x/api/solana/status?sig=${assinaturaDe(a)}&lvbh=1`));
+    expect(banco.b.linhas[0].estado).toBe("enviada");
+    rpc = () => ok({ value: [{ slot: 9, err: null, confirmationStatus: "finalized" }] });
+    await GET(new NextRequest(`http://x/api/solana/status?sig=${assinaturaDe(a)}`));
+    expect(banco.b.linhas[0]).toMatchObject({ estado: "resolvida", desfecho: "confirmada" });
   });
 });

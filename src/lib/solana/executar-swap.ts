@@ -95,7 +95,9 @@ export async function executarSwapSolana(d: DepsSwapSolana): Promise<{ historyId
 
   if (envio.estado === "nao_enviada") {
     marcar("envio_falhou", { motivo: envio.motivo.slice(0, 120) });
-    d.ui.erro(`${d.texto("solSendFailed")} (${envio.motivo.slice(0, 80)})`);
+    // W3-C: o servidor recusou porque OUTRA transação desta carteira (talvez de outro aparelho) ainda pode pousar.
+    d.ui.erro(envio.motivo === "anterior_em_aberto" ? d.texto("solPreviousOpen")
+      : `${d.texto("solSendFailed")} (${envio.motivo.slice(0, 80)})`);
     d.ui.fase("tx_failed");
     return { historyId: id, resultado: "envio_falhou" };
   }

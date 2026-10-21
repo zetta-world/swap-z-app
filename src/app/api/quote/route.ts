@@ -636,6 +636,7 @@ export async function GET(req: NextRequest) {
           owner: taker,
           bps: quote.platformFee?.feeBps ?? 0,
           feeAccount: quote.platformFee?.feeAccount ?? null,
+          validoAteBloco: montada.lastValidBlockHeight,
         });
         const swap = vinculo ? { ...montada, vinculo } : montada;
         // ⚠️ AGUARDADO pelo mesmo motivo dos dois caminhos acima.
