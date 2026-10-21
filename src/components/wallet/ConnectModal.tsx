@@ -1,4 +1,5 @@
 "use client";
+import { urlBrowsePhantom } from "@/lib/wallet/sessao-carteira";
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { motion } from "framer-motion";
@@ -35,9 +36,10 @@ export default function ConnectModal({
   const isMobile = typeof navigator !== "undefined" &&
     /android|iphone|ipad|ipod/i.test(navigator.userAgent);
 
+  // W4: deeplink oficial `browse` + marcador que faz a página pedir a conexão ao abrir na Phantom.
   const phantomBrowseUrl = typeof window !== "undefined"
-    ? `https://phantom.app/ul/v1/browse/${encodeURIComponent(window.location.href)}?ref=${encodeURIComponent(window.location.origin)}`
-    : "https://phantom.app/download";
+    ? urlBrowsePhantom(window.location.href, window.location.origin)
+    : "https://phantom.com/download";
 
   const onConnect = async (c: Connector) => {
     setError(null);

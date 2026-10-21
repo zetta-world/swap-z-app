@@ -10,7 +10,13 @@ import type { WalletChain } from "@/lib/supabase/types";
  */
 
 export const SESSION_COOKIE = "zswap_session";
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days — só com "manter sessão iniciada" (W4)
+/**
+ * W4: sem "manter sessão", o cookie é de SESSÃO DO NAVEGADOR (sem maxAge: some ao fechar) e o JWT
+ * vence em 12 h mesmo que o navegador fique aberto (ou restaure abas). Tokens antigos de 30 dias
+ * continuam válidos até vencer — nada quebra para quem já estava logado.
+ */
+const SESSION_CURTA_SECONDS = 60 * 60 * 12;
 const ISSUER = "z-swap";
 const AUDIENCE = "z-swap-app";
 
@@ -30,8 +36,8 @@ export function isSessionConfigured(): boolean {
   return getSecret() !== null;
 }
 
-/** Signs a 30-day session token. Throws if AUTH_JWT_SECRET is unset. */
-export async function issueSession(claims: SessionClaims): Promise<string> {
+/** Signs a session token (30 days when `manter`, else 12 h). Throws if AUTH_JWT_SECRET is unset. */
+export async function issueSession(claims: SessionClaims, manter = true): Promise<string> {
   const secret = getSecret();
   if (!secret) throw new Error("AUTH_JWT_SECRET is not configured.");
   return new SignJWT({ chain: claims.chain })
@@ -40,7 +46,7 @@ export async function issueSession(claims: SessionClaims): Promise<string> {
     .setIssuer(ISSUER)
     .setAudience(AUDIENCE)
     .setIssuedAt()
-    .setExpirationTime(`${SESSION_TTL_SECONDS}s`)
+    .setExpirationTime(`${manter ? SESSION_TTL_SECONDS : SESSION_CURTA_SECONDS}s`)
     .sign(secret);
 }
 
@@ -77,9 +83,9 @@ function cookieBase() {
 }
 
 /** Writes the session cookie (called from the verify route after signing). */
-export async function setSessionCookie(token: string): Promise<void> {
+export async function setSessionCookie(token: string, manter = true): Promise<void> {
   const jar = await cookies();
-  jar.set(SESSION_COOKIE, token, { ...cookieBase(), maxAge: SESSION_TTL_SECONDS });
+  jar.set(SESSION_COOKIE, token, manter ? { ...cookieBase(), maxAge: SESSION_TTL_SECONDS } : cookieBase());
 }
 
 /** Clears the session cookie (logout). */

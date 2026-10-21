@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Globe, Zap, Brain, Bell, Shield, KeyRound, Banknote,
+  Globe, Zap, Brain, Bell, Shield, Banknote,
   Layers, Eye, EyeOff, Sparkles,
 } from "lucide-react";
 import { useUI } from "@/lib/store/ui";
@@ -24,7 +24,6 @@ const TABS = [
   { id: "zion",          Icon: Brain,     labelKey: "settings.groupZion"       },
   { id: "notifications", Icon: Bell,      labelKey: "settings.groupNotifications" },
   { id: "security",      Icon: Shield,    labelKey: "settings.groupSecurity"   },
-  { id: "rpc",           Icon: KeyRound,  labelKey: "settings.groupRpc"        },
   { id: "cex",           Icon: Banknote,  labelKey: "nav.cex"                  },
 ] as const;
 
@@ -152,7 +151,6 @@ export default function SettingsView({ modelo }: { modelo: string }) {
                 {active === "zion"          && <ZionPanel modelo={modelo} />}
                 {active === "notifications" && <NotificationsPanel />}
                 {active === "security"      && <SecurityPanel />}
-                {active === "rpc"           && <RpcPanel />}
                 {active === "cex"           && <CexPanel />}
               </motion.div>
             </AnimatePresence>
@@ -384,58 +382,64 @@ function ZionPanel({ modelo }: { modelo: string }) {
   );
 }
 
+/**
+ * ⚠️ W4 (21/10): os 4 interruptores de notificação eram FICTÍCIOS (`onChange={() => {}}`) — não existe
+ * sistema de notificação. A tela agora diz isso em vez de exibir chaves que não fazem nada.
+ */
 function NotificationsPanel() {
   const t = useT();
   return (
     <PanelCard title={t("settings.groupNotifications")} Icon={Bell}>
-      <Toggle label={t("settings.notifPriceAlerts")} description={t("settings.notifPriceAlertsDesc")} value={true}  onChange={() => {}} tone="cyan" />
-      <Toggle label={t("settings.notifLiquidity")}   description={t("settings.notifLiquidityDesc")}   value={true}  onChange={() => {}} tone="violet" />
-      <Toggle label={t("settings.notifGovernance")}  description={t("settings.notifGovernanceDesc")}  value={false} onChange={() => {}} tone="gold" />
-      <Toggle label={t("settings.notifFills")}       description={t("settings.notifFillsDesc")}       value={true}  onChange={() => {}} tone="green" />
+      <p className="font-sans text-xs text-ink-3 leading-relaxed">{t("settings.notifUnavailable")}</p>
     </PanelCard>
   );
 }
 
+/**
+ * ⚠️⚠️ W4 (21/10): os 4 interruptores de segurança eram FICTÍCIOS e afirmavam proteções que não existem
+ * ("bloquear contratos não verificados", "cache cifrado AES-256"…), todos com `onChange={() => {}}`.
+ * Afirmação de segurança falsa é pior que nenhuma. Ficam só controles REAIS:
+ *   · reconectar carteira automaticamente (desligado por padrão) — `providers.tsx`;
+ *   · manter sessão iniciada (desligado por padrão: até fechar o navegador, ≤ 12 h) — `/api/auth/verify`;
+ *   · sair (encerra a sessão assinada) — `/api/auth/logout`;
+ * e um fato verificável: toda troca é assinada na carteira do usuário.
+ */
 function SecurityPanel() {
   const t = useT();
+  const { reconectarCarteira, setReconectarCarteira, manterSessao, setManterSessao } = useUI();
+  const { authenticated, refresh } = useTier();
+  const [saiu, setSaiu] = useState(false);
+  const sair = async () => {
+    try { await fetch("/api/auth/logout", { method: "POST" }); } finally { await refresh(); setSaiu(true); }
+  };
   return (
     <PanelCard title={t("settings.groupSecurity")} Icon={Shield}>
-      <Toggle label={t("settings.confirmEverySwap")} description={t("settings.confirmEverySwapDesc")} value={true}  onChange={() => {}} tone="green" />
-      <Toggle label={t("settings.blockUnverified")}  description={t("settings.blockUnverifiedDesc")}  value={false} onChange={() => {}} tone="red" />
-      <Toggle label={t("settings.highRiskGate")}     description={t("settings.highRiskGateDesc")}     value={true}  onChange={() => {}} tone="gold" />
-      <Toggle label={t("settings.encryptedCache")}   description={t("settings.encryptedCacheDesc")}   value={true}  onChange={() => {}} tone="cyan" />
+      <Toggle label={t("settings.reconnectWallet")} description={t("settings.reconnectWalletDesc")}
+        value={reconectarCarteira} onChange={setReconectarCarteira} tone="cyan" />
+      <Toggle label={t("settings.keepSession")} description={t("settings.keepSessionDesc")}
+        value={manterSessao} onChange={setManterSessao} tone="gold" />
+      <div className="flex items-start gap-3.5 py-1">
+        <button
+          type="button"
+          onClick={sair}
+          disabled={!authenticated}
+          className="flex-shrink-0 px-3 py-1.5 rounded-lg border border-red/30 bg-red/[0.06] text-red font-mono text-[10px] tracking-widest uppercase disabled:opacity-40"
+        >
+          {t("settings.signOutNow")}
+        </button>
+        <p className="font-sans text-[11px] text-ink-3 leading-relaxed">
+          {saiu && !authenticated ? `${t("settings.signedOut")} · ` : ""}{t("settings.signOutDesc")}
+        </p>
+      </div>
+      <p className="font-sans text-[11px] text-ink-2 leading-relaxed">{t("settings.walletSignsEvery")}</p>
     </PanelCard>
   );
 }
 
-const RPC_CHAINS: { id: string; label: string; placeholder: string }[] = [
-  { id: "ethereum", label: "Ethereum", placeholder: "https://eth-mainnet.g.alchemy.com/v2/…" },
-  { id: "bsc",      label: "BSC",      placeholder: "https://bsc-dataseed.binance.org" },
-  { id: "solana",   label: "Solana",  placeholder: "https://api.mainnet-beta.solana.com" },
-];
-
-function RpcPanel() {
-  const { customRpc, setCustomRpc } = useUI();
-  const t = useT();
-  return (
-    <PanelCard title={t("settings.groupRpc")} Icon={KeyRound}>
-      <p className="font-sans text-xs text-ink-3 leading-relaxed">{t("settings.rpcBody")}</p>
-      {RPC_CHAINS.map((r) => (
-        <Field key={r.id} label={r.label}>
-          <input
-            value={customRpc[r.id] ?? ""}
-            onChange={(e) => setCustomRpc(r.id, e.target.value)}
-            placeholder={r.placeholder}
-            spellCheck={false}
-            autoComplete="off"
-            className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2.5 text-xs font-mono text-ink-2 outline-none focus:border-cyan/30 placeholder:text-ink-4 transition-colors"
-          />
-        </Field>
-      ))}
-      <p className="font-mono text-[9px] text-ink-4 leading-relaxed">{t("settings.rpcSavedNote")}</p>
-    </PanelCard>
-  );
-}
+/**
+ * ⚠️ W4 (21/10): a aba "RPC personalizado" saiu — os endereços eram salvos no navegador e NUNCA usados
+ * (nenhum código lia `customRpc`). Transmissão e saldos Solana passam pelo RPC do servidor (W1/W3).
+ */
 
 function CexPanel() {
   return <CexSettings />;

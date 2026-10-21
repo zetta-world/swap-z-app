@@ -12,6 +12,7 @@ import { Toaster } from "sonner";
 import Beacon from "@/components/layout/Beacon";
 import { wagmiConfig } from "@/lib/wagmi";
 import { SOLANA_RPC, SOLANA_WALLETS } from "@/lib/solana";
+import { CoerenciaDeSessao, PhantomConexaoPendente } from "@/components/wallet/SessaoCarteira";
 
 // The @solana/wallet-adapter-react package predates React 18's FC return type
 // tightening. Casting through `unknown` here doesn't change runtime behavior,
@@ -52,12 +53,19 @@ export default function Providers({ children }: { children: ReactNode }) {
 
   // Adapters are stable; memoize so React doesn't tear them down between renders.
   const solanaWallets = useMemo(() => SOLANA_WALLETS, []);
+  /**
+   * W4: reconexão automática DESLIGADA por padrão (Configurações → Segurança). A sessão assinada é
+   * outra coisa (cookie httpOnly) e não depende disto.
+   */
+  const reconectar = useUI((u) => u.reconectarCarteira);
 
   return (
-    <WagmiProvider config={wagmiConfig}>
+    <WagmiProvider config={wagmiConfig} reconnectOnMount={reconectar}>
       <ConnectionProvider endpoint={SOLANA_RPC}>
-        <WalletProvider wallets={solanaWallets} autoConnect>
+        <WalletProvider wallets={solanaWallets} autoConnect={reconectar}>
           <QueryClientProvider client={qc}>
+            <PhantomConexaoPendente />
+            <CoerenciaDeSessao />
             <LangSync />
             <Beacon />
             {children}
