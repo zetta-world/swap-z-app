@@ -14,10 +14,11 @@
 
 ## Atualização L-064 — W3 transmissão Solana (21/10/2026)
 
-Produção segue em `986ae75`: swap Solana falha no ENVIO (403 do RPC público no navegador; nada é transmitido) e a tentativa
-não fica no histórico. Correção em `fix/w3-transmissao-solana@5db2564` (sobre a W1) com as correções da revisão
-independente (status estrito, transporte, identidade, vínculo cotação↔transação); preview conferido sem fundos.
-Aguardando 2ª auditoria; depois, autorização para teste com fundos; audit-gate bloqueado (dependências).
+Produção segue em `986ae75`: swap Solana falha no ENVIO (403 do RPC público) e **`NEXT_PUBLIC_SOLANA_JITO` está "on"** —
+swaps com exposição ≥ $25 tentam o Jito pelo navegador. Correção em `fix/w3-transmissao-solana@f83e12a` (sobre a W1): envio
+só pelo servidor com vínculo cotação↔taxa, tarifa do PAGADOR, status estrito, identidade de origem. Trava durável (W3-C) e
+reconciliação do livro (W3-D) só desenhadas. Pendentes: autorização para aplicar W3-C/W3-D, rodada de dependências
+(audit-gate), teste com fundos.
 
 ## Atualização L-063 — W1 carteiras/saldos (20/10/2026)
 

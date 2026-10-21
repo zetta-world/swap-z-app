@@ -1304,3 +1304,21 @@ build · 0 credencial no bundle · audit-gate FALHOU (herdado; rodada de depend�
 audit falha). Preview `swap-z-mpg00px97` (sem fundos): vínculo ao vivo — legítima chega ao RPC (preflight
 `AccountNotFound`), adulterada+re-assinada/sem vínculo/forjada recusadas antes do RPC; status real confirmada/expirada/
 pendente/400; E2E pela tela 10/10. **Parado para a 2ª auditoria; nenhum swap com fundos.**
+
+**2ª auditoria independente (21/10) — NO-GO; correções em `f83e12a`:**
+- **W3-A (bloqueador)**: reproduzido no código `5db2564` (sessão de A Pilot + taker B → B pagava 10 bps; 5 de 8 testes
+  falham). Corrigido: plano da sessão só quando a sessão É o pagador (`mesmaCarteira`); senão Free. Jupiter, 0x e LI.FI.
+  Efeito: plano numa carteira não vale para outra até ela se autenticar (sem vínculo entre carteiras).
+- **W3-B (bloqueador)**: `NEXT_PUBLIC_SOLANA_JITO` medido como **"on" em Preview e Production** nos bundles servidos (ramo
+  "desligado" eliminado na compilação; sem decriptar nada) — em produção `986ae75`, swaps com exposição ≥ $25 tentam o
+  Jito direto do navegador, fora do vínculo. Corrigido: um único caminho de envio (servidor + vínculo); Jito fora do fluxo
+  e do bundle (0 ocorrências de `block-engine`); testes travam caminho alternativo. Recomendado ao dono: variável `off`.
+- **W3-C**: duplicação entre dois navegadores reproduzida no preview (duas assinaturas, ambas levadas ao RPC). Trava
+  durável desenhada (`docs/PROPOSTA-W3-TRAVA-E-RECONCILIACAO.md`), migration NÃO aplicada.
+- **W3-D**: livro aceita conteúdo financeiro declarado; o painel separa por atribuição, não por verificação on-chain.
+  Reconciliação por assinatura e classes de verificação propostas, NÃO aplicadas.
+- 3 quebras deliberadas (após corrigir 2 furos dos próprios testes: caixa EVM e removedor de comentários). Gates
+  `f83e12a` (tree `765cb4d9e9313b1c84710ab466fb28862c67b55b`): lockfile intocado · lint 0/144 · tipos · suíte 339/5019 ×2
+  · build · 0 credencial · **audit-gate FALHOU** (follow-redirects, vite — rodada de dependências). CI 39583483966 (só
+  audit falha). Preview `swap-z-2v9nd3li3` (sem fundos): status real, vínculo/adulteração, E2E 10/10, Jito ausente do
+  bundle. **Parado após o Preview; nenhum swap com fundos; W4 não iniciada.**
