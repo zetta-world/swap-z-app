@@ -1291,3 +1291,16 @@ no bundle, **audit-gate FALHOU** (herdado). CI 39523037030 (só o audit falha). 
 (confirmada/expirada/pendente/400) e E2E com carteira de teste sem fundos 10/10 (servidor chega ao RPC sem 403, preflight
 recusa, "Falha no envio", histórico com assinatura pública). **Falta:** swap real com fundos (autorização específica).
 Produção: não autorizada; segue em `986ae75`.
+
+**Revisão independente (ChatGPT, 21/10) — não autorizou o teste com fundos; correções em `5db2564`:** status on-chain estrito
+(`confirmada` só com `err === null` explícito; estrutura conferida); "não transmitida" só com recusa estruturada
+`fase: antes_do_rpc` (gateway 502/503/504/429 → incerta); identidade de ORIGEM nos registros, sync só com a carteira de
+origem conectada, servidor recusa origem ≠ sessão (409) e grava sem atribuição o que não tem origem (CEX/Autopilot/legado
+ficam sem atribuição — totais intactos); vínculo HMAC cotação↔transação (hash da mensagem montada pelo servidor + pagador +
+taxa decidida + validade 3 min) exigido na transmissão; anti-duplicação documentada como LOCAL (testes fixam o limite;
+trava no servidor proposta, não implementada). No código `80e4647`: 16 testes da revisão falham; 6 quebras deliberadas
+detectadas. Gates `5db2564` (tree `efb3d3a4a0aaf02d89b036c68a2efdd167abf855`): lint 0/144 · tipos · suíte 338/5009 ×2 ·
+build · 0 credencial no bundle · audit-gate FALHOU (herdado; rodada de dependências separada). CI 39528609610 (só o
+audit falha). Preview `swap-z-mpg00px97` (sem fundos): vínculo ao vivo — legítima chega ao RPC (preflight
+`AccountNotFound`), adulterada+re-assinada/sem vínculo/forjada recusadas antes do RPC; status real confirmada/expirada/
+pendente/400; E2E pela tela 10/10. **Parado para a 2ª auditoria; nenhum swap com fundos.**
