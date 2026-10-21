@@ -24,6 +24,9 @@
 --
 -- ⚠️ ADITIVA: só colunas novas (defaults constantes, sem reescrever a tabela no PG ≥ 11) e índices.
 --    Nenhum valor histórico muda; nenhum registro é apagado. Rollback: `drop index` ×2 + `drop column` ×8.
+-- ⚠️ ACL (medido em produção 21/10): `anon`/`authenticated` tinham TODOS os privilégios de tabela em
+--    `operations`, inclusive TRUNCATE — que RLS não cobre. Mesmo padrão da 0067/0070: REVOKE. Só o
+--    service_role (servidor) toca esta tabela; nenhum cliente com a chave anônima a lê (conferido no código).
 -- ═══════════════════════════════════════════════════════════════════════════
 
 alter table public.operations add column if not exists tx_signature       text;
@@ -54,3 +57,6 @@ comment on column public.operations.verificacao is
   'W3-D: estado FINANCEIRO (verificada_onchain | aguardando | divergente | declarada). Independe da identidade (wallet_address / pagador_onchain).';
 comment on column public.operations.taxa_onchain_raw is
   'W3-D: taxa MEDIDA na conta de taxa da plataforma (unidades inteiras do mint em taxa_onchain_mint). Só preenchida pela reconciliação do servidor.';
+
+revoke all on table public.operations from public, anon, authenticated;
+grant select, insert, update, delete on table public.operations to service_role;

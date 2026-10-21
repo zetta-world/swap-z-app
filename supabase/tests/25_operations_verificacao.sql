@@ -32,5 +32,14 @@ begin
   select count(*) into n from public.operations where verificacao = 'verificada_onchain' and ref = 't25-ok';
   assert n = 1, 'T25.05 verificada com medição é aceita';
 end $$;
+do $$
+begin
+  assert not has_table_privilege('anon', 'public.operations', 'select'), 'T25.10 anon não lê operations';
+  assert not has_table_privilege('anon', 'public.operations', 'truncate'), 'T25.11 anon não trunca operations (RLS não cobre TRUNCATE)';
+  assert not has_table_privilege('authenticated', 'public.operations', 'truncate'), 'T25.12 authenticated não trunca operations';
+  assert not has_table_privilege('authenticated', 'public.operations', 'insert'), 'T25.13 authenticated não insere em operations';
+  assert has_table_privilege('service_role', 'public.operations', 'insert') and has_table_privilege('service_role', 'public.operations', 'update'),
+    'T25.14 service_role continua escrevendo';
+end $$;
 rollback;
 \echo 'T25 PASS'
