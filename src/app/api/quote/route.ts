@@ -21,6 +21,8 @@ import { envNumber } from "@/lib/env-number";
 import { bpsEfetivos, destinatarioDaTaxa } from "@/lib/tier/fees";
 import { contaDeTaxaParaPar } from "@/lib/solana/conta-de-taxa";
 import { getSession } from "@/lib/auth/session";
+import { VersionedTransaction } from "@solana/web3.js";
+import { emitirVinculo } from "@/lib/solana/vinculo";
 import { getTierForWallet } from "@/lib/tier/check";
 import type { Tier } from "@/lib/tier/types";
 import { checarKillSwitches } from "@/lib/admin/kill-switches";
@@ -611,7 +613,19 @@ export async function GET(req: NextRequest) {
         if (!isSameChainSolana) {
           return NextResponse.json({ error: "jupiter_solana_only" }, { status: 400 });
         }
-        const { quote, swap } = await fetchJupiterFirm({ ...jupArgs, taker }, jupOpts);
+        const { quote, swap: montada } = await fetchJupiterFirm({ ...jupArgs, taker }, jupOpts);
+        /**
+         * ⚠️ W3: VÍNCULO da transação que ESTE servidor montou com a taxa que ELE decidiu (confirmada na
+         * instrução de swap — `quote.platformFee`; sem ela, 0 = o fail-open legítimo). A transmissão só
+         * aceita a mensagem com este hash; tirar/alterar a taxa invalida o envio.
+         */
+        const vinculo = emitirVinculo({
+          mensagem: VersionedTransaction.deserialize(Buffer.from(montada.swapTransaction, "base64")).message.serialize(),
+          owner: taker,
+          bps: quote.platformFee?.feeBps ?? 0,
+          feeAccount: quote.platformFee?.feeAccount ?? null,
+        });
+        const swap = vinculo ? { ...montada, vinculo } : montada;
         // ⚠️ AGUARDADO pelo mesmo motivo dos dois caminhos acima.
         await recordEvent("swap_intent", { wallet: taker, meta: { source, fromChain: "solana", toChain: "solana", sellToken, buyToken } });
         return NextResponse.json(

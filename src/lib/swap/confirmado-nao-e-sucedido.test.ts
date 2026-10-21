@@ -34,9 +34,11 @@ const MSG  = leia("src/lib/i18n/messages.ts");
 
 describe("① o desfecho on-chain é lido, e o erro decide", () => {
   it("⚠️⚠️ `consultarStatus` olha `err` ANTES de chamar de confirmada", () => {
-    const iErr = STATUS.indexOf('if (v.err) return { estado: "falhou_na_rede"');
+    const iAusente = STATUS.indexOf('if (!("err" in st) || st.err === undefined) return { estado: "desconhecido"');
+    const iErr = STATUS.indexOf('if (st.err !== null) return { estado: "falhou_na_rede"');
     const iConf = STATUS.indexOf('return { estado: "confirmada"');
-    expect(iErr).toBeGreaterThan(0);
+    expect(iAusente).toBeGreaterThan(0);
+    expect(iErr).toBeGreaterThan(iAusente);
     expect(iConf).toBeGreaterThan(iErr);
   });
 

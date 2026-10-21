@@ -45,7 +45,7 @@ function montar(over: Partial<DepsSwapSolana> & { envio?: (sig: string) => Envio
   const h = historicoMem();
   const ui = { fase: vi.fn(), erro: vi.fn(), nota: vi.fn(), assinatura: vi.fn() };
   const assinar = vi.fn(async (tx: VersionedTransaction) => { tx.sign([phantom]); return tx; });
-  const transmitir = vi.fn(async (_b64: string, _o: string, sig: string) => (over.envio ?? ((s: string) => ({ estado: "enviada", assinatura: s }) as Envio))(sig));
+  const transmitir = vi.fn(async (_b64: string, _o: string, sig: string, _v?: string) => (over.envio ?? ((s: string) => ({ estado: "enviada", assinatura: s }) as Envio))(sig));
   const acompanhar = vi.fn(async () => over.desfecho ?? ({ estado: "confirmada" } as Desfecho));
   const d: DepsSwapSolana = {
     owner: OWNER, tx: txNaoAssinada(), validoAteBloco: 4242,
@@ -161,6 +161,28 @@ describe("⚠️ anti-duplicação", () => {
     expect((await executarSwapSolana(d)).resultado).toBe("confirmada");
   });
 
+  /**
+   * ⚠️ LIMITE DOCUMENTADO (revisão 21/10): a trava é LOCAL — vive no histórico deste navegador.
+   * Os dois testes abaixo FIXAM esse limite (se um dia passarem a bloquear, a doc precisa mudar).
+   * O que segura de verdade, além dela: (1) a mesma transação assinada só pousa uma vez; (2) o vínculo
+   * expira em 3 min e cada cotação tem blockhash próprio. O que NÃO segura: duas cotações diferentes
+   * assinadas em dois aparelhos ao mesmo tempo. Proposta (não implementada): trava no servidor por
+   * carteira, com validade = lastValidBlockHeight da transação em voo — ver PLANO-W3.
+   */
+  it("LIMITE: armazenamento local perdido → a tentativa em aberto some e a trava não vê nada", async () => {
+    const h = historicoMem([]);   // localStorage limpo / outro perfil do navegador
+    const { d, assinar } = montar({ historico: h.api });
+    expect((await executarSwapSolana(d)).resultado).toBe("confirmada");
+    expect(assinar).toHaveBeenCalledTimes(1);
+  });
+
+  it("LIMITE: dois aparelhos com a MESMA carteira — cada um só enxerga o próprio histórico", async () => {
+    const aparelho1 = historicoMem([{ id: "x", ts: Date.now(), type: "dex_swap", status: "pending", etapa: "pendente", wallet: OWNER, route: "jupiter", txHash: "S", fromSymbol: "SOL", fromChain: "solana", fromAmount: "1", toSymbol: "USDC", toChain: "solana" } as TxHistoryEntry]);
+    const aparelho2 = historicoMem([]);
+    expect((await executarSwapSolana(montar({ historico: aparelho1.api }).d)).resultado).toBe("bloqueada");
+    expect((await executarSwapSolana(montar({ historico: aparelho2.api }).d)).resultado).toBe("confirmada");
+  });
+
   it("Jito aceita → servidor NÃO é chamado; Jito falha → servidor transmite a MESMA transação (mesma assinatura)", async () => {
     const a = montar({ enviarJito: async (b64) => assinaturaDe(VersionedTransaction.deserialize(Buffer.from(b64, "base64"))) });
     await executarSwapSolana(a.d);
@@ -173,6 +195,12 @@ describe("⚠️ anti-duplicação", () => {
 });
 
 describe("Phantom: compatibilidade e não-custódia", () => {
+  it("o vínculo da cotação viaja até a transmissão", async () => {
+    const { d, transmitir } = montar({ vinculo: "VINCULO-DA-COTACAO" });
+    await executarSwapSolana(d);
+    expect(transmitir.mock.calls[0][3]).toBe("VINCULO-DA-COTACAO");
+  });
+
   it("a carteira é chamada UMA vez com a transação montada; o que vai ao servidor é exatamente o que ela devolveu", async () => {
     const { d, assinar, transmitir } = montar();
     await executarSwapSolana(d);
@@ -200,11 +228,20 @@ describe("cliente: transmitirAssinada e acompanhar", () => {
     vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Failed to fetch"); }));
     expect(await transmitirAssinada("x", OWNER, "SIG")).toEqual({ estado: "incerta", assinatura: "SIG", motivo: "conexao_com_servidor" });
   });
-  it("400/429/503 da nossa rota (antes do RPC) → nao_enviada", async () => {
-    resp(400, { ok: false, erro: "assinatura_invalida" });
+  it("recusa ESTRUTURADA da aplicação marcada `antes_do_rpc` (400/413/429/503) → nao_enviada", async () => {
+    resp(400, { ok: false, fase: "antes_do_rpc", erro: "assinatura_invalida" });
     expect(await transmitirAssinada("x", OWNER, "SIG")).toMatchObject({ estado: "nao_enviada", motivo: "assinatura_invalida" });
-    resp(429, { ok: false, erro: "rate_limited" });
+    resp(429, { ok: false, fase: "antes_do_rpc", erro: "rate_limited" });
     expect((await transmitirAssinada("x", OWNER, "SIG")).estado).toBe("nao_enviada");
+    resp(503, { ok: false, fase: "antes_do_rpc", erro: "ocupado" });
+    expect((await transmitirAssinada("x", OWNER, "SIG")).estado).toBe("nao_enviada");
+  });
+
+  it("⚠️⚠️ revisão: 503/429/504 de GATEWAY (sem a marca — pode ter vindo DEPOIS de o backend transmitir) → incerta", async () => {
+    for (const [st, corpo] of [[503, "<html>Service Unavailable</html>"], [504, "Gateway Timeout"], [429, '{"error":"too many"}'], [502, ""], [400, '{"ok":false,"erro":"sem marca"}']] as const) {
+      vi.stubGlobal("fetch", vi.fn(async () => new Response(corpo, { status: st })));
+      expect(await transmitirAssinada("x", OWNER, "SIG"), String(st)).toMatchObject({ estado: "incerta", assinatura: "SIG", motivo: `http_${st}` });
+    }
   });
   it("500 da nossa rota → incerta; assinatura divergente → incerta", async () => {
     resp(500, {});

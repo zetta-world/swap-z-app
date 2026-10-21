@@ -1,7 +1,7 @@
 # PLANO — W3: transmissão, confirmação e histórico de swaps Solana (21/10/2026)
 
-Status: 🟡 PARCIAL — código `4f002ae` testado e conferido em preview (sem fundos); **falta o teste real com fundos (autorização do
-dono)**; bloqueio de release herdado da W1 (audit-gate R-03); produção NÃO autorizada
+Status: 🟡 PARCIAL — correções da revisão independente (21/10) aplicadas; aguardando 2ª auditoria antes de qualquer pedido de
+teste com fundos; bloqueio de release: audit-gate R-03 (rodada de dependências separada); produção NÃO autorizada
 
 ## Incidente
 
@@ -65,3 +65,35 @@ com fundos: exige autorização específica do dono.
 
 Swap real de valor mínimo assinado na Phantom (ex.: 0,01 SOL → USDC) para provar, na rede: envio aceito, confirmação com
 `err` nulo, etapa `confirmada`, volume/taxa contados uma vez, taxa chegando na conta USDC. Nenhum teste até aqui moveu fundos.
+
+## Revisão independente (21/10) — correções
+
+1. **Status on-chain estrito**: estrutura conferida (`value` com exatamente 1 posição, `slot` inteiro, `confirmationStatus`
+   conhecido); `confirmada` só com `err === null` EXPLÍCITO — `err` ausente/undefined → `desconhecido`.
+2. **Transporte**: "não transmitida" só com recusa ESTRUTURADA da aplicação marcada `fase: "antes_do_rpc"`; 503/429/504/502
+   de gateway ou infraestrutura → `incerta` (a assinatura pública reconcilia antes de qualquer nova operação).
+3. **Identidade**: cada registro guarda a carteira de ORIGEM (Solana = pagador; EVM = endereço que assinou). O navegador só
+   sincroniza um registro quando essa carteira está conectada; o servidor recusa (409) origem ≠ sessão e grava SEM atribuição
+   o que não tem origem (legado, CEX, Autopilot) — nunca na carteira da sessão. **Consequência**: operações CEX/Autopilot
+   passam a ficar sem atribuição de carteira (totais intactos) até uma rodada própria gravar a identidade delas.
+4. **Vínculo cotação ↔ transação** (`lib/solana/vinculo.ts`): na cotação firme o servidor emite HMAC de {sha256 da mensagem
+   que ELE montou, pagador, bps decididos (confirmados na instrução), conta de taxa ou null no fail-open, validade 3 min}; a
+   transmissão exige hash idêntico, pagador igual, token válido. Adulterar/remover a taxa — mesmo re-assinando — é recusado
+   antes do RPC. Segredo: `TX_VINCULO_SECRET` ou derivado de `AUTH_JWT_SECRET` (separação de domínio); sem segredo, falha
+   fechada. Escada: o vínculo carrega os bps do plano (100/50/25/10) ou 0 nos fail-open legítimos — testado.
+   **Limite**: se a carteira alterar a mensagem ao assinar, o envio é recusado sem transmitir (já era o efeito da allowlist).
+5. **Anti-duplicação é LOCAL ao navegador** (histórico em localStorage): não protege dois aparelhos nem armazenamento
+   perdido (testes fixam esse limite). Seguram de verdade: a mesma transação só pousa uma vez; vínculo de 3 min; blockhash
+   por cotação. **Proposta (não implementada — exige escrita durável e decisão sobre o banco)**: trava no servidor por
+   carteira com validade = `lastValidBlockHeight` da transação em voo, liberada por desfecho on-chain; nunca permanente.
+6. **Dependências**: `follow-redirects` (via wagmi→@wagmi/connectors→@base-org/account→@coinbase/cdp-sdk→axios) e `vite`
+   — rodada isolada, fora desta.
+
+## Reavaliação de segurança de `/api/solana/transmitir`
+
+Entradas: JSON ≤ 4 KiB (413), transação ≤ 1232 B, v0, todas as assinaturas ed25519 válidas, pagador = carteira, Jupiter v6,
+só programas permitidos, **vínculo HMAC válido e não expirado com hash idêntico**. Limites: 20/min por IP, teto global
+(`TRANSMISSAO_SOLANA_GLOBAL_MAX`). Saída: estado + assinatura pública; nunca a transação, a URL ou a credencial do RPC.
+Não é proxy (método e RPC fixos). Não custodial (sem chave; bytes intactos). Abuso residual: alguém com uma cotação
+legítima pode transmitir a PRÓPRIA transação assinada — que é exatamente o uso previsto; não há como transmitir transação de
+terceiros (exige assinatura do pagador) nem transação não cotada pela Z-SWAP (exige vínculo).

@@ -564,6 +564,7 @@ export default function ExecuteSwap({
           owner: sol.publicKey.toBase58(),
           tx,
           validoAteBloco: jupResult.swap.lastValidBlockHeight,
+          vinculo: jupResult.swap.vinculo,
           /**
            * ⚠️ SEM `valueUsd` O SWAP VALE $0 NO PAINEL (11/08) — e ele só é contado quando a etapa
            * chega a `confirmada` (`useOperationSync` envia apenas `status: "confirmed"`).
@@ -703,7 +704,7 @@ export default function ExecuteSwap({
          * cotação: contar a partir dele viraria cotação abandonada em receita.
          */
         historyId.current = pushHistory({
-          type: isCrossChain ? "dex_bridge" : "dex_swap", status: "pending",
+          type: isCrossChain ? "dex_bridge" : "dex_swap", status: "pending", wallet: address ?? undefined, // W3: identidade = quem assinou (EVM)
           valueUsd: notionalUsd ?? undefined,
           platformFeeAmount: q.fees?.integratorFee?.amount,
           platformFeeToken:  q.fees?.integratorFee?.token,
@@ -781,7 +782,7 @@ export default function ExecuteSwap({
         (f) => /integrator|z-swap|referrer/i.test(`${f.name ?? ""}${f.description ?? ""}`),
       );
       historyId.current = pushHistory({
-        type: isCrossChain ? "dex_bridge" : "dex_swap", status: "pending",
+        type: isCrossChain ? "dex_bridge" : "dex_swap", status: "pending", wallet: address ?? undefined, // W3: identidade = quem assinou (EVM)
         valueUsd: notionalUsd ?? undefined,
         platformFeeAmount: nossaTaxa?.amount,
         platformFeeToken:  nossaTaxa?.token?.address,

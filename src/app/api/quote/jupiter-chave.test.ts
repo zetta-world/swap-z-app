@@ -46,6 +46,7 @@ beforeEach(() => {
   vi.stubEnv("JUPITER_API_KEY", CHAVE);
   vi.stubEnv("JUPITER_BASE_URL", "");
   vi.stubEnv("LIFI_INTEGRATOR", "");
+  vi.stubEnv("AUTH_JWT_SECRET", "segredo-de-sessao-de-teste-0123456789");
   vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.spyOn(console, "info").mockImplementation(() => {});
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
@@ -206,5 +207,35 @@ describe("⚠️ rota que não cabe numa transação (produção 16/10, rollback
     expect(JSON.stringify(body)).not.toContain("swapTransaction");
     expect(s.jup).toHaveLength(2);
     expect(new URL(s.jup[1].url).searchParams.get("maxAccounts")).toBe("40");
+  });
+});
+
+/** O conteúdo do vínculo (sem conferir o HMAC — isso é testado em `transmissao.test.ts`). */
+const lerVinculo = (v: string) => JSON.parse(Buffer.from(v.split(".")[0], "base64url").toString()) as { h: string; o: string; b: number; f: string | null };
+const hashMsg = async (b64: string) => (await import("node:crypto")).createHash("sha256")
+  .update(VersionedTransaction.deserialize(Buffer.from(b64, "base64")).message.serialize()).digest("hex");
+
+describe("⚠️⚠️ W3 revisão: a cotação firme emite o VÍNCULO com a taxa da escada", () => {
+  for (const [tier, bps] of [["free", 100], ["pro", 50], ["trader", 25], ["pilot", 10]] as const) {
+    it(`${tier}: vínculo = hash da transação devolvida + taker + ${bps} bps + conta USDC`, async () => {
+      s.tier = tier;
+      const body = await (await firme()).json();
+      const d = lerVinculo(body.result.swap.vinculo);
+      expect(d).toMatchObject({ o: SOL_TAKER, b: bps, f: CONTA_USDC });
+      expect(d.h).toBe(await hashMsg(body.result.swap.swapTransaction));
+    });
+  }
+
+  it("fail-open (conta de taxa fechada): vínculo diz SEM taxa (b=0, f=null) — e a transmissão aceita isso", async () => {
+    s.contaOk = false;
+    const d = lerVinculo((await (await firme()).json()).result.swap.vinculo);
+    expect(d).toMatchObject({ b: 0, f: null });
+  });
+
+  it("Jupiter ignorou a taxa: vínculo SEM taxa, coerente com a tela (0%)", async () => {
+    s.jupIgnoraTaxa = true;
+    const body = await (await firme()).json();
+    expect(body.taxa).toMatchObject({ bps: 0 });
+    expect(lerVinculo(body.result.swap.vinculo)).toMatchObject({ b: 0, f: null });
   });
 });

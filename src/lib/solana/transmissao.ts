@@ -178,15 +178,23 @@ export type EstadoOnChain =
 export async function consultarStatus(assinatura: string, lastValidBlockHeight: number | null): Promise<EstadoOnChain> {
   const s = await rpc("getSignatureStatuses", [[assinatura], { searchTransactionHistory: true }], TIMEOUT_STATUS_MS);
   if (s.tipo !== "ok") return { estado: "desconhecido", motivo: s.tipo === "http" ? `http_${s.status}` : s.tipo === "rede" ? (s.timeout ? "timeout" : "conexao") : s.tipo };
-  const v = (s.result as { value?: unknown[] })?.value?.[0] as { slot?: number; err?: unknown; confirmationStatus?: string | null } | null | undefined;
-  if (v && typeof v.slot === "number") {
-    if (v.err) return { estado: "falhou_na_rede", slot: v.slot, erro: JSON.stringify(v.err).slice(0, 160) };
-    if (v.confirmationStatus === "confirmed" || v.confirmationStatus === "finalized") {
-      return { estado: "confirmada", slot: v.slot, confirmacao: v.confirmationStatus };
+  // ⚠️ Estrutura conferida: `value` é um array com EXATAMENTE uma posição (pedimos uma assinatura).
+  const lista = (s.result as { value?: unknown })?.value;
+  if (!Array.isArray(lista) || lista.length !== 1) return { estado: "desconhecido", motivo: "resposta_ilegivel" };
+  const v = lista[0];
+  if (v !== null) {
+    if (typeof v !== "object") return { estado: "desconhecido", motivo: "resposta_ilegivel" };
+    const st = v as { slot?: unknown; err?: unknown; confirmationStatus?: unknown };
+    if (typeof st.slot !== "number" || !Number.isSafeInteger(st.slot)) return { estado: "desconhecido", motivo: "resposta_ilegivel" };
+    // ⚠️⚠️ SUCESSO SÓ COM `err === null` EXPLÍCITO. Campo ausente/undefined NÃO é "sem erro".
+    if (!("err" in st) || st.err === undefined) return { estado: "desconhecido", motivo: "resposta_incompleta" };
+    if (st.err !== null) return { estado: "falhou_na_rede", slot: st.slot, erro: JSON.stringify(st.err).slice(0, 160) };
+    if (st.confirmationStatus === "confirmed" || st.confirmationStatus === "finalized") {
+      return { estado: "confirmada", slot: st.slot, confirmacao: st.confirmationStatus };
     }
-    return { estado: "pendente", alturaAtual: null }; // "processed": ainda pode ser descartada
+    if (st.confirmationStatus === "processed" || st.confirmationStatus === null) return { estado: "pendente", alturaAtual: null };
+    return { estado: "desconhecido", motivo: "resposta_inconsistente" };
   }
-  if (v !== null && v !== undefined) return { estado: "desconhecido", motivo: "resposta_ilegivel" };
   const h = await rpc("getBlockHeight", [{ commitment: "confirmed" }], TIMEOUT_STATUS_MS);
   if (h.tipo !== "ok" || typeof h.result !== "number") return { estado: "pendente", alturaAtual: null };
   if (lastValidBlockHeight !== null && h.result > lastValidBlockHeight) return { estado: "expirada", alturaAtual: h.result };

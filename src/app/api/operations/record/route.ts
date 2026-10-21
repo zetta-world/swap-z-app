@@ -78,6 +78,20 @@ export async function POST(req: NextRequest) {
   const session = await getSession();
   const sessionWallet = session?.sub ?? null;
 
+  /**
+   * ⚠️ W3 (21/10) — ISOLAMENTO DE IDENTIDADE. A sessão sozinha não basta: o registro é de quem
+   * OPEROU, e o navegador pode estar com a sessão de outra carteira na hora de sincronizar.
+   *   · registro com carteira de origem ≠ sessão → NÃO grava (409; o cliente tenta de novo quando a
+   *     sessão for a dessa carteira) — nunca atribui a operação de A à sessão de B;
+   *   · registro SEM carteira de origem (legado, CEX, Autopilot) → grava SEM atribuição
+   *     (`wallet_address` nulo): conta no total, nunca vira identidade assinada de ninguém.
+   */
+  const origem = typeof body.wallet === "string" && body.wallet.trim() ? body.wallet.trim() : null;
+  if (origem && sessionWallet && origem.toLowerCase() !== sessionWallet.toLowerCase()) {
+    return NextResponse.json({ ok: false, error: "wallet_divergente" }, { status: 409 });
+  }
+  const atribuida = origem && sessionWallet ? sessionWallet : null;
+
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ ok: false, error: "db_unavailable" }, { status: 503 });
 
@@ -109,7 +123,7 @@ export async function POST(req: NextRequest) {
   {
     const { error } = await db.from("operations").upsert({
       ref:            str(body.ref, 120),
-      wallet_address: sessionWallet,   // ignora body.wallet de propósito
+      wallet_address: atribuida,   // só quando origem do registro == sessão (W3)
       kind:           str(body.kind, 40)!,
       chain:          str(body.chain, 40),
       pair:           str(body.pair, 40),

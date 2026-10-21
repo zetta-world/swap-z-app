@@ -19,6 +19,7 @@ vi.mock("@/lib/rate-limit", () => ({
 
 import { consultarStatus, transmitir, validarTransacaoAssinada, assinaturaDe, base58 } from "@/lib/solana/transmissao";
 import { POST } from "@/app/api/solana/transmitir/route";
+import { conferirVinculo, emitirVinculo } from "@/lib/solana/vinculo";
 import { GET } from "@/app/api/solana/status/route";
 
 const RPC_SECRETO = "https://mainnet.helius-rpc.com/?api-key=SEGREDO-HELIUS-456";
@@ -40,6 +41,9 @@ function txSwap(opts: { pagador?: Keypair; assinante?: Keypair; extra?: Transact
   return tx;
 }
 const b64 = (tx: VersionedTransaction) => Buffer.from(tx.serialize()).toString("base64");
+/** O vínculo que o SERVIDOR emitiria na cotação para a mensagem desta transação. */
+const vin = (tx: VersionedTransaction, bps = 100, f: string | null = "En1J8udXpzyAwuziqdpWWHvHV7p95RG1b2iAgpcvxNuo") =>
+  emitirVinculo({ mensagem: tx.message.serialize(), owner: tx.message.staticAccountKeys[0].toBase58(), bps, feeAccount: f })!;
 
 type Corpo = { method: string; params: unknown[] };
 let pedidos: { url: string; headers: Headers; corpo: Corpo }[] = [];
@@ -49,6 +53,8 @@ const ok = (result: unknown) => Response.json({ jsonrpc: "2.0", id: 1, result })
 beforeEach(() => {
   s.rl = true; pedidos = [];
   vi.stubEnv("HELIUS_RPC_URL", RPC_SECRETO);
+  vi.stubEnv("AUTH_JWT_SECRET", "segredo-de-sessao-de-teste-0123456789");
+  vi.stubEnv("TX_VINCULO_SECRET", "");
   rpc = (c) => ok(c.method === "sendTransaction" ? "?" : null);
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     const corpo = JSON.parse(String(init?.body)) as Corpo;
@@ -183,6 +189,27 @@ describe("status on-chain — confirmada só com err nulo", () => {
     expect(await consultarStatus(SIG, 999)).toEqual({ estado: "expirada", alturaAtual: 1000 });
   });
 
+  it("⚠️ revisão: resposta SEM o campo `err` (ou undefined) NUNCA vira confirmada", async () => {
+    rpc = status({ slot: 9, confirmationStatus: "finalized" });
+    expect(await consultarStatus(SIG, 2000)).toEqual({ estado: "desconhecido", motivo: "resposta_incompleta" });
+    rpc = status({ slot: 9, err: undefined, confirmationStatus: "confirmed" });
+    expect(await consultarStatus(SIG, 2000)).toEqual({ estado: "desconhecido", motivo: "resposta_incompleta" });
+  });
+
+  it("⚠️ revisão: estrutura inconsistente → desconhecido (nunca confirmada)", async () => {
+    for (const result of [{ value: [] }, { value: [null, null] }, { value: "x" }, {}, { value: [{ err: null, confirmationStatus: "finalized" }] },
+      { value: [{ slot: "9", err: null, confirmationStatus: "finalized" }] }, { value: [{ slot: 9, err: null, confirmationStatus: "talvez" }] }, { value: [7] }]) {
+      rpc = (c) => c.method === "getSignatureStatuses" ? ok(result) : ok(1);
+      const r = await consultarStatus(SIG, 2000);
+      expect(r.estado, JSON.stringify(result)).toBe("desconhecido");
+    }
+  });
+
+  it("`confirmationStatus: null` com err nulo → pendente (não confirmada)", async () => {
+    rpc = status({ slot: 9, err: null, confirmationStatus: null });
+    expect(await consultarStatus(SIG, 2000)).toMatchObject({ estado: "pendente" });
+  });
+
   it("RPC 403/timeout → desconhecido (NUNCA 'falhou')", async () => {
     rpc = () => new Response("x", { status: 403 });
     expect(await consultarStatus(SIG, 999)).toEqual({ estado: "desconhecido", motivo: "http_403" });
@@ -198,7 +225,7 @@ describe("rota /api/solana/transmitir", () => {
   it("transmite e devolve estado + assinatura; nada de transação nem credencial na resposta/log", async () => {
     const tx = txSwap();
     rpc = () => ok(assinaturaDe(tx));
-    const r = await postar({ tx: b64(tx), owner: dono.publicKey.toBase58() });
+    const r = await postar({ tx: b64(tx), owner: dono.publicKey.toBase58(), vinculo: vin(tx) });
     expect(r.status).toBe(200);
     const corpo = await r.text();
     expect(JSON.parse(corpo)).toEqual({ ok: true, estado: "enviada", assinatura: assinaturaDe(tx) });
@@ -207,9 +234,10 @@ describe("rota /api/solana/transmitir", () => {
     expect(JSON.stringify([vi.mocked(console.info).mock.calls, vi.mocked(console.warn).mock.calls])).not.toContain("SEGREDO");
   });
 
-  it("transação inválida → 400 e o RPC NÃO é chamado", async () => {
+  it("transação inválida → 400 marcada `antes_do_rpc`, e o RPC NÃO é chamado", async () => {
     const r = await postar({ tx: b64(txSwap()), owner: Keypair.generate().publicKey.toBase58() });
     expect(r.status).toBe(400);
+    expect(await r.json()).toMatchObject({ ok: false, fase: "antes_do_rpc" });
     expect(pedidos).toHaveLength(0);
   });
 
@@ -223,7 +251,7 @@ describe("rota /api/solana/transmitir", () => {
   it("não é proxy: campos extras não escolhem método nem RPC", async () => {
     const tx = txSwap();
     rpc = () => ok(assinaturaDe(tx));
-    await postar({ tx: b64(tx), owner: dono.publicKey.toBase58(), method: "requestAirdrop", rpc: "https://evil" });
+    await postar({ tx: b64(tx), owner: dono.publicKey.toBase58(), vinculo: vin(tx), method: "requestAirdrop", rpc: "https://evil" });
     expect(pedidos.map((p) => p.corpo.method)).toEqual(["sendTransaction"]);
     expect(pedidos[0].url).toBe(RPC_SECRETO);
   });
@@ -233,7 +261,7 @@ describe("⚠️ preservação: o servidor transmite BYTE A BYTE o que a carteir
   it("a transação enviada ao RPC é idêntica à recebida (taxa Z-SWAP e instrução de swap intactas)", async () => {
     const tx = txSwap({ dados: 72 });   // instrução de swap com dados de taxa (formato da Jupiter)
     rpc = () => ok(assinaturaDe(tx));
-    await postar({ tx: b64(tx), owner: dono.publicKey.toBase58() });
+    await postar({ tx: b64(tx), owner: dono.publicKey.toBase58(), vinculo: vin(tx) });
     expect(pedidos[0].corpo.params[0]).toBe(b64(tx));
   });
 });
@@ -243,7 +271,8 @@ describe("sincronização de operações (volume/receita) — só confirmada, s�
     const { readFileSync } = await import("node:fs");
     const t = readFileSync("src/lib/hooks/useOperationSync.ts", "utf8");
     expect(t).toMatch(/e\.status === "confirmed"/);
-    expect(t).toMatch(/\(!e\.wallet \|\| e\.wallet === wallet\)/);
+    expect(t).toMatch(/pendentesParaSincronizar\(entries, synced, conectadas\)/);
+    expect(t).toMatch(/wallet:    e\.wallet,/);   // a carteira de ORIGEM, nunca a conectada
   });
 });
 
@@ -255,5 +284,75 @@ describe("rota /api/solana/status", () => {
     rpc = (c) => c.method === "getSignatureStatuses" ? ok({ value: [null] }) : ok(1000);
     const r = await GET(new NextRequest(`http://localhost/api/solana/status?sig=${base58(new Uint8Array(64).fill(7))}&lvbh=999`));
     expect(await r.json()).toMatchObject({ ok: true, estado: "expirada" });
+  });
+});
+
+describe("⚠️⚠️ revisão: vínculo cotação ↔ transação (taxa decidida no servidor)", () => {
+  const owner = () => dono.publicKey.toBase58();
+
+  it("sem vínculo → recusada antes do RPC", async () => {
+    const r = await postar({ tx: b64(txSwap()), owner: owner() });
+    expect(r.status).toBe(400);
+    expect(await r.json()).toMatchObject({ fase: "antes_do_rpc", erro: "vinculo_ausente" });
+    expect(pedidos).toHaveLength(0);
+  });
+
+  it("⚠️ transação ADULTERADA (ex.: sem a taxa) e RE-ASSINADA pela carteira → assinatura válida, mas mensagem ≠ cotada → recusada", async () => {
+    const cotada = txSwap({ dados: 72 });                 // com dados de taxa
+    const adulterada = txSwap({ dados: 56 });             // "sem taxa", assinada de verdade pelo dono
+    expect(validarTransacaoAssinada(b64(adulterada), owner()).ok).toBe(true);   // a assinatura sozinha não pega
+    const r = await postar({ tx: b64(adulterada), owner: owner(), vinculo: vin(cotada) });
+    expect(await r.json()).toMatchObject({ erro: "vinculo_mensagem_diferente" });
+    expect(pedidos).toHaveLength(0);
+  });
+
+  it("vínculo forjado (sem o segredo) → recusado", async () => {
+    const tx = txSwap();
+    const [corpo] = vin(tx).split(".");
+    const forjado = `${corpo}.${Buffer.alloc(32, 9).toString("base64url")}`;
+    expect(await (await postar({ tx: b64(tx), owner: owner(), vinculo: forjado })).json()).toMatchObject({ erro: "vinculo_assinatura" });
+  });
+
+  it("corpo do vínculo trocado (ex.: bps 0 → 100) com a assinatura antiga → recusado", async () => {
+    const tx = txSwap();
+    const [, mac] = vin(tx, 0, null).split(".");
+    const d = { ...JSON.parse(Buffer.from(vin(tx, 0, null).split(".")[0], "base64url").toString()), b: 100, f: "x" };
+    const trocado = `${Buffer.from(JSON.stringify(d)).toString("base64url")}.${mac}`;
+    expect(await (await postar({ tx: b64(tx), owner: owner(), vinculo: trocado })).json()).toMatchObject({ erro: "vinculo_assinatura" });
+  });
+
+  it("vínculo expirado → recusado", () => {
+    const tx = txSwap();
+    expect(conferirVinculo(vin(tx), tx, Date.now() + 4 * 60_000)).toEqual({ ok: false, motivo: "vinculo_expirado" });
+  });
+
+  it("vínculo de OUTRO pagador → recusado", () => {
+    const outro = Keypair.generate();
+    const txOutro = txSwap({ pagador: outro });
+    const tx = txSwap();
+    const v = emitirVinculo({ mensagem: tx.message.serialize(), owner: outro.publicKey.toBase58(), bps: 100, feeAccount: "f" })!;
+    expect(conferirVinculo(v, tx)).toEqual({ ok: false, motivo: "vinculo_pagador" });
+    void txOutro;
+  });
+
+  it("fail-open legítimo (servidor decidiu SEM taxa: b=0, f=null) → aceito", async () => {
+    const tx = txSwap();
+    rpc = () => ok(assinaturaDe(tx));
+    const r = await postar({ tx: b64(tx), owner: owner(), vinculo: vin(tx, 0, null) });
+    expect(await r.json()).toMatchObject({ ok: true, estado: "enviada" });
+  });
+
+  it("sem segredo no servidor → nada é emitido e a transmissão recusa (falha fechada)", async () => {
+    vi.stubEnv("AUTH_JWT_SECRET", "");
+    const tx = txSwap();
+    expect(emitirVinculo({ mensagem: tx.message.serialize(), owner: owner(), bps: 0, feeAccount: null })).toBeNull();
+    expect(await (await postar({ tx: b64(tx), owner: owner(), vinculo: "a.b" })).json()).toMatchObject({ erro: "vinculo_indisponivel" });
+  });
+
+  it("o token não carrega segredo nem a transação: só hash, pagador, bps, conta, validade", () => {
+    const tx = txSwap();
+    const d = JSON.parse(Buffer.from(vin(tx).split(".")[0], "base64url").toString());
+    expect(Object.keys(d).sort()).toEqual(["b", "f", "h", "o", "v", "x"]);
+    expect(JSON.stringify(d)).not.toContain("segredo");
   });
 });

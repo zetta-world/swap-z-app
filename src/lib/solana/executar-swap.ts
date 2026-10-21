@@ -30,6 +30,8 @@ export interface DepsSwapSolana {
   owner: string;
   tx: VersionedTransaction;
   validoAteBloco: number;
+  /** Vínculo emitido pelo servidor na cotação firme (`result.swap.vinculo`). */
+  vinculo?: string;
   /** Campos descritivos da linha do histórico (par, valores, rota…). */
   registro: Omit<TxHistoryEntry, "id" | "ts" | "status" | "etapa" | "wallet" | "validoAteBloco" | "txHash">;
   historico: {
@@ -90,7 +92,7 @@ export async function executarSwapSolana(d: DepsSwapSolana): Promise<{ historyId
     const aceita = await d.enviarJito(b64).catch(() => null);
     if (aceita === sig) envio = { estado: "enviada", assinatura: sig };
   }
-  if (!envio) envio = await transmitir(b64, d.owner, sig);
+  if (!envio) envio = await transmitir(b64, d.owner, sig, d.vinculo);
 
   if (envio.estado === "nao_enviada") {
     marcar("envio_falhou", { motivo: envio.motivo.slice(0, 120) });

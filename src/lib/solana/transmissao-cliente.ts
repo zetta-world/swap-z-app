@@ -21,24 +21,29 @@ export type Desfecho =
   | { estado: "indefinido"; motivo: string };   // ainda pendente/desconhecido quando o acompanhamento acabou
 
 /** Envia a transação assinada. `assinatura` é a derivada localmente (a mesma que a rede usará). */
-export async function transmitirAssinada(txBase64: string, owner: string, assinatura: string): Promise<Envio> {
+export async function transmitirAssinada(txBase64: string, owner: string, assinatura: string, vinculo?: string): Promise<Envio> {
   let res: Response;
   try {
     res = await fetch("/api/solana/transmitir", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ tx: txBase64, owner }), cache: "no-store",
+      body: JSON.stringify({ tx: txBase64, owner, vinculo }), cache: "no-store",
     });
   } catch {
     // Não sabemos se o servidor chegou a transmitir.
     return { estado: "incerta", assinatura, motivo: "conexao_com_servidor" };
   }
-  let j: { ok?: boolean; estado?: string; assinatura?: string; motivo?: string; erro?: string } = {};
+  let j: { ok?: boolean; fase?: string; estado?: string; assinatura?: string; motivo?: string; erro?: string } = {};
   try { j = await res.json(); } catch { /* tratado abaixo */ }
-  // 400/413/429/503 vêm ANTES do RPC: certo que não transmitiu.
-  if (res.status === 400 || res.status === 413 || res.status === 429 || res.status === 503) {
-    return { estado: "nao_enviada", assinatura, motivo: j.erro ?? `http_${res.status}` };
+  // ⚠️ "Não transmitida" só com PROVA: recusa estruturada da aplicação marcada `antes_do_rpc`.
+  // Um 503/429/504 de gateway ou da infraestrutura (sem a marca) pode ter chegado DEPOIS de o
+  // servidor transmitir — é incerto, e a assinatura pública reconcilia.
+  if (!res.ok) {
+    if (j.ok === false && j.fase === "antes_do_rpc" && typeof j.erro === "string") {
+      return { estado: "nao_enviada", assinatura, motivo: j.erro };
+    }
+    return { estado: "incerta", assinatura, motivo: `http_${res.status}` };
   }
-  if (!res.ok || j.ok !== true) return { estado: "incerta", assinatura, motivo: j.erro ?? `http_${res.status}` };
+  if (j.ok !== true) return { estado: "incerta", assinatura, motivo: "resposta_inesperada" };
   if (j.assinatura !== assinatura) return { estado: "incerta", assinatura, motivo: "assinatura_divergente" };
   if (j.estado === "enviada") return { estado: "enviada", assinatura };
   if (j.estado === "nao_enviada") return { estado: "nao_enviada", assinatura, motivo: j.motivo ?? "recusada" };

@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useAccount } from "wagmi";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { useTxHistory } from "@/lib/store/txHistory";
+import { useTxHistory, type TxHistoryEntry } from "@/lib/store/txHistory";
 import { useRealizedPnl, effectiveRealizedUsd } from "@/lib/store/costBasis";
 
 /**
@@ -36,12 +36,29 @@ function sideOf(from: string, to: string): string | undefined {
   return undefined;
 }
 
+/**
+ * ⚠️ W3 — O QUE SOBE PARA O LIVRO DE OPERAÇÕES, E COM QUAL IDENTIDADE.
+ * Só `confirmed`, uma vez. Registro COM carteira de origem sobe só quando ESSA carteira está
+ * conectada (e o servidor ainda confere contra a sessão — 409 se divergir). Registro SEM carteira
+ * (legado, CEX, Autopilot) sobe SEM identidade — nunca com a carteira conectada no lugar.
+ */
+export function pendentesParaSincronizar(entries: TxHistoryEntry[], synced: Set<string>, conectadas: string[]): TxHistoryEntry[] {
+  const on = conectadas.map((c) => c.toLowerCase());
+  return entries.filter((e) => e.status === "confirmed" && !!e.id && !synced.has(e.id)
+    && (!e.wallet || on.includes(e.wallet.toLowerCase())));
+}
+
 export function useOperationSync(): void {
   const entries  = useTxHistory((s) => s.entries);
   const realized = useRealizedPnl();
   const { address: evm } = useAccount();
   const sol = useWallet();
-  const wallet = sol.publicKey?.toBase58() ?? evm ?? null;
+  // W3: NÃO existe "a carteira atual" para atribuir. Cada registro carrega a carteira que operou;
+  // esta lista só diz quais estão conectadas agora (Solana e EVM são identidades separadas).
+  const solWallet = sol.publicKey?.toBase58() ?? null;
+  const evmWallet = evm ?? null;
+  const conectadas = useMemo(() => [solWallet, evmWallet].filter((x): x is string => !!x), [solWallet, evmWallet]);
+  const wallet = conectadas[0] ?? null;
 
   const syncedRef = useRef<Set<string> | null>(null);
   const busyRef   = useRef(false);
@@ -51,10 +68,7 @@ export function useOperationSync(): void {
     if (!syncedRef.current) syncedRef.current = loadSynced();
     const synced = syncedRef.current;
 
-    // W3: só o que é DESTA carteira (registros antigos sem `wallet` seguem como antes) — uma
-    // operação da carteira A nunca é registrada como da carteira B.
-    const pending = entries.filter((e) => e.status === "confirmed" && e.id && !synced.has(e.id)
-      && (!e.wallet || e.wallet === wallet));
+    const pending = pendentesParaSincronizar(entries, synced, conectadas);
     if (pending.length === 0) return;
 
     busyRef.current = true;
@@ -62,7 +76,7 @@ export function useOperationSync(): void {
       for (const e of pending) {
         const ok = await post({
           ref:       e.id,
-          wallet,
+          wallet:    e.wallet,   // a de ORIGEM; ausente = sem atribuição
           kind:      e.type,
           status:    e.status,
           chain:     e.exchange ?? e.toChain ?? e.fromChain ?? undefined,
@@ -88,7 +102,7 @@ export function useOperationSync(): void {
       saveSynced(synced);
       busyRef.current = false;
     })();
-  }, [entries, realized, wallet]);
+  }, [entries, realized, wallet, conectadas]);
 }
 
 async function post(body: Record<string, unknown>): Promise<boolean> {
