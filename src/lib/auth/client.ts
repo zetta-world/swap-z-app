@@ -6,6 +6,7 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import bs58 from "bs58";
 import { useTier } from "@/lib/tier/client";
 import { armCeremony } from "@/lib/tier/ceremony";
+import { useUI } from "@/lib/store/ui";
 
 /**
  * Wallet-first sign-in flow, shared by every entry point (SignInButton,
@@ -41,6 +42,7 @@ export function useWalletAuth(): WalletAuth {
   const { signMessageAsync } = useSignMessage();
   const sol = useWallet();
   const { refresh } = useTier();
+  const manterSessao = useUI((u) => u.manterSessao);
 
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<SignInError | null>(null);
@@ -94,7 +96,7 @@ export function useWalletAuth(): WalletAuth {
       const verifyRes = await fetch("/api/auth/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address, chain, signature }),
+        body: JSON.stringify({ address, chain, signature, manter: manterSessao }),
       });
       if (verifyRes.status === 503) { setError("unconfigured"); return false; }
       if (!verifyRes.ok) { setError("failed"); return false; }
@@ -108,7 +110,7 @@ export function useWalletAuth(): WalletAuth {
     } finally {
       setPending(false);
     }
-  }, [solConnected, evmAvailable, solanaAvailable, evmAddress, sol, signMessageAsync, refresh]);
+  }, [solConnected, evmAvailable, solanaAvailable, evmAddress, sol, signMessageAsync, refresh, manterSessao]);
 
   const signOut = useCallback(async () => {
     try {

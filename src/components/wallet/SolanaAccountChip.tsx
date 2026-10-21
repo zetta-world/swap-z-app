@@ -1,13 +1,15 @@
 "use client";
 
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { useWallet, useConnection } from "@solana/wallet-adapter-react";
-import { LAMPORTS_PER_SOL } from "@solana/web3.js";
-import { useEffect, useState } from "react";
+import { useWallet } from "@solana/wallet-adapter-react";
 import { Copy, LogOut, ExternalLink, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { formatAmount } from "@/lib/format";
 import { useT } from "@/lib/i18n";
+import { useTokenBalance } from "@/lib/hooks/useTokenBalance";
+import { findToken } from "@/lib/tokens";
+
+const SOL = findToken("solana", "SOL");
 
 /**
  * Compact Solana account pill in the topbar — sits beside the EVM AccountMenu
@@ -17,31 +19,16 @@ import { useT } from "@/lib/i18n";
 export default function SolanaAccountChip() {
   const t = useT();
   const { publicKey, disconnect, wallet } = useWallet();
-  const { connection } = useConnection();
-  const [lamports, setLamports] = useState<bigint | null>(null);
-
-  useEffect(() => {
-    if (!publicKey) {
-      setLamports(null);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const bal = await connection.getBalance(publicKey, "confirmed");
-        if (!cancelled) setLamports(BigInt(bal));
-      } catch {
-        if (!cancelled) setLamports(null);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [publicKey, connection]);
+  // W1: a MESMA leitura do Swap e do Portfólio (servidor, chave dono+mint) — antes este chip
+  // chamava o RPC público direto do navegador, que responde 403.
+  const sol = useTokenBalance(SOL, null);
 
   if (!publicKey) return null;
 
   const addr  = publicKey.toBase58();
   const short = `${addr.slice(0, 4)}…${addr.slice(-4)}`;
-  const solBalance = lamports !== null ? Number(lamports) / LAMPORTS_PER_SOL : null;
+  const solBalance = sol.status === "READY_POSITIVE" || sol.status === "READY_ZERO" || sol.status === "STALE"
+    ? Number(sol.formatted) : null;
 
   const onCopy = async () => {
     try {
@@ -70,16 +57,29 @@ export default function SolanaAccountChip() {
         >
           <div className="px-2.5 py-2 mb-1">
             <div className="font-mono text-[9px] tracking-widest uppercase mb-1" style={{ color: "#14F195" }}>
-              Solana · {wallet?.adapter.name ?? t("common.connected").toLowerCase()}
+              {wallet?.adapter.name ?? t("common.connected")} · Solana
             </div>
             <div className="font-mono text-[11px] text-ink tabular-nums break-all">
               {addr}
             </div>
-            {solBalance !== null && (
-              <div className="mt-2 font-mono text-[10px] text-ink-3">
-                {t("topbar.accountBalance")}: <span className="text-ink-2 font-bold">{formatAmount(solBalance, 4)} SOL</span>
-              </div>
-            )}
+            <div className="mt-2 font-mono text-[10px] text-ink-3">
+              {t("topbar.accountBalance")}:{" "}
+              {solBalance !== null ? (
+                <span className="text-ink-2 font-bold">
+                  {formatAmount(solBalance, 4)} SOL{sol.status === "STALE" ? ` (${t("topbar.balanceStale")})` : ""}
+                </span>
+              ) : sol.status === "ERROR" ? (
+                <>
+                  <span className="text-red/80">{t("topbar.balanceUnavailable")}</span>{" "}
+                  <button type="button" onClick={() => sol.refetch()} className="text-cyan/80 hover:text-cyan underline underline-offset-2">
+                    {t("topbar.balanceRetry")}
+                  </button>
+                </>
+              ) : (
+                <span>…</span>
+              )}
+            </div>
+            <div className="mt-2 font-sans text-[10px] leading-snug text-ink-4">{t("topbar.balanceSeparate")}</div>
           </div>
 
           <div className="h-px bg-white/5 my-1" />

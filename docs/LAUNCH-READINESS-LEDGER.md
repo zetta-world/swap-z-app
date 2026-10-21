@@ -1237,3 +1237,115 @@ payload executável; LI.FI EVM 100. **A nova tentativa disparou em produção** 
 nas respostas, 38 chunks do navegador sem chave/host Jupiter, 0 source map. Smoke de rotas 25/25. Rollback:
 `dpl_AcHcoSLXYEeWB1qvMQE9NXqpimrn` (`2a06326`). **Pendente:** primeiro swap real assinado (sugerido: o dono, valor
 pequeno, conferindo a taxa na conta).
+
+## L-063 — W1: carteiras, saldos e mobile (20/10/2026)
+
+**Incidente (dono, Android + Phantom):** `Balance: —` no Swap e duas leituras indisponíveis no Portfólio com a carteira
+conectada (Phantom: ≈0,263 SOL / ≈11,501 USDC); sem como adicionar a 2ª carteira no celular. Sem perda de fundos.
+
+**Causa raiz comprovada:** o navegador lia saldo no RPC público (`NEXT_PUBLIC_SOLANA_RPC` não existe → `clusterApiUrl`),
+que responde **403 a toda requisição com `Origin`** (medido: sem `Origin` 200; com `Origin` de qualquer site 403;
+User-Agent/Referer irrelevantes; CORS 200). O erro ainda era modelado como `isZero: true`. Botão "+" era
+`hidden sm:inline-flex`. Valores reais conferidos pelo servidor: `H7zw…` 0,25190507 SOL e 11,501 USDC.
+
+**Código (`de77dae` + `70ba76a`, branch `fix/w1-carteiras-saldos`):** `/api/solana/saldo` (leitura restrita no RPC do
+servidor; só `getBalance`/`getTokenAccountsByOwner` por mint; validação, rate limit por IP + global, timeout, cache 10 s
++ dedup; erro tipado, nunca 0; u64 exato); `useTokenBalance` com TanStack (chave dono+mint compartilhada; 6 estados;
+resposta de outro dono descartada; retry só transitório; relê ao reconectar/voltar/confirmar swap; sem polling); Swap
+"indisponível · Tentar de novo"/"desatualizado", MAX só com saldo lido; Portfólio/ZION tratam erro como indisponível;
+chip Solana na mesma leitura; "+" visível no celular; menus "Phantom · Solana"/"· EVM". 1 efeito de UI no `ExecuteSwap`
+(invalida saldos em `tx_confirmed`) — envio/confirmação intocados. Plano: `docs/PLANO-W1-CARTEIRAS-SALDOS.md`.
+
+**Testes:** 3 arquivos novos (56 testes) + A32 adaptado; no código de produção os 3 falham; 7 quebras deliberadas
+detectadas. Gates no SHA exato `70ba76a` (tree `955a37a9cb82abd025685f24af57262ebf162387`): `npm ci` 0 · lint 0/144 ·
+type-check 0 · suíte 335/4922 ×2 · build 0 · 0 credencial no bundle · **audit-gate R-03 FALHOU** (alertas novos de
+terceiros publicados em 19–20/10: `follow-redirects` 1.16.0 via `wagmi→@wagmi/connectors→@base-org/account→
+@coinbase/cdp-sdk→axios`, e `vite` ≤8.1.5; lockfile idêntico ao da `main` — a `main` falha igual no próximo CI). CI
+39502270015: lint/type-check/testes OK, falha só no passo do audit.
+
+**Preview `swap-z-o4xy0g5z2-…` (só leitura, nada assinado):** 7/7 saldos iguais à rede; QA headless 360/1440 com Phantom
+simulada só-conexão: PASS (ver evidência). **Não feito:** Android/Phantom real (roteiro manual no plano).
+
+**⚠️ W3 (achado, não corrigido):** `ExecuteSwap` envia e confirma pela conexão do navegador no RPC público → 403;
+swap Solana fora do Jito provavelmente falha no envio hoje (sem perda de fundos). **W2:** descoberta de todos os tokens.
+Produção: não autorizada. Rollback: produção segue em `986ae75`.
+
+## L-064 — W3: transmissão/confirmação Solana e histórico de tentativas (21/10/2026)
+
+**Incidente:** no preview W1 o dono assinou SOL→USDC na Phantom e recebeu "403 Access forbidden"; sem registro na Phantom
+nem na Z-SWAP. **Causa raiz comprovada:** o envio (`sendRawTransaction`) ia pelo RPC público a partir do navegador, que
+recusa com 403 na porta toda requisição com `Origin`, antes de ler o corpo. **Etapa: envio, após a assinatura.** Jito
+desligado por padrão. **Não transmitida** (`H7zw…` sem transação desde 16/10). Histórico só era gravado após envio OK.
+
+**Código (`9934d11` + `4f002ae`, branch `fix/w3-transmissao-solana`, base W1 `f5319e9`):** `POST /api/solana/transmitir`
+(só transação v0 já assinada pela carteira, ≤1232 B, ed25519 conferida, pagador = carteira, Jupiter v6, programas
+permitidos; envio único com preflight no RPC do servidor; `enviada`/`nao_enviada`/`incerta` + assinatura pública);
+`GET /api/solana/status` (confirmada só com `err` nulo, falhou_na_rede, pendente, expirada); `lib/solana/executar-swap.ts`
+(tentativa registrada antes da assinatura; etapas; anti-duplicação; Jito com fallback da MESMA transação); histórico com
+etapas, carteira e validade, "Falha no envio" ≠ "Falhou na blockchain", reconciliação ao abrir o app; sync de operações só
+`confirmed` e da carteira certa. Não-custodial: servidor sem chave, transmite os mesmos bytes. Plano:
+`docs/PLANO-W3-TRANSMISSAO-SOLANA.md`.
+
+**Evidência:** 7 quebras deliberadas detectadas; gates `4f002ae`: lint 0/144, tipos, suíte 337/4977 ×2, build, 0 credencial
+no bundle, **audit-gate FALHOU** (herdado). CI 39523037030 (só o audit falha). Preview `swap-z-dklwck7rb`: status real
+(confirmada/expirada/pendente/400) e E2E com carteira de teste sem fundos 10/10 (servidor chega ao RPC sem 403, preflight
+recusa, "Falha no envio", histórico com assinatura pública). **Falta:** swap real com fundos (autorização específica).
+Produção: não autorizada; segue em `986ae75`.
+
+**Revisão independente (ChatGPT, 21/10) — não autorizou o teste com fundos; correções em `5db2564`:** status on-chain estrito
+(`confirmada` só com `err === null` explícito; estrutura conferida); "não transmitida" só com recusa estruturada
+`fase: antes_do_rpc` (gateway 502/503/504/429 → incerta); identidade de ORIGEM nos registros, sync só com a carteira de
+origem conectada, servidor recusa origem ≠ sessão (409) e grava sem atribuição o que não tem origem (CEX/Autopilot/legado
+ficam sem atribuição — totais intactos); vínculo HMAC cotação↔transação (hash da mensagem montada pelo servidor + pagador +
+taxa decidida + validade 3 min) exigido na transmissão; anti-duplicação documentada como LOCAL (testes fixam o limite;
+trava no servidor proposta, não implementada). No código `80e4647`: 16 testes da revisão falham; 6 quebras deliberadas
+detectadas. Gates `5db2564` (tree `efb3d3a4a0aaf02d89b036c68a2efdd167abf855`): lint 0/144 · tipos · suíte 338/5009 ×2 ·
+build · 0 credencial no bundle · audit-gate FALHOU (herdado; rodada de dependências separada). CI 39528609610 (só o
+audit falha). Preview `swap-z-mpg00px97` (sem fundos): vínculo ao vivo — legítima chega ao RPC (preflight
+`AccountNotFound`), adulterada+re-assinada/sem vínculo/forjada recusadas antes do RPC; status real confirmada/expirada/
+pendente/400; E2E pela tela 10/10. **Parado para a 2ª auditoria; nenhum swap com fundos.**
+
+**2ª auditoria independente (21/10) — NO-GO; correções em `f83e12a`:**
+- **W3-A (bloqueador)**: reproduzido no código `5db2564` (sessão de A Pilot + taker B → B pagava 10 bps; 5 de 8 testes
+  falham). Corrigido: plano da sessão só quando a sessão É o pagador (`mesmaCarteira`); senão Free. Jupiter, 0x e LI.FI.
+  Efeito: plano numa carteira não vale para outra até ela se autenticar (sem vínculo entre carteiras).
+- **W3-B (bloqueador)**: `NEXT_PUBLIC_SOLANA_JITO` medido como **"on" em Preview e Production** nos bundles servidos (ramo
+  "desligado" eliminado na compilação; sem decriptar nada) — em produção `986ae75`, swaps com exposição ≥ $25 tentam o
+  Jito direto do navegador, fora do vínculo. Corrigido: um único caminho de envio (servidor + vínculo); Jito fora do fluxo
+  e do bundle (0 ocorrências de `block-engine`); testes travam caminho alternativo. Recomendado ao dono: variável `off`.
+- **W3-C**: duplicação entre dois navegadores reproduzida no preview (duas assinaturas, ambas levadas ao RPC). Trava
+  durável desenhada (`docs/PROPOSTA-W3-TRAVA-E-RECONCILIACAO.md`), migration NÃO aplicada.
+- **W3-D**: livro aceita conteúdo financeiro declarado; o painel separa por atribuição, não por verificação on-chain.
+  Reconciliação por assinatura e classes de verificação propostas, NÃO aplicadas.
+- 3 quebras deliberadas (após corrigir 2 furos dos próprios testes: caixa EVM e removedor de comentários). Gates
+  `f83e12a` (tree `765cb4d9e9313b1c84710ab466fb28862c67b55b`): lockfile intocado · lint 0/144 · tipos · suíte 339/5019 ×2
+  · build · 0 credencial · **audit-gate FALHOU** (follow-redirects, vite — rodada de dependências). CI 39583483966 (só
+  audit falha). Preview `swap-z-2v9nd3li3` (sem fundos): status real, vínculo/adulteração, E2E 10/10, Jito ausente do
+  bundle. **Parado após o Preview; nenhum swap com fundos; W4 não iniciada.**
+
+## L-065 — Recuperação integrada: W1 + W3 + W3-C + W3-D + W4 + dependências (21/10/2026)
+
+**Decisão do dono (missão mestre, 21/10):** concluir a recuperação técnica e publicar em produção para testes reais
+controlados (homologação privada, sem lançamento público). Operação financeira só com assinatura do dono na carteira dele.
+
+**Código** (branch `recuperacao/integrada-20261021`, base `fix/w3-transmissao-solana`):
+- **Dependências** `04ef49b`: `follow-redirects` 1.16.1 e `vite` 8.1.6 (override na linha 8.1.x) — audit-gate OK sem
+  exceção nova (a R-03 de `braces` segue como estava).
+- **W3-C** `9ddc3e0`: trava DURÁVEL por carteira no servidor (migration 0077, `solana_tx_em_voo`, advisory lock + índice
+  único parcial, RPCs fechadas ao service_role). Sem TTL: só fato on-chain, altura de bloco > `lastValidBlockHeight`
+  (gravado do vínculo HMAC, nunca do navegador) ou recusa certa antes da rede encerram a tentativa. Banco fora → 503
+  antes do RPC. Reserva só depois da assinatura ed25519 e do vínculo conferidos (terceiro não trava carteira alheia).
+- **W3-D** `e8601fa`: livro verificável (migration 0078, colunas aditivas em `operations`; histórico todo `declarada`).
+  Reconciliação pela assinatura pública: `err` nulo, Jupiter v6, pagador = carteira de origem, taxa MEDIDA na conta de
+  taxa. Duas dimensões separadas (financeiro × identidade). Receita do painel: "verificado na rede" × "declarado".
+  `/api/operations/reconciliar` (CRON_SECRET) repete o que ficar `aguardando` — **agendar no cron-job.org é passo do dono**.
+  ⚠️ Pagador = dono das contas de taxa (`H7zw…`, a carteira do dono): receita 0 por construção (o delta inclui o swap).
+- **W4** `1b9055b`/`b61283d`: Phantom Android — o deeplink `browse` (formato oficial `phantom.com/ul/browse`) leva um
+  marcador e a página pede a conexão ao abrir dentro da Phantom; o Mobile Wallet Adapter oficial vem primeiro no Chrome
+  Android. Reconexão automática e "manter sessão" opcionais, desligados por padrão (sessão curta: cookie de navegador +
+  JWT 12 h). Sessão da carteira A é encerrada se a carteira conectada da mesma rede vira B. Configurações: 8 interruptores
+  fictícios (callbacks vazios, inclusive afirmações de segurança falsas) e a aba de RPC nunca usada foram removidos.
+
+**Evidência local:** suíte 341/5059 · tipos · lint 0 erros · build · audit-gate OK · SQL T24/T24b/T25 + regressão de ACL
+02/14/17 em Postgres 17.6.1.127 descartável (cadeia 0001→0078, reaplicação idempotente) · E2E W4 12/12 · 0 Jito e 0
+credencial no bundle. Fee accounts (`En1J8…`, `7PPDQ…`): 1 transação cada (criação, 16/10) — nenhum swap com taxa pousou.

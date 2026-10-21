@@ -16,6 +16,7 @@ import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { useOrderWatcher } from "@/lib/hooks/useOrderWatcher";
 import { useOperationSync } from "@/lib/hooks/useOperationSync";
+import { useReconciliacaoSolana } from "@/lib/hooks/useReconciliacaoSolana";
 
 // Lazy guard — only imports the heavy execute portal (and pulls in the swap
 // quote stack) the first time the user opens a swap. Keeps page-navigation
@@ -31,6 +32,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const t = useT();
   useOrderWatcher();
   useOperationSync(); // mirror confirmed operations to the server ledger
+  useReconciliacaoSolana(); // W3: resolve tentativas Solana em aberto pelo status on-chain
 
   // Drive `data-mode` on <html> so the standard / pro / privacy UI mode can
   // alter the app globally via CSS (privacy blurs balances, pro densifies).

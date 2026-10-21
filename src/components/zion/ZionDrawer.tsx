@@ -156,7 +156,8 @@ export default function ZionDrawer() {
     // balance not yet loaded, which tells the model to fall back to generic
     // sizing instead of fabricating numbers.
     const bal = balanceRef.current;
-    if (bal && !bal.loading && !bal.error) {
+    // W1: só saldo efetivamente lido (inclui zero real); desconectado/erro/desatualizado = "unknown".
+    if (bal && (bal.status === "READY_POSITIVE" || bal.status === "READY_ZERO")) {
       params.set("fromBalance",    bal.formatted);
       if (bal.usdValue !== null && Number.isFinite(bal.usdValue)) {
         params.set("fromBalanceUsd", String(bal.usdValue));

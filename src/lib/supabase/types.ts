@@ -470,6 +470,18 @@ export type OperationRow = {
   platform_fee_amount: string | null;
   platform_fee_token:  string | null;
   platform_fee_bps:    number | null;
+  /**
+   * ⚠️ W3-D (migration 0078): ESTADO FINANCEIRO medido na rede, separado da identidade.
+   * Só o servidor escreve `verificada_onchain` (com a taxa MEDIDA); todo o histórico é `declarada`.
+   */
+  tx_signature:       string | null;
+  carteira_origem:    string | null;
+  verificacao:        "verificada_onchain" | "aguardando" | "divergente" | "declarada";
+  verificacao_motivo: string | null;
+  verificada_em:      string | null;
+  pagador_onchain:    string | null;
+  taxa_onchain_raw:   number | string | null;
+  taxa_onchain_mint:  string | null;
   created_at:     string;
 };
 
@@ -878,6 +890,15 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      /** W3-C (migration 0077): trava durável por carteira das transmissões Solana. */
+      solana_tx_reservar: {
+        Args: { p_carteira: string; p_assinatura: string; p_hash: string; p_blockhash: string; p_valido_ate_bloco: number };
+        Returns: { resultado: string; desfecho?: string; assinatura?: string; valido_ate_bloco?: number };
+      };
+      solana_tx_marcar: {
+        Args: { p_assinatura: string; p_estado: string; p_desfecho: string | null; p_motivo: string | null };
+        Returns: boolean;
+      };
       consume_rate_limit: {
         Args: { p_bucket: string; p_max: number; p_window_secs: number };
         Returns: boolean;

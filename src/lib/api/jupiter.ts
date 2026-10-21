@@ -127,6 +127,8 @@ export interface JupSwapResponse {
   swapTransaction:           string;     // base64-encoded VersionedTransaction (v0), sem assinatura
   lastValidBlockHeight:      number;
   computeUnitLimit?:         number;
+  /** W3: vínculo HMAC desta transação com a cotação do servidor (`lib/solana/vinculo.ts`). */
+  vinculo?:                  string;
 }
 
 // ─── Resposta crua do `/build` ──────────────────────────────────────

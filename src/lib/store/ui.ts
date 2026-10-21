@@ -25,6 +25,13 @@ interface UIState {
   /** Global wallet-connect modal flag — lets any surface (e.g. the bridge
    *  wallet chips) open the connector without owning its own modal. */
   walletModalOpen: boolean;
+  /**
+   * W4: reconectar a carteira ao abrir a página. DESLIGADO por padrão (preferência do dono):
+   * conexão de carteira é decisão de cada visita, e é separada da sessão assinada.
+   */
+  reconectarCarteira: boolean;
+  /** W4: "manter sessão iniciada" — 30 dias quando ligado; senão até fechar o navegador (≤ 12 h). */
+  manterSessao: boolean;
 
   setMode: (m: AppMode) => void;
   setLang: (l: AppLang) => void;
@@ -37,6 +44,8 @@ interface UIState {
   setZionMode: (m: ZionMode) => void;
   setCustomRpc: (chain: string, url: string) => void;
   setWalletModal: (open: boolean) => void;
+  setReconectarCarteira: (v: boolean) => void;
+  setManterSessao: (v: boolean) => void;
 }
 
 export const useUI = create<UIState>()(
@@ -51,6 +60,8 @@ export const useUI = create<UIState>()(
       zionMode: "advanced",
       customRpc: {},
       walletModalOpen: false,
+      reconectarCarteira: false,
+      manterSessao: false,
 
       setMode:             (mode)  => set({ mode }),
       setLang:             (lang)  => set({ lang }),
@@ -63,6 +74,8 @@ export const useUI = create<UIState>()(
       setZionMode:         (m)     => set({ zionMode: m }),
       setCustomRpc:        (chain, url) => set({ customRpc: { ...get().customRpc, [chain]: url } }),
       setWalletModal:      (open)  => set({ walletModalOpen: open }),
+      setReconectarCarteira: (v)   => set({ reconectarCarteira: v }),
+      setManterSessao:     (v)     => set({ manterSessao: v }),
     }),
     {
       name: "zswap-ui",
@@ -72,6 +85,8 @@ export const useUI = create<UIState>()(
         disableTierTheme: s.disableTierTheme,
         zionMode: s.zionMode,
         customRpc: s.customRpc,
+        reconectarCarteira: s.reconectarCarteira,
+        manterSessao: s.manterSessao,
       }),
     },
   ),

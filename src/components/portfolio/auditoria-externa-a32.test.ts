@@ -21,9 +21,10 @@ vi.mock("@/lib/hooks/useTokenPrices", () => ({ useTokenPrices: () => ({ prices: 
 vi.mock("@/lib/hooks/useTokenBalance", () => ({
   useTokenBalance: (t: { symbol: string; chain: string } | undefined) => {
     const l = s.linhas.find((x) => t && x.sym === t.symbol && x.chain === t.chain);
-    if (!l) return { raw: 0n, formatted: "0", decimals: 6, symbol: t?.symbol, loading: false, error: null, isZero: true, display: "—", usdValue: null };
-    if (l.erro) return { raw: 0n, formatted: "0", decimals: 6, symbol: l.sym, loading: false, error: l.erro, isZero: true, display: "—", usdValue: null };
-    return { raw: 1n, formatted: String(l.qtd), decimals: 6, symbol: l.sym, loading: false, error: null, isZero: false, display: String(l.qtd), usdValue: l.usd };
+    // W1: o hook agora diz o ESTADO (zero lido ≠ erro ≠ sem carteira).
+    if (!l) return { status: "READY_ZERO", raw: 0n, formatted: "0", decimals: 6, symbol: t?.symbol, loading: false, error: null, isZero: true, display: "0", usdValue: null, refetch: () => {} };
+    if (l.erro) return { status: "ERROR", raw: 0n, formatted: "0", decimals: 6, symbol: l.sym, loading: false, error: l.erro, isZero: false, display: "—", usdValue: null, refetch: () => {} };
+    return { status: "READY_POSITIVE", raw: 1n, formatted: String(l.qtd), decimals: 6, symbol: l.sym, loading: false, error: null, isZero: false, display: String(l.qtd), usdValue: l.usd, refetch: () => {} };
   },
 }));
 vi.mock("@/lib/store/portfolioHistory", () => ({

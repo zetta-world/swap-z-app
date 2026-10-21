@@ -89,3 +89,78 @@ export function separarPorAtribuicao(linhas: readonly LinhaDeOperacao[]): Separa
 }
 
 const arredondar = (n: number, casas: number) => Number(n.toFixed(casas));
+
+/**
+ * ⚠️⚠️ W3-D (21/10) — DUAS DIMENSÕES, SEM MISTURA.
+ *
+ *   ESTADO FINANCEIRO (`verificacao`): o que a REDE confirmou (`verificada_onchain`, com a taxa
+ *   MEDIDA na conta de taxa) × `aguardando` × `divergente` × `declarada` (só alegação do navegador).
+ *   IDENTIDADE: origem comprovada pela rede (`pagador_onchain`) × autenticada (sessão = origem,
+ *   `wallet_address`) × não atribuída.
+ *
+ * Uma operação pode ser "autenticada" e financeiramente "declarada" (EVM, CEX), ou "verificada" e
+ * sem sessão (a rede provou o pagador mesmo sem cookie). Somar uma dimensão pela outra é o erro.
+ */
+export interface LinhaVerificavel extends LinhaDeOperacao {
+  verificacao?: string | null;
+  verificacao_motivo?: string | null;
+  pagador_onchain?: string | null;
+  taxa_onchain_raw?: number | string | null;
+  taxa_onchain_mint?: string | null;
+}
+
+export const MINT_USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+export const MINT_WSOL = "So11111111111111111111111111111111111111112";
+
+export interface ResumoVerificacao {
+  financeiro: {
+    verificada: { operacoes: number; taxaUsdc: number; taxaWsolLamports: string; outrosMints: number; autoTaxa: number };
+    aguardando: number;
+    divergente: { operacoes: number; motivos: Record<string, number> };
+    /** Alegação: soma do que o navegador DISSE ter retido nas linhas não verificadas. */
+    declarada: { operacoes: number; taxaDeclaradaUsd: number };
+  };
+  identidade: { origemComprovada: number; autenticada: number; naoAtribuida: number };
+}
+
+export function resumirVerificacao(linhas: readonly LinhaVerificavel[]): ResumoVerificacao {
+  const r: ResumoVerificacao = {
+    financeiro: {
+      verificada: { operacoes: 0, taxaUsdc: 0, taxaWsolLamports: "0", outrosMints: 0, autoTaxa: 0 },
+      aguardando: 0, divergente: { operacoes: 0, motivos: {} }, declarada: { operacoes: 0, taxaDeclaradaUsd: 0 },
+    },
+    identidade: { origemComprovada: 0, autenticada: 0, naoAtribuida: 0 },
+  };
+  let usdcRaw = 0n, wsol = 0n;
+  for (const l of linhas) {
+    const v = l.verificacao ?? "declarada";
+    if (v === "verificada_onchain") {
+      r.financeiro.verificada.operacoes += 1;
+      if (l.verificacao_motivo === "pagador_e_dono_da_conta_de_taxa") r.financeiro.verificada.autoTaxa += 1;
+      let raw = 0n;
+      try { raw = BigInt(String(l.taxa_onchain_raw ?? "0").split(".")[0]); } catch { raw = 0n; }
+      if (raw > 0n) {
+        if (l.taxa_onchain_mint === MINT_USDC) usdcRaw += raw;
+        else if (l.taxa_onchain_mint === MINT_WSOL) wsol += raw;
+        else r.financeiro.verificada.outrosMints += 1;
+      }
+    } else if (v === "aguardando") {
+      r.financeiro.aguardando += 1;
+    } else if (v === "divergente") {
+      r.financeiro.divergente.operacoes += 1;
+      const m = l.verificacao_motivo ?? "?";
+      r.financeiro.divergente.motivos[m] = (r.financeiro.divergente.motivos[m] ?? 0) + 1;
+    } else {
+      r.financeiro.declarada.operacoes += 1;
+      const t = taxaDe(l);
+      if (t !== null) r.financeiro.declarada.taxaDeclaradaUsd += t;
+    }
+    if (typeof l.pagador_onchain === "string" && l.pagador_onchain) r.identidade.origemComprovada += 1;
+    else if (temIdentidadeAssinada(l)) r.identidade.autenticada += 1;
+    else r.identidade.naoAtribuida += 1;
+  }
+  r.financeiro.verificada.taxaUsdc = Number(usdcRaw) / 1e6;
+  r.financeiro.verificada.taxaWsolLamports = wsol.toString();
+  r.financeiro.declarada.taxaDeclaradaUsd = Number(r.financeiro.declarada.taxaDeclaradaUsd.toFixed(6));
+  return r;
+}

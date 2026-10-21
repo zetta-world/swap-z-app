@@ -101,7 +101,8 @@ export function useTrackedHoldings(): TrackedHoldings {
     return trackedTokens
       .map((token, i) => ({ token, balance: balances[i] }))
       .filter((row): row is { token: Token; balance: TokenBalance } =>
-        !!row.token && !row.balance.isZero && !row.balance.loading && !row.balance.error,
+        // W1: só saldo LIDO e positivo. Erro/desatualizado entram em `indisponiveis`, nunca como $0.
+        !!row.token && row.balance.status === "READY_POSITIVE",
       )
       .sort((a, b) => porValorDesc(a.balance.usdValue, b.balance.usdValue));
     // eslint-disable-next-line react-hooks/exhaustive-deps

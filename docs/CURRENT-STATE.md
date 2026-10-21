@@ -12,6 +12,20 @@
 
 ---
 
+## Atualização L-064 — W3 transmissão Solana (21/10/2026)
+
+Produção segue em `986ae75`: swap Solana falha no ENVIO (403 do RPC público) e **`NEXT_PUBLIC_SOLANA_JITO` está "on"** —
+swaps com exposição ≥ $25 tentam o Jito pelo navegador. Correção em `fix/w3-transmissao-solana@f83e12a` (sobre a W1): envio
+só pelo servidor com vínculo cotação↔taxa, tarifa do PAGADOR, status estrito, identidade de origem. Trava durável (W3-C) e
+reconciliação do livro (W3-D) só desenhadas. Pendentes: autorização para aplicar W3-C/W3-D, rodada de dependências
+(audit-gate), teste com fundos.
+
+## Atualização L-063 — W1 carteiras/saldos (20/10/2026)
+
+Produção segue em `986ae75` (saldos Solana quebrados no navegador: RPC público dá 403 a navegador). Correção em
+`fix/w1-carteiras-saldos@70ba76a`, preview conferido; release bloqueado pelo audit-gate (alertas novos de terceiros) e
+pelo QA Android pendente. W3 (envio de swap Solana pelo mesmo RPC) é o próximo risco.
+
 ## Atualização L-062B — Jupiter Swap V2 `/build` (16/10/2026)
 
 Em produção desde 16/10 (`main` `fd4172f`, código `d86c963`, `dpl_HcXiT1J7SwzXYNS87oRgq33UQeRc` promovido): Jupiter

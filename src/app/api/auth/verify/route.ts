@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     return json({ ok: false, error: "auth_unconfigured" }, 503);
   }
 
-  let body: { address?: string; chain?: string; signature?: string };
+  let body: { address?: string; chain?: string; signature?: string; manter?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -51,10 +51,10 @@ export async function POST(req: NextRequest) {
     return json({ ok: false, error: "invalid_address" }, 400);
   }
 
-  return finishVerify(address, chain, signature);
+  return finishVerify(address, chain, signature, body.manter === true);
 }
 
-async function finishVerify(address: string, chain: WalletChain, signature: string) {
+async function finishVerify(address: string, chain: WalletChain, signature: string, manter: boolean) {
   // Pull and consume the stored nonce for this wallet. We stored only one, so
   // we look it up, validate the signature against it, then it's already gone.
   const db = getSupabaseAdmin();
@@ -129,8 +129,9 @@ async function finishVerify(address: string, chain: WalletChain, signature: stri
       { onConflict: "wallet_address" },
     );
 
-  const token = await issueSession({ sub: address, chain });
-  await setSessionCookie(token);
+  // W4: "manter sessão iniciada" é escolha explícita; ausente = sessão curta (até fechar o navegador, ≤ 12 h).
+  const token = await issueSession({ sub: address, chain }, manter);
+  await setSessionCookie(token, manter);
 
   return json({ ok: true, address, chain });
 }

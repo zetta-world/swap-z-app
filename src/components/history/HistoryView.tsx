@@ -8,7 +8,7 @@ import {
   SlidersHorizontal, Download, X,
 } from "lucide-react";
 import {
-  useTxHistory, TX_TYPE_LABELS_PT, STATUS_LABELS_PT,
+  useTxHistory, TX_TYPE_LABELS_PT, STATUS_LABELS_PT, rotuloDaLinha, podeTerIdoARede,
   type TxType, type TxStatus, type TxHistoryEntry,
 } from "@/lib/store/txHistory";
 import { useRealizedPnl, effectiveRealizedUsd, effectiveRealizedPct, type RealizedLot } from "@/lib/store/costBasis";
@@ -429,14 +429,14 @@ function TxRow({
 
         {/* Status */}
         <span className={cn("flex-shrink-0 font-mono text-[10px] hidden sm:inline", STATUS_COLORS[entry.status])}>
-          {STATUS_LABELS_PT[entry.status]}
+          {rotuloDaLinha(entry)}
         </span>
 
         {/* Time */}
         <div className="flex-shrink-0 text-right">
           <div className="font-mono text-[10px] text-ink-3">{timeStr}</div>
           <div className={cn("font-mono text-[9px] sm:hidden", STATUS_COLORS[entry.status])}>
-            {STATUS_LABELS_PT[entry.status]}
+            {rotuloDaLinha(entry)}
           </div>
         </div>
 
@@ -557,7 +557,8 @@ function ActiveChip({ label, onRemove }: { label: string; onRemove: () => void }
 }
 
 function buildExplorerUrl(entry: TxHistoryEntry): string | null {
-  if (!entry.txHash) return null;
+  // W3: "Falha no envio"/cancelada nunca foi à rede — o link levaria a "transação não encontrada".
+  if (!podeTerIdoARede(entry)) return null;
   const explorers: Record<string, string> = {
     ethereum:  "https://etherscan.io/tx/",
     bsc:       "https://bscscan.com/tx/",

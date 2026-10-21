@@ -46,8 +46,11 @@ export default function ConnectButton() {
         {(!evmOn || !solOn) && (
           <button
             onClick={() => setOpen(true)}
-            className="hidden sm:inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] hover:border-cyan/30 font-mono text-[10px] text-ink-3 hover:text-cyan tracking-widest uppercase"
+            // W1: era `hidden sm:inline-flex` — no celular (Phantom) não havia como conectar a 2ª carteira.
+            className="inline-flex items-center justify-center gap-1.5 h-9 min-w-9 px-2.5 rounded-lg border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] hover:border-cyan/30 font-mono text-[10px] text-ink-3 hover:text-cyan tracking-widest uppercase"
             title={evmOn ? t("topbar.addSolanaWallet") : t("topbar.addEvmWallet")}
+            aria-label={evmOn ? t("topbar.addSolanaWallet") : t("topbar.addEvmWallet")}
+            data-testid="add-second-wallet"
           >
             +
           </button>

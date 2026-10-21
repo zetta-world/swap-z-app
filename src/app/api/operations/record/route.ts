@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { rateLimit, getClientId } from "@/lib/rate-limit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { assinaturaValidaFormato } from "@/lib/solana/transmissao";
+import { colunasDaVerificacao, verificarOperacaoSolana } from "@/lib/solana/reconciliacao";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +31,8 @@ interface Body {
    *  created_at so 24h/7d aggregations reflect when the trade actually
    *  happened — NOT when the browser first synced its backlog. */
   ts?:         number;
+  /** Assinatura pública da transação (Solana) — W3-D: o servidor reconcilia na rede. */
+  txHash?:     string;
 }
 
 /**
@@ -78,6 +82,20 @@ export async function POST(req: NextRequest) {
   const session = await getSession();
   const sessionWallet = session?.sub ?? null;
 
+  /**
+   * ⚠️ W3 (21/10) — ISOLAMENTO DE IDENTIDADE. A sessão sozinha não basta: o registro é de quem
+   * OPEROU, e o navegador pode estar com a sessão de outra carteira na hora de sincronizar.
+   *   · registro com carteira de origem ≠ sessão → NÃO grava (409; o cliente tenta de novo quando a
+   *     sessão for a dessa carteira) — nunca atribui a operação de A à sessão de B;
+   *   · registro SEM carteira de origem (legado, CEX, Autopilot) → grava SEM atribuição
+   *     (`wallet_address` nulo): conta no total, nunca vira identidade assinada de ninguém.
+   */
+  const origem = typeof body.wallet === "string" && body.wallet.trim() ? body.wallet.trim() : null;
+  if (origem && sessionWallet && origem.toLowerCase() !== sessionWallet.toLowerCase()) {
+    return NextResponse.json({ ok: false, error: "wallet_divergente" }, { status: 409 });
+  }
+  const atribuida = origem && sessionWallet ? sessionWallet : null;
+
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ ok: false, error: "db_unavailable" }, { status: 503 });
 
@@ -106,10 +124,21 @@ export async function POST(req: NextRequest) {
    * `ok: true` mentiroso marcava a operação como sincronizada para sempre — ela
    * nunca mais seria reenviada, e o livro ficava com o buraco sem ninguém ver.
    */
+  /**
+   * ⚠️ W3-D: swap Solana (Jupiter) com assinatura pública → a VERIFICAÇÃO é do servidor, na rede.
+   * O `status`/taxa declarados continuam gravados como alegação; o estado financeiro nasce
+   * `aguardando` (declarado confirmado) ou `declarada` (outros estados), nunca verificado.
+   */
+  const chainDecl = str(body.chain, 40);
+  const assinatura = chainDecl === "solana" && body.route === "jupiter" && assinaturaValidaFormato(body.txHash) ? body.txHash : null;
+  const aguardando = assinatura !== null && body.status === "confirmed";
   {
     const { error } = await db.from("operations").upsert({
+      tx_signature:    assinatura,
+      carteira_origem: assinatura ? origem : null,
+      verificacao:     aguardando ? "aguardando" : "declarada",
       ref:            str(body.ref, 120),
-      wallet_address: sessionWallet,   // ignora body.wallet de propósito
+      wallet_address: atribuida,   // só quando origem do registro == sessão (W3)
       kind:           str(body.kind, 40)!,
       chain:          str(body.chain, 40),
       pair:           str(body.pair, 40),
@@ -139,6 +168,18 @@ export async function POST(req: NextRequest) {
     // Devolver 500 faz o navegador REPETIR no próximo ciclo, que é o ponto.
     if (error) {
       return NextResponse.json({ ok: false, error: error.message.slice(0, 160) }, { status: 500 });
+    }
+  }
+  // Reconciliação imediata (best-effort AQUI porque a rotina `/api/operations/reconciliar` repete
+  // tudo que ficar `aguardando` — o registro já está gravado e nada é dado como verificado sem medir).
+  if (aguardando && assinatura) {
+    const fee = num(body.platformFeeUsd), bps = num(body.platformFeeBps);
+    const v = await verificarOperacaoSolana(assinatura, {
+      carteira: origem, taxaDeclarada: (fee !== null && fee > 0) || (bps !== null && bps > 0),
+    });
+    if (v.verificacao !== "aguardando") {
+      await db.from("operations").update(colunasDaVerificacao(v))
+        .eq("ref", str(body.ref, 120)!).eq("tx_signature", assinatura).eq("verificacao", "aguardando");
     }
   }
   return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });

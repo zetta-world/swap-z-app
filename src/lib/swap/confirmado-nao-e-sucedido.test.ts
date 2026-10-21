@@ -14,7 +14,12 @@
  * ⚠️ O CAMINHO EVM JÁ FAZIA CERTO, 200 LINHAS ACIMA NO MESMO ARQUIVO:
  * `if (receipt.status === "success")`. É a peça certa, escrita, e o outro
  * caminho sem ela — o padrão que esta auditoria mais encontrou.
+ *
+ * W3 (21/10): o desfecho Solana passou a vir de `consultarStatus` (servidor, `getSignatureStatuses`)
+ * em vez do `confirmTransaction` do navegador (que dava 403). As MESMAS garantias são conferidas no
+ * mecanismo novo: `err` decide antes de "confirmada", revertida vira `tx_failed` + `falhou_na_rede`.
  */
+
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -23,31 +28,38 @@ const semComentarios = (c: string) =>
   c.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/^\s*\/\/.*$/gm, " ");
 const leia = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
 const EXEC = semComentarios(leia("src/components/swap/ExecuteSwap.tsx"));
+const STATUS = semComentarios(leia("src/lib/solana/transmissao.ts"));
+const FLUXO = semComentarios(leia("src/lib/solana/executar-swap.ts"));
 const MSG  = leia("src/lib/i18n/messages.ts");
 
-describe("① o retorno da confirmação é lido", () => {
-  it("⚠️⚠️ `confirmTransaction` tem o resultado guardado, não descartado", () => {
-    expect(EXEC).toMatch(/const conf = await solConn\.confirmTransaction\(/);
-    // O `await` solto era o defeito inteiro.
-    expect(EXEC).not.toMatch(/^\s*await solConn\.confirmTransaction\(/m);
+describe("① o desfecho on-chain é lido, e o erro decide", () => {
+  it("⚠️⚠️ `consultarStatus` olha `err` ANTES de chamar de confirmada", () => {
+    const iAusente = STATUS.indexOf('if (!("err" in st) || st.err === undefined) return { estado: "desconhecido"');
+    const iErr = STATUS.indexOf('if (st.err !== null) return { estado: "falhou_na_rede"');
+    const iConf = STATUS.indexOf('return { estado: "confirmada"');
+    expect(iAusente).toBeGreaterThan(0);
+    expect(iErr).toBeGreaterThan(iAusente);
+    expect(iConf).toBeGreaterThan(iErr);
   });
 
-  it("⚠️⚠️ e `value.err` decide — confirmado não é sucedido", () => {
-    expect(EXEC).toMatch(/if \(conf\.value\.err\)/);
+  it("⚠️⚠️ o caminho Solana não chama mais `confirmTransaction` do navegador (403 no RPC público)", () => {
+    expect(EXEC).not.toMatch(/confirmTransaction\(/);
+    expect(EXEC).not.toMatch(/sendRawTransaction\(/);
+    expect(EXEC).toMatch(/await executarSwapSolana\(/);
+    expect(FLUXO).toMatch(/const desfecho = await acompanhar\(sig, d\.validoAteBloco\)/);
   });
 
   it("⚠️⚠️ transação revertida vira `tx_failed`, nunca `tx_confirmed`", () => {
-    const i = EXEC.indexOf("if (conf.value.err)");
+    const i = FLUXO.indexOf('if (desfecho.estado === "falhou_na_rede")');
     expect(i).toBeGreaterThan(0);
-    const ramo = EXEC.slice(i, EXEC.indexOf("setPhase(\"tx_confirmed\")", i));
-    expect(ramo).toMatch(/setPhase\("tx_failed"\)/);
-    expect(ramo).toMatch(/return;/);
+    const ramo = FLUXO.slice(i, FLUXO.indexOf('d.ui.fase("tx_confirmed")', i));
+    expect(ramo).toMatch(/d\.ui\.fase\("tx_failed"\)/);
+    expect(ramo).toMatch(/return \{ historyId: id, resultado: "falhou_na_rede" \}/);
   });
 
-  it("⚠️⚠️ e o HISTÓRICO grava `failed` — senão o painel conta receita de um swap que não houve", () => {
-    const i = EXEC.indexOf("if (conf.value.err)");
-    const ramo = EXEC.slice(i, i + 700);
-    expect(ramo).toMatch(/updateHistory\(historyId\.current, \{ status: "failed", txHash: sig \}\)/);
+  it("⚠️⚠️ e o HISTÓRICO grava `falhou_na_rede` (status failed) — senão o painel conta receita de um swap que não houve", () => {
+    const i = FLUXO.indexOf('if (desfecho.estado === "falhou_na_rede")');
+    expect(FLUXO.slice(i, i + 400)).toMatch(/marcar\("falhou_na_rede"/);
   });
 });
 
@@ -56,20 +68,18 @@ describe("② a paridade com o caminho EVM, que já estava certo", () => {
     expect(EXEC).toMatch(/if \(receipt\.status === "success"\)/);
   });
 
-  it("⚠️ os DOIS caminhos agora conferem o desfecho real da transação", () => {
-    // Um `setPhase("tx_confirmed")` sem checagem antes seria o defeito de volta.
-    const confirmados = [...EXEC.matchAll(/setPhase\("tx_confirmed"\)/g)].length;
-    const checagens = [...EXEC.matchAll(/if \(receipt\.status === "success"\)|if \(conf\.value\.err\)/g)].length;
-    expect(confirmados).toBeGreaterThan(0);
-    expect(checagens, "uma checagem por caminho").toBe(2);
+  it("⚠️ os DOIS caminhos conferem o desfecho real da transação", () => {
+    // EVM: no componente; Solana: no fluxo extraído. Uma checagem de desfecho em cada.
+    expect([...EXEC.matchAll(/if \(receipt\.status === "success"\)/g)]).toHaveLength(1);
+    expect([...FLUXO.matchAll(/if \(desfecho\.estado === "falhou_na_rede"\)/g)]).toHaveLength(1);
+    expect([...FLUXO.matchAll(/d\.ui\.fase\("tx_confirmed"\)/g)]).toHaveLength(1);
   });
 });
 
 describe("③ e a frase diz o que aconteceu de verdade", () => {
   it("⚠️ 'chegou à rede mas FALHOU' — não um erro genérico", () => {
-    // "confirmationFailed" diria que a confirmação não veio. Ela veio: o que
-    // falhou foi a transação. São coisas diferentes e o dono precisa saber qual.
-    expect(EXEC).toMatch(/swap\.solExecutionFailed/);
+    expect(EXEC).toMatch(/texto: \(k\) => tImp\(`swap\.\$\{k\}`\)/);
+    expect(FLUXO).toMatch(/d\.texto\("solExecutionFailed"\)/);
   });
 
   it("os QUATRO locales têm a chave", () => {
@@ -77,6 +87,6 @@ describe("③ e a frase diz o que aconteceu de verdade", () => {
   });
 
   it("⚠️ e o erro da cadeia viaja junto, para dar o que investigar", () => {
-    expect(EXEC).toMatch(/JSON\.stringify\(conf\.value\.err\)/);
+    expect(FLUXO).toMatch(/\$\{d\.texto\("solExecutionFailed"\)\} \$\{desfecho\.erro/);
   });
 });

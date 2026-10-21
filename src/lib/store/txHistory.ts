@@ -19,6 +19,36 @@ export type TxType =
 
 export type TxStatus = "pending" | "confirmed" | "failed" | "canceled";
 
+/**
+ * ⚠️ ETAPA DE UMA TENTATIVA DE SWAP SOLANA (W3, 21/10). O `status` acima continua valendo para
+ * registros antigos e para quem só lê ele; a etapa diz O QUE de fato aconteceu:
+ *
+ *   solicitada     — tentativa registrada ANTES da assinatura (nada assinado ainda)
+ *   cancelada      — o usuário recusou na carteira
+ *   assinada       — a carteira assinou; `txHash` = assinatura pública (ainda não enviada)
+ *   envio_falhou   — recusa CERTA antes de ir à rede (não transmitida) — "Falha no envio"
+ *   envio_incerto  — o envio não respondeu de forma conclusiva: PODE ter sido transmitida
+ *   pendente       — transmitida, aguardando confirmação
+ *   confirmada     — pousou com sucesso (err nulo) — única etapa que conta volume/taxa
+ *   falhou_na_rede — pousou e REVERTEU — "Transação falhou na blockchain"
+ *   expirada       — o blockhash venceu sem pousar: não executou e não pode mais executar
+ */
+export type EtapaTx =
+  | "solicitada" | "cancelada" | "assinada" | "envio_falhou" | "envio_incerto"
+  | "pendente" | "confirmada" | "falhou_na_rede" | "expirada";
+
+export function statusDaEtapa(etapa: EtapaTx): TxStatus {
+  switch (etapa) {
+    case "confirmada": return "confirmed";
+    case "cancelada": return "canceled";
+    case "envio_falhou": case "falhou_na_rede": case "expirada": return "failed";
+    default: return "pending";   // solicitada, assinada, envio_incerto, pendente: desfecho ainda aberto
+  }
+}
+
+/** Etapas em que a transação AINDA PODE pousar — nova tentativa da mesma carteira fica bloqueada. */
+export const ETAPAS_EM_ABERTO: ReadonlySet<EtapaTx> = new Set(["assinada", "envio_incerto", "pendente"]);
+
 export interface TxHistoryEntry {
   id:          string;
   ts:          number;   // unix ms
@@ -58,7 +88,16 @@ export interface TxHistoryEntry {
   platformFeeBps?:    number;
 
   // On-chain / CEX refs
+  /** Assinatura pública (Solana) ou hash (EVM). Nunca inventado: só existe depois de assinar. */
   txHash?:     string;
+  /** Carteira que originou (W3) — impede misturar tentativas de carteiras diferentes. */
+  wallet?:     string;
+  /** Etapa detalhada (W3). Ausente em registros antigos. */
+  etapa?:      EtapaTx;
+  /** `lastValidBlockHeight` da transação Solana — para saber se ela ainda pode pousar. */
+  validoAteBloco?: number;
+  /** Motivo curto de falha/incerteza (sem dados sensíveis). */
+  motivo?:     string;
   exchange?:   string;   // CEX id for CEX trades
   orderId?:    string;   // CEX order id
   route?:      string;   // "0x" | "lifi" | "jupiter" | "gateio" | etc.
@@ -144,6 +183,27 @@ export const TX_TYPE_LABELS_PT: Record<TxType, string> = {
   deposit:        "Depósito",
   withdraw:       "Saque",
 };
+
+/** Rótulo da ETAPA (W3) — distingue "Falha no envio" (não transmitida) de "Falhou na blockchain". */
+export const ETAPA_LABELS_PT: Record<EtapaTx, string> = {
+  solicitada:     "Solicitada",
+  cancelada:      "Cancelada na carteira",
+  assinada:       "Assinada · não enviada",
+  envio_falhou:   "Falha no envio",
+  envio_incerto:  "Envio incerto · verificando",
+  pendente:       "Pendente",
+  confirmada:     "Confirmada",
+  falhou_na_rede: "Falhou na blockchain",
+  expirada:       "Expirada · não executou",
+};
+
+/** Rótulo para uma linha: a etapa quando houver (W3), senão o status de sempre. */
+export const rotuloDaLinha = (e: Pick<TxHistoryEntry, "status" | "etapa">) =>
+  e.etapa ? ETAPA_LABELS_PT[e.etapa] : STATUS_LABELS_PT[e.status];
+
+/** A transação pode existir na rede? Sem isso, link de explorer seria um hash que a rede não tem. */
+export const podeTerIdoARede = (e: Pick<TxHistoryEntry, "txHash" | "etapa">) =>
+  !!e.txHash && e.etapa !== "envio_falhou" && e.etapa !== "cancelada" && e.etapa !== "solicitada";
 
 export const STATUS_LABELS_PT: Record<TxStatus, string> = {
   pending:   "Pendente",

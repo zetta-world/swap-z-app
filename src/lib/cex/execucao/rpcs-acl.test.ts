@@ -97,6 +97,9 @@ const CATALOGO: Record<string, string> = {
   bancada_tique_arrendar: "0076_bancada_papel_exclusivo_e_idempotente.sql",
   bancada_tique_liberar: "0076_bancada_papel_exclusivo_e_idempotente.sql",
   bancada_abrir_posicao_papel: "0076_bancada_papel_exclusivo_e_idempotente.sql",
+  // W3-C (21/10): trava durável por carteira das transmissões Solana nasce fechada na 0077.
+  solana_tx_reservar: "0077_solana_tx_em_voo.sql",
+  solana_tx_marcar: "0077_solana_tx_em_voo.sql",
 };
 
 const ARQUIVOS = readdirSync(DIR).filter((f) => f.endsWith(".sql")).sort();

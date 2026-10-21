@@ -218,8 +218,13 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
      * (`chave_entrada` com UNIQUE parcial), `ultima_vela_aberta` na estratégia e
      * a RPC de abertura idempotente. Recusa rodar sem 0073–0075 (teste 23).
      *
-     * ⚠️ NENHUMA DAS CATORZE (0063–0076) FOI APLICADA EM PRODUÇÃO. 0070–0076
-     * existem só na lane B; o alvo de release (C1 `53cd85a`) vai até a 0069.
+     * E uma DÉCIMA QUARTA e DÉCIMA QUINTA vez, na RECUPERAÇÃO INTEGRADA (21/10, W3-C/W3-D):
+     * a 0077 é ADITIVA — tabela `solana_tx_em_voo` + duas RPCs fechadas (trava durável por
+     * carteira das transmissões Solana, sem TTL; testes 24/24b). A 0078 é ADITIVA — colunas de
+     * verificação on-chain em `operations` (todo o histórico fica `declarada`; teste 25).
+     *
+     * ⚠️ ESTADO MEDIDO (21/10, `list_migrations` no Supabase de produção): 0059–0076 FORAM
+     * aplicadas em 14/10. A frase antiga "nenhuma foi aplicada" ficou desatualizada.
      */
     const novas = readdirSync("supabase/migrations")
       .filter((f) => f.endsWith(".sql") && f.slice(0, 4) > "0062")
@@ -239,6 +244,8 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
       "0074_bancada_ultimos_tiques_em_lote.sql",
       "0075_bancada_rodada_metricas_de_custo.sql",
       "0076_bancada_papel_exclusivo_e_idempotente.sql",
+      "0077_solana_tx_em_voo.sql",
+      "0078_operations_verificacao_onchain.sql",
     ]);
   });
 });
