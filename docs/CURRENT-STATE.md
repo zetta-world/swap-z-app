@@ -12,6 +12,12 @@
 
 ---
 
+## Atualização L-064 — W3 transmissão Solana (21/10/2026)
+
+Produção segue em `986ae75`: swap Solana falha no ENVIO (403 do RPC público no navegador; nada é transmitido) e a tentativa
+não fica no histórico. Correção em `fix/w3-transmissao-solana@4f002ae` (sobre a W1), preview conferido sem fundos; falta
+o teste real com fundos (autorização do dono) e o audit-gate.
+
 ## Atualização L-063 — W1 carteiras/saldos (20/10/2026)
 
 Produção segue em `986ae75` (saldos Solana quebrados no navegador: RPC público dá 403 a navegador). Correção em

@@ -1269,3 +1269,25 @@ simulada só-conexão: PASS (ver evidência). **Não feito:** Android/Phantom re
 **⚠️ W3 (achado, não corrigido):** `ExecuteSwap` envia e confirma pela conexão do navegador no RPC público → 403;
 swap Solana fora do Jito provavelmente falha no envio hoje (sem perda de fundos). **W2:** descoberta de todos os tokens.
 Produção: não autorizada. Rollback: produção segue em `986ae75`.
+
+## L-064 — W3: transmissão/confirmação Solana e histórico de tentativas (21/10/2026)
+
+**Incidente:** no preview W1 o dono assinou SOL→USDC na Phantom e recebeu "403 Access forbidden"; sem registro na Phantom
+nem na Z-SWAP. **Causa raiz comprovada:** o envio (`sendRawTransaction`) ia pelo RPC público a partir do navegador, que
+recusa com 403 na porta toda requisição com `Origin`, antes de ler o corpo. **Etapa: envio, após a assinatura.** Jito
+desligado por padrão. **Não transmitida** (`H7zw…` sem transação desde 16/10). Histórico só era gravado após envio OK.
+
+**Código (`9934d11` + `4f002ae`, branch `fix/w3-transmissao-solana`, base W1 `f5319e9`):** `POST /api/solana/transmitir`
+(só transação v0 já assinada pela carteira, ≤1232 B, ed25519 conferida, pagador = carteira, Jupiter v6, programas
+permitidos; envio único com preflight no RPC do servidor; `enviada`/`nao_enviada`/`incerta` + assinatura pública);
+`GET /api/solana/status` (confirmada só com `err` nulo, falhou_na_rede, pendente, expirada); `lib/solana/executar-swap.ts`
+(tentativa registrada antes da assinatura; etapas; anti-duplicação; Jito com fallback da MESMA transação); histórico com
+etapas, carteira e validade, "Falha no envio" ≠ "Falhou na blockchain", reconciliação ao abrir o app; sync de operações só
+`confirmed` e da carteira certa. Não-custodial: servidor sem chave, transmite os mesmos bytes. Plano:
+`docs/PLANO-W3-TRANSMISSAO-SOLANA.md`.
+
+**Evidência:** 7 quebras deliberadas detectadas; gates `4f002ae`: lint 0/144, tipos, suíte 337/4977 ×2, build, 0 credencial
+no bundle, **audit-gate FALHOU** (herdado). CI 39523037030 (só o audit falha). Preview `swap-z-dklwck7rb`: status real
+(confirmada/expirada/pendente/400) e E2E com carteira de teste sem fundos 10/10 (servidor chega ao RPC sem 403, preflight
+recusa, "Falha no envio", histórico com assinatura pública). **Falta:** swap real com fundos (autorização específica).
+Produção: não autorizada; segue em `986ae75`.
