@@ -1322,3 +1322,30 @@ pendente/400; E2E pela tela 10/10. **Parado para a 2ª auditoria; nenhum swap co
   · build · 0 credencial · **audit-gate FALHOU** (follow-redirects, vite — rodada de dependências). CI 39583483966 (só
   audit falha). Preview `swap-z-2v9nd3li3` (sem fundos): status real, vínculo/adulteração, E2E 10/10, Jito ausente do
   bundle. **Parado após o Preview; nenhum swap com fundos; W4 não iniciada.**
+
+## L-065 — Recuperação integrada: W1 + W3 + W3-C + W3-D + W4 + dependências (21/10/2026)
+
+**Decisão do dono (missão mestre, 21/10):** concluir a recuperação técnica e publicar em produção para testes reais
+controlados (homologação privada, sem lançamento público). Operação financeira só com assinatura do dono na carteira dele.
+
+**Código** (branch `recuperacao/integrada-20261021`, base `fix/w3-transmissao-solana`):
+- **Dependências** `04ef49b`: `follow-redirects` 1.16.1 e `vite` 8.1.6 (override na linha 8.1.x) — audit-gate OK sem
+  exceção nova (a R-03 de `braces` segue como estava).
+- **W3-C** `9ddc3e0`: trava DURÁVEL por carteira no servidor (migration 0077, `solana_tx_em_voo`, advisory lock + índice
+  único parcial, RPCs fechadas ao service_role). Sem TTL: só fato on-chain, altura de bloco > `lastValidBlockHeight`
+  (gravado do vínculo HMAC, nunca do navegador) ou recusa certa antes da rede encerram a tentativa. Banco fora → 503
+  antes do RPC. Reserva só depois da assinatura ed25519 e do vínculo conferidos (terceiro não trava carteira alheia).
+- **W3-D** `e8601fa`: livro verificável (migration 0078, colunas aditivas em `operations`; histórico todo `declarada`).
+  Reconciliação pela assinatura pública: `err` nulo, Jupiter v6, pagador = carteira de origem, taxa MEDIDA na conta de
+  taxa. Duas dimensões separadas (financeiro × identidade). Receita do painel: "verificado na rede" × "declarado".
+  `/api/operations/reconciliar` (CRON_SECRET) repete o que ficar `aguardando` — **agendar no cron-job.org é passo do dono**.
+  ⚠️ Pagador = dono das contas de taxa (`H7zw…`, a carteira do dono): receita 0 por construção (o delta inclui o swap).
+- **W4** `1b9055b`/`b61283d`: Phantom Android — o deeplink `browse` (formato oficial `phantom.com/ul/browse`) leva um
+  marcador e a página pede a conexão ao abrir dentro da Phantom; o Mobile Wallet Adapter oficial vem primeiro no Chrome
+  Android. Reconexão automática e "manter sessão" opcionais, desligados por padrão (sessão curta: cookie de navegador +
+  JWT 12 h). Sessão da carteira A é encerrada se a carteira conectada da mesma rede vira B. Configurações: 8 interruptores
+  fictícios (callbacks vazios, inclusive afirmações de segurança falsas) e a aba de RPC nunca usada foram removidos.
+
+**Evidência local:** suíte 341/5059 · tipos · lint 0 erros · build · audit-gate OK · SQL T24/T24b/T25 + regressão de ACL
+02/14/17 em Postgres 17.6.1.127 descartável (cadeia 0001→0078, reaplicação idempotente) · E2E W4 12/12 · 0 Jito e 0
+credencial no bundle. Fee accounts (`En1J8…`, `7PPDQ…`): 1 transação cada (criação, 16/10) — nenhum swap com taxa pousou.

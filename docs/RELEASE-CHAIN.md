@@ -415,3 +415,16 @@ simulação recusada por limite, 401/403, 429 persistente, taxa não confirmada,
 Resultado: `main` → `fd4172f` (fast-forward), produção `dpl_HcXiT1J7SwzXYNS87oRgq33UQeRc` promovida; smoke só-cotação
 PASS (rotas longas dentro dos limites, nova tentativa exercitada, 0 × 401/403/429, 100 bps). Rollback:
 `dpl_AcHcoSLXYEeWB1qvMQE9NXqpimrn`.
+
+## Atualização L-065 — candidato RECUPERAÇÃO INTEGRADA (W1 + W3 + W3-C + W3-D + W4 + dependências)
+
+RELEASE_CANDIDATE = THIS_RELEASE_CANDIDATE_COMMIT (docs-only, filho de `b61283d`).
+CODE SHA = `b61283d0db1df1ed2edbb7b9243c9d5e20d70f71` (tree `5e99c5a40c8393e6e429988184185e3e5a6c3790`), base `main` = `986ae75`.
+Branch `recuperacao/integrada-20261021` = `fix/w3-transmissao-solana` (`33bbcfb`, contém W1 `f5319e9`) + `04ef49b` (deps)
++ `9ddc3e0` (W3-C) + `e8601fa` (W3-D) + `1b9055b`/`b61283d` (W4). Migrations novas: 0077, 0078 (aditivas; aplicar ANTES do
+deploy; o código novo lê as colunas/RPCs novas). Gates locais em `b61283d`: tipos · lint 0 erros · suíte 341/5059 ·
+build · audit-gate OK (sem exceção nova) · 0 credencial e 0 Jito no bundle · SQL T24/T24b/T25 + 02/14/17 em PostgreSQL
+17.6.1.127 descartável · E2E W4 local 12/12. Autorização: dono, MISSÃO MESTRE de 21/10 (publicação integrada
+autorizada; operação financeira só com assinatura do dono). Rollback de código: `dpl_7ZLUX4fN3nmNHKoetVxdr7fTrLUg`
+(⚠️ religa a Jito no navegador — só com `disable_swap` ligado) ou nova build do candidato anterior com
+`NEXT_PUBLIC_SOLANA_JITO=off`. Rollback de banco: não necessário (colunas/tabela novas são ignoradas pelo código antigo).
