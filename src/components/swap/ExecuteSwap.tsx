@@ -10,7 +10,7 @@ import {
   useAccount, useChainId, usePublicClient, useSendTransaction,
   useSwitchChain, useWaitForTransactionReceipt, useWriteContract,
 } from "wagmi";
-import { useWallet, useConnection } from "@solana/wallet-adapter-react";
+import { useWallet } from "@solana/wallet-adapter-react";
 import { VersionedTransaction } from "@solana/web3.js";
 import { verifyJupiterTransaction, guardMode, shouldBlock } from "@/lib/swap/solana-guard";
 import { assessMevExposure } from "@/lib/swap/mev-guard";
@@ -39,6 +39,7 @@ import { cn } from "@/lib/cn";
 import { formatAmount } from "@/lib/format";
 import { useT, t as tImp } from "@/lib/i18n";
 import { useTxHistory } from "@/lib/store/txHistory";
+import { executarSwapSolana } from "@/lib/solana/executar-swap";
 import { fireSwapStrike } from "@/lib/tier/strike";
 
 interface Props {
@@ -81,7 +82,6 @@ export default function ExecuteSwap({
   const publicClient = usePublicClient();
   // Solana — used for source=jupiter; idle for EVM flows.
   const sol = useWallet();
-  const { connection: solConn } = useConnection();
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [zxQuote, setZxQuote] = useState<ZxQuoteResponse | null>(null);
@@ -534,8 +534,11 @@ export default function ExecuteSwap({
           }
         }
 
-        const signed = await sol.signTransaction(tx);
-
+        // ─── W3 (21/10): REGISTRO ANTES DA ASSINATURA, ENVIO PELO SERVIDOR, DESFECHO ON-CHAIN ──
+        //
+        // Antes, o histórico só ganhava a linha DEPOIS de `sendRawTransaction` voltar — e o envio pelo
+        // RPC público do navegador dava 403 (o dono assinou, viu "403" e não ficou rastro nem aqui nem
+        // na Phantom). O fluxo inteiro mora em `lib/solana/executar-swap.ts` (testado ponta a ponta).
         // ─── ENVIO PRIVADO (auditoria 01/08) ───────────────────────────
         //
         // Solana é a ÚNICA rede em que a proteção contra reordenação depende de
@@ -550,97 +553,48 @@ export default function ExecuteSwap({
         // normal. Um swap que não executa é pior que um swap sem bundle — e a
         // tela dirá qual dos dois aconteceu, em vez de exibir escudo que não
         // houve.
+        // W3: Jito continua DESLIGADO por padrão (`NEXT_PUBLIC_SOLANA_JITO`). Ligado, recebe a MESMA
+        // transação assinada; sem aceite, o servidor transmite a MESMA (a rede aceita uma vez só).
         const exposureUsd = assessMevExposure({
           chain: "solana", notionalUsd: notionalUsd ?? null, slippageBps,
         }).stealableUsd;
         const tip = decideTip(exposureUsd, solUsd);
-        let sig: string | null = null;
-        let sent: JitoSendResult = { signature: null, usedJito: false };
-        if (tip.useJito) {
-          sent = await sendViaJito(Buffer.from(signed.serialize()).toString("base64"));
-          sig = sent.signature;
-        }
-        if (!sig) {
-          sig = await solConn.sendRawTransaction(signed.serialize(), {
-            skipPreflight: false,
-            maxRetries:    3,
-          });
-        }
-        setSendNote(tip.useJito ? sendNarrative(sent, tip.tipLamports) : null);
-        setSolSig(sig);
-        setPhase("tx_pending");
-        historyId.current = pushHistory({
+        const capturada: { sig: string | null } = { sig: null };
+        const r = await executarSwapSolana({
+          owner: sol.publicKey.toBase58(),
+          tx,
+          validoAteBloco: jupResult.swap.lastValidBlockHeight,
           /**
-           * ⚠️ SEM ISTO O SWAP VALE $0 NO PAINEL (11/08).
-           *
-           * `valueUsd` é opcional no tipo, então esquecê-lo não quebrava nada —
-           * só fazia `useOperationSync` mandar `volumeUsd: undefined`, virar
-           * `volume_usd = NULL` em `operations`, e o painel somar zero. TODA
-           * troca DEX desde 13/06 entrou assim: 3 operações, volume $0.
-           *
-           * E o estrago não era só cosmético: o painel 💵 RECEITA calcula a
-           * receita sobre o volume MEDIDO, então nenhuma troca DEX jamais
-           * contribuiu com um centavo para ele. A cobrança podia estar
-           * funcionando perfeitamente que a tela continuaria dizendo zero.
-           *
-           * `notionalUsd` está calculado desde a linha 106 e só faltava viajar.
+           * ⚠️ SEM `valueUsd` O SWAP VALE $0 NO PAINEL (11/08) — e ele só é contado quando a etapa
+           * chega a `confirmada` (`useOperationSync` envia apenas `status: "confirmed"`).
            */
-          type: "dex_swap", status: "pending", valueUsd: notionalUsd ?? undefined,
-          fromSymbol: fromToken.symbol, fromChain, fromAmount: String(Number(sellAmount) / Math.pow(10, fromToken.decimals)),
-          toSymbol: toToken.symbol, toChain, route: "jupiter",
-          toAmount: String(Number(jupResult.quote.outAmount) / Math.pow(10, toToken.decimals)),
+          registro: {
+            type: "dex_swap", valueUsd: notionalUsd ?? undefined,
+            fromSymbol: fromToken.symbol, fromChain, fromAmount: String(Number(sellAmount) / Math.pow(10, fromToken.decimals)),
+            toSymbol: toToken.symbol, toChain, route: "jupiter",
+            toAmount: String(Number(jupResult.quote.outAmount) / Math.pow(10, toToken.decimals)),
+          },
+          historico: { entries: () => useTxHistory.getState().entries, push: pushHistory, update: updateHistory },
+          assinar: (t) => {
+            if (!sol.signTransaction) throw new Error(tImp("swap.solNoSign"));
+            return sol.signTransaction(t);
+          },
+          enviarJito: tip.useJito
+            ? async (b64) => {
+                const sent: JitoSendResult = await sendViaJito(b64);
+                setSendNote(sendNarrative(sent, tip.tipLamports));
+                return sent.signature;
+              }
+            : undefined,
+          ui: { fase: setPhase, erro: setError, nota: setSendNote, assinatura: (x) => { capturada.sig = x; setSolSig(x); } },
+          texto: (k) => tImp(`swap.${k}`),
         });
-
-        // Wait for confirmation against the lastValidBlockHeight Jupiter returned.
-        try {
-          /**
-           * ⚠⚠ `confirmTransaction` RESOLVE QUANDO A TRANSAÇÃO FALHOU NA CADEIA
-           * (achado A19 da auditoria externa).
-           *
-           * Ela responde "esta assinatura chegou a um slot confirmado" — NÃO
-           * "ela deu certo". Uma transação que pousou e reverteu (slippage
-           * estourado, saldo insuficiente, CPI que falhou) CONFIRMA, com o erro
-           * dentro de `value.err`. E o retorno era jogado fora.
-           *
-           * O desfecho: a tela dizia "Swap confirmado", os tokens nunca
-           * chegavam, o histórico gravava `confirmed` — e o `useOperationSync`
-           * contava volume e receita em cima de um swap que não aconteceu.
-           *
-           * ⚠️ O CAMINHO EVM JÁ FAZIA CERTO, 200 LINHAS ACIMA NESTE ARQUIVO:
-           * `if (receipt.status === "success")`. É a peça certa, escrita, e o
-           * outro caminho sem ela — o padrão que esta auditoria mais encontrou.
-           */
-          const conf = await solConn.confirmTransaction(
-            {
-              signature:            sig,
-              blockhash:            tx.message.recentBlockhash,
-              lastValidBlockHeight: jupResult.swap.lastValidBlockHeight,
-            },
-            "confirmed",
-          );
-          if (conf.value.err) {
-            // Pousou e reverteu. Dizer "confirmado" aqui é a pior mentira da
-            // tela: o dono para de procurar o dinheiro.
-            setError(`${tImp("swap.solExecutionFailed")} ${JSON.stringify(conf.value.err).slice(0, 120)}`);
-            setPhase("tx_failed");
-            if (historyId.current) {
-              updateHistory(historyId.current, { status: "failed", txHash: sig });
-            }
-            return;
-          }
-          setPhase("tx_confirmed");
-          if (historyId.current) {
-            updateHistory(historyId.current, { status: "confirmed", txHash: sig });
-          }
+        historyId.current = r.historyId;
+        const confirmadaSig = capturada.sig;
+        if (r.resultado === "confirmada" && confirmadaSig) {
           toast.success(tImp("swap.swapConfirmed"), {
-            description: `${sig.slice(0, 10)}…${sig.slice(-6)}`,
+            description: `${confirmadaSig.slice(0, 10)}…${confirmadaSig.slice(-6)}`,
           });
-        } catch (e) {
-          setError(e instanceof Error ? e.message : tImp("swap.confirmationFailed"));
-          setPhase("tx_failed");
-          if (historyId.current) {
-            updateHistory(historyId.current, { status: "failed" });
-          }
         }
         return;
       }
@@ -844,9 +798,18 @@ export default function ExecuteSwap({
       const denied = msg.toLowerCase().includes("rejected") || msg.toLowerCase().includes("denied");
       setError(denied ? tImp("swap.executeSigRejected") : msg);
       setPhase("tx_failed");
-      if (historyId.current) updateHistory(historyId.current, { status: "failed" });
+      if (historyId.current) {
+        // W3: a tentativa Solana tem etapa — exceção NÃO decide desfecho de transação já assinada.
+        const atual = useTxHistory.getState().entries.find((x) => x.id === historyId.current);
+        if (!atual?.etapa) updateHistory(historyId.current, { status: "failed" });
+        else if (atual.etapa === "solicitada") {
+          // Nada assinado → nada pode pousar: é uma falha antes do envio.
+          updateHistory(historyId.current, { etapa: "envio_falhou", status: "failed", motivo: msg.slice(0, 120) });
+        }
+        // cancelada já está certa; assinada/envio_incerto/pendente ficam em aberto para a reconciliação.
+      }
     }
-  }, [vereditoFirme, vereditoDeSaida, source, isJupiter, jupResult, sol, solConn, zxQuote, lfQuote, fetchFreshZxQuote, sendTransactionAsync, writeContractAsync, switchChainAsync, publicClient, address, sellAmount, fromToken, isCrossChain, toChain, toToken, targetChainId, currentChainId, pushHistory, updateHistory, arrecadacao, pontePartindoDeSolana]);
+  }, [vereditoFirme, vereditoDeSaida, source, isJupiter, jupResult, sol, zxQuote, lfQuote, fetchFreshZxQuote, sendTransactionAsync, writeContractAsync, switchChainAsync, publicClient, address, sellAmount, fromToken, isCrossChain, toChain, toToken, targetChainId, currentChainId, pushHistory, updateHistory, arrecadacao, pontePartindoDeSolana]);
 
 
   const explorerBase = isJupiter ? "https://solscan.io" : explorerForChain(fromChain);

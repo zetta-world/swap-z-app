@@ -51,7 +51,10 @@ export function useOperationSync(): void {
     if (!syncedRef.current) syncedRef.current = loadSynced();
     const synced = syncedRef.current;
 
-    const pending = entries.filter((e) => e.status === "confirmed" && e.id && !synced.has(e.id));
+    // W3: só o que é DESTA carteira (registros antigos sem `wallet` seguem como antes) — uma
+    // operação da carteira A nunca é registrada como da carteira B.
+    const pending = entries.filter((e) => e.status === "confirmed" && e.id && !synced.has(e.id)
+      && (!e.wallet || e.wallet === wallet));
     if (pending.length === 0) return;
 
     busyRef.current = true;
