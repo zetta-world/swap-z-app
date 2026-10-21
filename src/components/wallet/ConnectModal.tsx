@@ -1,6 +1,9 @@
 "use client";
 import { urlBrowsePhantom } from "@/lib/wallet/sessao-carteira";
 
+/** Nome do adaptador oficial do Solana Mobile (Android), registrado sozinho pelo wallet-adapter. */
+const MWA = "Mobile Wallet Adapter";
+
 import * as Dialog from "@radix-ui/react-dialog";
 import { motion } from "framer-motion";
 import { useConnect, useDisconnect, type Connector } from "wagmi";
@@ -143,7 +146,9 @@ export default function ConnectModal({
                       <span className="flex-1 h-px bg-white/5" />
                     </div>
 
-                    {solana.wallets.map((w, i) => {
+                    {/* W4: no Chrome do Android o adaptador OFICIAL (Mobile Wallet Adapter) abre a Phantom para
+                        autorizar e VOLTA ao navegador — vem primeiro e com nome que o usuário reconhece. */}
+                    {[...solana.wallets].sort((a, b) => Number(b.adapter.name === MWA) - Number(a.adapter.name === MWA)).map((w, i) => {
                       const id = `sol:${w.adapter.name}`;
                       const isPendingThis = pendingId === id;
                       const installed = w.readyState === "Installed" || w.readyState === "Loadable";
@@ -195,9 +200,11 @@ export default function ConnectModal({
                         >
                           {icon}
                           <div className="flex-1 min-w-0">
-                            <div className="font-display font-bold text-sm text-ink truncate">{w.adapter.name}</div>
+                            <div className="font-display font-bold text-sm text-ink truncate">{w.adapter.name === MWA ? t("topbar.solMwaTitle") : w.adapter.name}</div>
                             <div className="font-mono text-[10px] text-ink-3 uppercase tracking-wider truncate">
-                              {installed
+                              {w.adapter.name === MWA
+                                ? t("topbar.solMwaDesc")
+                                : installed
                                 ? t("topbar.solInstalled")
                                 : notDetected
                                 ? t("topbar.solTapInstall")
