@@ -96,6 +96,8 @@ export function useOperationSync(): void {
           platformFeeBps:    e.platformFeeBps,
           route:     e.route,
           ts:        e.ts,
+          // W3-D: a assinatura pública deixa o SERVIDOR conferir na rede o que foi declarado.
+          txHash:    e.txHash,
         });
         if (ok) synced.add(e.id);
       }

@@ -3,7 +3,7 @@ import { requireAdmin } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { lerTodasPorChave } from "@/lib/supabase/paginar";
 import { TIER_FEE_BPS, receitaUsd, REGRA_TAXA_SOLANA } from "@/lib/tier/fees";
-import { separarPorAtribuicao, temIdentidadeAssinada } from "@/lib/admin/atribuicao";
+import { resumirVerificacao, separarPorAtribuicao, temIdentidadeAssinada, type ResumoVerificacao } from "@/lib/admin/atribuicao";
 import type { Tier } from "@/lib/tier/types";
 
 export const runtime = "nodejs";
@@ -78,6 +78,7 @@ export async function GET(): Promise<NextResponse> {
     naoAtribuidoUsd: number;
   }> = [];
   let falha: string | null = null;
+  let verificacao: ResumoVerificacao | null = null;
 
   if (db) {
     try {
@@ -97,10 +98,12 @@ export async function GET(): Promise<NextResponse> {
       const leitura = await lerTodasPorChave<{
         id: string; volume_usd: number | string | null; created_at: string; status: string; kind: string | null;
         platform_fee_usd: number | string | null; wallet_address: string | null;
+        verificacao: string | null; verificacao_motivo: string | null; pagador_onchain: string | null;
+        taxa_onchain_raw: number | string | null; taxa_onchain_mint: string | null;
       }>((depoisDe, limite) => {
         let q = db
           .from("operations")
-          .select("id, volume_usd, created_at, status, kind, platform_fee_usd, wallet_address")
+          .select("id, volume_usd, created_at, status, kind, platform_fee_usd, wallet_address, verificacao, verificacao_motivo, pagador_onchain, taxa_onchain_raw, taxa_onchain_mint")
           .eq("status", "confirmed");
         if (depoisDe) q = q.gt("id", depoisDe);
         return q.order("id", { ascending: true }).limit(limite);
@@ -135,6 +138,8 @@ export async function GET(): Promise<NextResponse> {
        * a tela apresenta como caixa medido.
        */
       ({ arrecadado, naoAtribuido } = separarPorAtribuicao(linhas));
+      // W3-D: o que a REDE confirmou, separado do declarado e da identidade.
+      verificacao = resumirVerificacao(linhas);
 
       /**
        * ⚠️ A QUEBRA POR ORIGEM RESPONDE "DE ONDE VEM O DINHEIRO", e a resposta
@@ -207,7 +212,7 @@ export async function GET(): Promise<NextResponse> {
   }));
 
   return NextResponse.json({
-    real, sonda, semVolume, arrecadado, naoAtribuido, porOrigem, falha,
+    real, sonda, semVolume, arrecadado, naoAtribuido, porOrigem, falha, verificacao,
     receitaRealTetoUsd,
     taxaPorPlano: TIER_FEE_BPS,
     projecao,
@@ -224,6 +229,8 @@ export async function GET(): Promise<NextResponse> {
         + "aceita `confirmed` e taxa de quem não tem sessão assinada. Ela conta "
         + "no volume (a troca aconteceu na cadeia) mas NÃO na arrecadação — "
         + "sai em NÃO ATRIBUÍDO, porque não há a quem perguntar",
+      "⚠️ W3-D: ARRECADADO é a taxa DECLARADA pelo navegador. Receita COMPROVADA é só `verificacao.financeiro.verificada` "
+        + "(Solana, taxa medida na conta de taxa pela assinatura pública). EVM, LI.FI e CEX seguem NÃO VERIFICADOS",
       "EVM e Solana cobram (Solana desde 16/10): na Jupiter só pares com USDC ou SOL; outros pares saem sem taxa",
       "⚠️ NÃO é número contábil: soma de leituras paginadas (por chave), não um retrato do livro num "
         + "instante só. Conciliação/tesouraria tem de vir de uma agregação SQL única",

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { rateLimit, getClientId } from "@/lib/rate-limit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { assinaturaValidaFormato } from "@/lib/solana/transmissao";
+import { colunasDaVerificacao, verificarOperacaoSolana } from "@/lib/solana/reconciliacao";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +31,8 @@ interface Body {
    *  created_at so 24h/7d aggregations reflect when the trade actually
    *  happened — NOT when the browser first synced its backlog. */
   ts?:         number;
+  /** Assinatura pública da transação (Solana) — W3-D: o servidor reconcilia na rede. */
+  txHash?:     string;
 }
 
 /**
@@ -120,8 +124,19 @@ export async function POST(req: NextRequest) {
    * `ok: true` mentiroso marcava a operação como sincronizada para sempre — ela
    * nunca mais seria reenviada, e o livro ficava com o buraco sem ninguém ver.
    */
+  /**
+   * ⚠️ W3-D: swap Solana (Jupiter) com assinatura pública → a VERIFICAÇÃO é do servidor, na rede.
+   * O `status`/taxa declarados continuam gravados como alegação; o estado financeiro nasce
+   * `aguardando` (declarado confirmado) ou `declarada` (outros estados), nunca verificado.
+   */
+  const chainDecl = str(body.chain, 40);
+  const assinatura = chainDecl === "solana" && body.route === "jupiter" && assinaturaValidaFormato(body.txHash) ? body.txHash : null;
+  const aguardando = assinatura !== null && body.status === "confirmed";
   {
     const { error } = await db.from("operations").upsert({
+      tx_signature:    assinatura,
+      carteira_origem: assinatura ? origem : null,
+      verificacao:     aguardando ? "aguardando" : "declarada",
       ref:            str(body.ref, 120),
       wallet_address: atribuida,   // só quando origem do registro == sessão (W3)
       kind:           str(body.kind, 40)!,
@@ -153,6 +168,18 @@ export async function POST(req: NextRequest) {
     // Devolver 500 faz o navegador REPETIR no próximo ciclo, que é o ponto.
     if (error) {
       return NextResponse.json({ ok: false, error: error.message.slice(0, 160) }, { status: 500 });
+    }
+  }
+  // Reconciliação imediata (best-effort AQUI porque a rotina `/api/operations/reconciliar` repete
+  // tudo que ficar `aguardando` — o registro já está gravado e nada é dado como verificado sem medir).
+  if (aguardando && assinatura) {
+    const fee = num(body.platformFeeUsd), bps = num(body.platformFeeBps);
+    const v = await verificarOperacaoSolana(assinatura, {
+      carteira: origem, taxaDeclarada: (fee !== null && fee > 0) || (bps !== null && bps > 0),
+    });
+    if (v.verificacao !== "aguardando") {
+      await db.from("operations").update(colunasDaVerificacao(v))
+        .eq("ref", str(body.ref, 120)!).eq("tx_signature", assinatura).eq("verificacao", "aguardando");
     }
   }
   return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });

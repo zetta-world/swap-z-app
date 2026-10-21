@@ -29,6 +29,16 @@ interface Dados {
   projecao: Array<{ volumeUsd: number; porPlano: Record<Tier, number> }>;
   solanaRegra: string[];
   naoMedido: string[];
+  /** W3-D: o que a rede confirmou × aguardando × divergente × declarado; e a identidade à parte. */
+  verificacao: {
+    financeiro: {
+      verificada: { operacoes: number; taxaUsdc: number; taxaWsolLamports: string; outrosMints: number; autoTaxa: number };
+      aguardando: number;
+      divergente: { operacoes: number; motivos: Record<string, number> };
+      declarada: { operacoes: number; taxaDeclaradaUsd: number };
+    };
+    identidade: { origemComprovada: number; autenticada: number; naoAtribuida: number };
+  } | null;
   fetchedAt: string;
 }
 
@@ -93,11 +103,38 @@ export default function ReceitaPanel() {
                  Aqui é soma de PARCELA: cada operação declara quanto foi
                  retido, e a contagem ao lado diz de quantas. Sem parcela o
                  número é zero, e a contagem zero explica por quê. */}
-          <div style={{ fontSize: 12, color: "var(--adm-green)", letterSpacing: "0.12em", marginBottom: 4 }}>
-            ARRECADADO — taxa retida em operação confirmada
+          {/* ── W3-D: VERIFICADO NA REDE ────────────────────────────────
+                 Só isto é receita COMPROVADA: assinatura pública conferida, err nulo, pagador =
+                 carteira de origem e a taxa MEDIDA na conta de taxa. O resto é alegação. */}
+          {data.verificacao && (
+            <>
+              <div style={{ fontSize: 12, color: "var(--adm-green)", letterSpacing: "0.12em", marginBottom: 4 }}>
+                VERIFICADO NA REDE — Solana, taxa medida na conta de taxa
+              </div>
+              <div style={{ display: "flex", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+                <Bloco r="TAXA USDC MEDIDA" v={usdFino(data.verificacao.financeiro.verificada.taxaUsdc)} c="var(--adm-green)" />
+                <Bloco r="TAXA wSOL MEDIDA" v={`${(Number(data.verificacao.financeiro.verificada.taxaWsolLamports) / 1e9).toFixed(9)} SOL`} c="var(--adm-green)" />
+                <Bloco r="VERIFICADAS" v={String(data.verificacao.financeiro.verificada.operacoes)} c="var(--adm-ink-2)" />
+                <Bloco r="AGUARDANDO" v={String(data.verificacao.financeiro.aguardando)} c="var(--adm-ink-2)" />
+                <Bloco r="DIVERGENTES" v={String(data.verificacao.financeiro.divergente.operacoes)}
+                  c={data.verificacao.financeiro.divergente.operacoes > 0 ? "var(--adm-amber)" : "var(--adm-ink-2)"} />
+              </div>
+              <div style={{ fontSize: 11, color: "var(--adm-ink-2)", lineHeight: 1.6, marginBottom: 8 }}>
+                Identidade (outra dimensão): {data.verificacao.identidade.origemComprovada} com pagador provado na rede ·{" "}
+                {data.verificacao.identidade.autenticada} autenticada(s) por sessão ·{" "}
+                {data.verificacao.identidade.naoAtribuida} não atribuída(s).
+                {data.verificacao.financeiro.verificada.autoTaxa > 0 && <> {data.verificacao.financeiro.verificada.autoTaxa} verificada(s) pagas pela própria carteira dona das contas de taxa: receita 0 (sai e volta para o mesmo dono).</>}
+                {data.verificacao.financeiro.divergente.operacoes > 0 && <> Divergências: {Object.entries(data.verificacao.financeiro.divergente.motivos).map(([m, n]) => `${m} ×${n}`).join(", ")}.</>}
+                {" "}{data.verificacao.financeiro.declarada.operacoes} operação(ões) só DECLARADAS (EVM, LI.FI, CEX, legado) — não verificadas.
+              </div>
+            </>
+          )}
+
+          <div style={{ fontSize: 12, color: "var(--adm-amber)", letterSpacing: "0.12em", marginBottom: 4 }}>
+            ARRECADADO DECLARADO — taxa informada pelo navegador (com identidade assinada), NÃO verificada
           </div>
           <div style={{ display: "flex", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
-            <Bloco r="DINHEIRO QUE ENTROU" v={usdFino(data.arrecadado.usd)} c="var(--adm-green)" />
+            <Bloco r="DECLARADO" v={usdFino(data.arrecadado.usd)} c="var(--adm-amber)" />
             <Bloco r="OPERAÇÕES QUE RETIVERAM" v={String(data.arrecadado.operacoes)} c="var(--adm-ink-2)" />
           </div>
           {data.arrecadado.operacoes === 0 && (
