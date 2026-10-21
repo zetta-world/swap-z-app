@@ -495,3 +495,29 @@ describe("W3-C · trava DURÁVEL por carteira (entre aparelhos)", () => {
     expect(banco.b.linhas[0]).toMatchObject({ estado: "resolvida", desfecho: "confirmada" });
   });
 });
+
+
+describe("Lighthouse passa pelo vínculo e pela reserva W3-C", () => {
+  it("extensão autenticada transmite bytes assinados exatos; outra assinatura permanece bloqueada", async () => {
+    const original = txSwap();
+    const extra = new TransactionInstruction({
+      programId: new PublicKey("L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95"),
+      keys: [{ pubkey: dono.publicKey, isSigner: false, isWritable: false }],
+      data: Buffer.from([5, 0, 0, 100, 0, 0, 0, 0, 0, 0, 0, 0]),
+    });
+    const signed = txSwap({ extra: [extra] });
+    rpc = () => ok(assinaturaDe(signed));
+    const request = (t: VersionedTransaction) => POST(new NextRequest("http://x/api/solana/transmitir", {
+      method: "POST", body: JSON.stringify({tx: b64(t), owner: dono.publicKey.toBase58(), vinculo: vin(original),
+        mensagemOriginal: Buffer.from(original.message.serialize()).toString("base64")}),
+    }));
+    const r = await request(signed);
+    expect(await r.json()).toMatchObject({estado:"enviada", assinatura:assinaturaDe(signed)});
+    expect(pedidos[0].corpo.params[0]).toBe(b64(signed));
+    expect(banco.b.chamadas).toContain("solana_tx_reservar");
+    extra.data[3] = 101;
+    const second = txSwap({extra:[extra]});
+    expect((await request(second)).status).toBe(409);
+    expect(pedidos.filter(p=>p.corpo.method==="sendTransaction")).toHaveLength(1);
+  });
+});

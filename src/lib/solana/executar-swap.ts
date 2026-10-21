@@ -78,6 +78,8 @@ export async function executarSwapSolana(d: DepsSwapSolana): Promise<{ historyId
 
   // 3. Só a carteira assina.
   d.ui.fase("needs_tx_signature");
+  // Snapshot BEFORE invoking a wallet: adapters may mutate the input object in place.
+  const mensagemOriginal = Buffer.from(d.tx.message.serialize()).toString("base64");
   let assinada: VersionedTransaction;
   try {
     assinada = await d.assinar(d.tx);
@@ -91,7 +93,7 @@ export async function executarSwapSolana(d: DepsSwapSolana): Promise<{ historyId
   d.ui.assinatura(sig);
 
   // 4. Envio: SÓ pelo servidor (valida assinatura, programas e o vínculo cotação↔taxa).
-  const envio: Envio = await transmitir(b64, d.owner, sig, d.vinculo);
+  const envio: Envio = await transmitir(b64, d.owner, sig, d.vinculo, mensagemOriginal);
 
   if (envio.estado === "nao_enviada") {
     marcar("envio_falhou", { motivo: envio.motivo.slice(0, 120) });

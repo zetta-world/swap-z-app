@@ -25,17 +25,13 @@ import { createPublicKey, verify } from "node:crypto";
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { rpcSolanaServidor } from "@/lib/solana/rpc-servidor";
 import { JUPITER_ALLOWED_PROGRAMS } from "@/lib/swap/solana-guard";
+import { LIGHTHOUSE, assercaoLighthouse } from "@/lib/solana/lighthouse";
 import { assinaturaDe, base58, deBase58 } from "@/lib/solana/assinatura";
 
 export const MAX_BYTES_TX = 1232;
 const JUPITER_V6 = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
-/**
- * Programas que a CARTEIRA pode acrescentar depois que montamos a transação (ex.: asserções de
- * segurança). VAZIO de propósito: nenhum foi observado ainda num swap real assinado pela Phantom, e
- * um ID não verificado aqui seria uma porta aberta. Se a carteira inserir um programa, o servidor
- * RECUSA sem transmitir (nada sai da carteira) e loga QUAL programa — aí ele entra aqui com evidência.
- */
-export const PROGRAMAS_DE_CARTEIRA: Record<string, string> = {};
+/** Program ID alone is insufficient: the instruction decoder below is mandatory. */
+export const PROGRAMAS_DE_CARTEIRA: Record<string, string> = { [LIGHTHOUSE]: "Lighthouse assertions" };
 const TIMEOUT_ENVIO_MS = 10_000;
 const TIMEOUT_STATUS_MS = 5_000;
 
@@ -90,6 +86,9 @@ export function validarTransacaoAssinada(base64: unknown, owner: unknown): Valid
   for (const ix of msg.compiledInstructions) {
     const p = msg.staticAccountKeys[ix.programIdIndex];
     if (!p) return { ok: false, motivo: "programa_em_alt" };
+    if (p.toBase58() === LIGHTHOUSE && !assercaoLighthouse(ix.data, ix.accountKeyIndexes.length)) {
+      return { ok: false, motivo: "lighthouse_instrucao_nao_permitida" };
+    }
     programas.add(p.toBase58());
   }
   if (!programas.has(JUPITER_V6)) return { ok: false, motivo: "sem_jupiter" };

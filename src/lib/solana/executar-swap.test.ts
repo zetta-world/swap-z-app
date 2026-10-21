@@ -319,3 +319,25 @@ describe("⚠️⚠️ W3-B: um único caminho de envio — o servidor com vínc
     expect(ofensores).toEqual([]);
   });
 });
+
+
+describe("Lighthouse original message snapshot", () => {
+  it("keeps the authenticated original when the wallet mutates its input in place", async () => {
+    const { d, transmitir } = montar();
+    const original = Buffer.from(d.tx.message.serialize()).toString("base64");
+    d.assinar = async (t) => {
+      const message = TransactionMessage.decompile(t.message);
+      message.instructions.push(new TransactionInstruction({
+        programId: new PublicKey("L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95"),
+        keys: [{ pubkey: phantom.publicKey, isSigner: false, isWritable: false }],
+        data: Buffer.from([5, 0, 0, 100, 0, 0, 0, 0, 0, 0, 0, 0]),
+      }));
+      t.message = message.compileToV0Message();
+      t.sign([phantom]);
+      return t;
+    };
+    await executarSwapSolana(d);
+    expect(Buffer.from(d.tx.message.serialize()).toString("base64")).not.toBe(original);
+    expect(transmitir).toHaveBeenCalledWith(expect.any(String), OWNER, expect.any(String), undefined, original);
+  });
+});
