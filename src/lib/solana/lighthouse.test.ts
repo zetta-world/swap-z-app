@@ -59,3 +59,16 @@ describe('Lighthouse structure, no write instructions',()=>{
  expect(assercaoLighthouse(amount,2)).toBe(false);
  });
 });
+
+
+describe("safe rejected instruction diagnostics", () => {
+ it("reports only opcode, logging enum, account count and byte length after signature validation", () => {
+  const data = Buffer.from(amount); data[1] = 4;
+  const b = tx([base(), assertion(data)]);
+  expect(validarTransacaoAssinada(wire(b), owner.publicKey.toBase58())).toEqual({
+   ok: false, motivo: "lighthouse_instrucao_nao_permitida:9:4:1:12",
+  });
+  b.signatures[0][0] ^= 1;
+  expect(validarTransacaoAssinada(wire(b), owner.publicKey.toBase58())).toEqual({ok:false,motivo:"assinatura_invalida"});
+ });
+});

@@ -1353,3 +1353,7 @@ credencial no bundle. Fee accounts (`En1J8…`, `7PPDQ…`): 1 transação cada 
 ## PHANTOM-LIGHTHOUSE-20261021 — correção restrita
 CURRENT_DEVELOPMENT. PHASE_BASE_SHA=bc6f67acbe6f3f0391ea998cb9a645a15fa7659b.
 Missão do dono de21/10: compatibilidade Phantom/Lighthouse preservando W3/W3-C/W3-D/W4. Branch codex/phantom-lighthouse-20261021 isolada; plano PLANO-PHANTOM-LIGHTHOUSE-20261021.md. PR/CI/Preview autorizados; produção depende de aprovação final. Nenhum fundo movimentado.
+
+
+## PHANTOM-MOBILE-20261022 — desenvolvimento
+Base cc79fc7, worktree isolada codex/phantom-mobile-followup-20261022. Relato proprietário dentro da Phantom. Plano PLANO-PHANTOM-MOBILE-20261022.md; sem autorização automática de nova publicação.

@@ -87,7 +87,7 @@ export function validarTransacaoAssinada(base64: unknown, owner: unknown): Valid
     const p = msg.staticAccountKeys[ix.programIdIndex];
     if (!p) return { ok: false, motivo: "programa_em_alt" };
     if (p.toBase58() === LIGHTHOUSE && !assercaoLighthouse(ix.data, ix.accountKeyIndexes.length)) {
-      return { ok: false, motivo: "lighthouse_instrucao_nao_permitida" };
+      return { ok: false, motivo: `lighthouse_instrucao_nao_permitida:${ix.data[0] ?? -1}:${ix.data[1] ?? -1}:${ix.accountKeyIndexes.length}:${ix.data.length}` };
     }
     programas.add(p.toBase58());
   }

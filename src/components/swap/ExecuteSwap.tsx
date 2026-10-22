@@ -81,6 +81,8 @@ export default function ExecuteSwap({
   // Solana — used for source=jupiter; idle for EVM flows.
   const sol = useWallet();
 
+  const executionPending = useRef(false);
+  const [executing, setExecuting] = useState(false);
   const [phase, setPhase] = useState<Phase>("idle");
   const [zxQuote, setZxQuote] = useState<ZxQuoteResponse | null>(null);
   /**
@@ -476,6 +478,7 @@ export default function ExecuteSwap({
    * push a second button.
    */
   const onExecute = useCallback(async () => {
+    if (executionPending.current) return;
     setError(null);
     /**
      * ⚠⚠ O PORTÃO FICA AQUI, na ÚNICA porta por onde as três fontes passam
@@ -486,6 +489,8 @@ export default function ExecuteSwap({
       setPhase("tx_failed");
       return;
     }
+    executionPending.current = true;
+    setExecuting(true);
     try {
       // ─── Jupiter (Solana) path ───────────────────────────────────
       if (isJupiter) {
@@ -783,6 +788,9 @@ export default function ExecuteSwap({
         }
         // cancelada já está certa; assinada/envio_incerto/pendente ficam em aberto para a reconciliação.
       }
+    } finally {
+      executionPending.current = false;
+      setExecuting(false);
     }
   }, [vereditoFirme, vereditoDeSaida, source, isJupiter, jupResult, sol, zxQuote, lfQuote, fetchFreshZxQuote, sendTransactionAsync, writeContractAsync, switchChainAsync, publicClient, address, sellAmount, fromToken, isCrossChain, toChain, toToken, targetChainId, currentChainId, pushHistory, updateHistory, arrecadacao, pontePartindoDeSolana]);
 
@@ -795,18 +803,18 @@ export default function ExecuteSwap({
   const txDisplayHash: string | null = isJupiter ? solSig : (txHash ?? null);
 
   return (
-    <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog.Root open={open} onOpenChange={(o) => !o && !executionPending.current && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-[60] bg-bg/80 backdrop-blur-sm animate-fade-in" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-[60] w-[95%] max-w-md -translate-x-1/2 -translate-y-1/2 outline-none max-h-[90vh]">
-          <motion.div initial={{ scale: 0.96, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="aurora-border p-px max-h-[90vh] overflow-y-auto rounded-[20px]">
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-[60] w-[95%] max-w-md -translate-x-1/2 -translate-y-1/2 outline-none max-h-[calc(100dvh-2rem)]">
+          <motion.div initial={{ scale: 0.96, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="aurora-border p-px max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain rounded-[20px]">
             <div className="rounded-[20px] glass-strong p-5 sm:p-6">
               <div className="flex items-center justify-between mb-4">
                 <Dialog.Title className="font-display font-extrabold text-base text-ink">
                   {t("swap.executeSwap")}
                 </Dialog.Title>
                 <Dialog.Close asChild>
-                  <button type="button" aria-label={t("common.close")} className="w-7 h-7 rounded-md flex items-center justify-center text-ink-3 hover:text-ink hover:bg-white/5">
+                  <button type="button" aria-label={t("common.close")} disabled={executing} className="w-7 h-7 rounded-md flex items-center justify-center text-ink-3 hover:text-ink hover:bg-white/5">
                     <X className="w-4 h-4" />
                   </button>
                 </Dialog.Close>
@@ -834,17 +842,17 @@ export default function ExecuteSwap({
               </div>
 
               {/* Pair summary */}
-              <div className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/5 min-w-0 mb-3">
+              <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/5 min-w-0 mb-3">
                 <div className="flex-1 min-w-0">
                   <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">{t("zion.pay")}</div>
-                  <div className="font-display font-bold text-base text-ink truncate">
+                  <div className="font-display font-bold text-sm sm:text-base text-ink break-words">
                     {formatAmount(estIn, 6)} {fromToken.symbol}
                   </div>
                 </div>
                 <ArrowRight className="w-4 h-4 text-cyan flex-shrink-0" />
-                <div className="flex-1 min-w-0 text-right">
+                <div className="flex-1 min-w-[8rem] text-right">
                   <div className="font-mono text-[10px] text-ink-3 tracking-widest uppercase">{t("zion.receive")}</div>
-                  <div className="font-display font-bold text-base text-ink truncate">
+                  <div className="font-display font-bold text-sm sm:text-base text-ink break-words">
                     {estOut !== null ? `~${formatAmount(estOut, 6)}` : "—"} {toToken.symbol}
                   </div>
                 </div>
@@ -904,19 +912,19 @@ export default function ExecuteSwap({
                   type="button"
                   onClick={onClose}
                   className="flex-1 btn btn-secondary text-xs"
-                  disabled={phase === "approving" || phase === "needs_tx_signature" || phase === "tx_pending"}
+                  disabled={executing || phase === "approving" || phase === "needs_tx_signature" || phase === "tx_pending"}
                 >
                   {phase === "tx_confirmed" ? t("swap.btnDone") : t("common.cancel")}
                 </button>
                 {/* Single CTA — network switch, approval and send are all
                     chained behind this one click. */}
                 {(phase === "needs_chain_switch" || phase === "needs_approval" || phase === "needs_tx_signature") && (
-                  <button type="button" onClick={onExecute} className="flex-1 btn btn-primary text-xs">
+                  <button type="button" onClick={onExecute} disabled={executing} className="flex-1 btn btn-primary text-xs">
                     {t("swap.executeSignAndSend")}
                   </button>
                 )}
-                {phase === "tx_failed" && (zxQuote || lfQuote || jupResult) && error !== tImp("swap.solGuardBlocked") && (
-                  <button type="button" onClick={onExecute} className="flex-1 btn btn-primary text-xs">
+                {phase === "tx_failed" && (zxQuote || lfQuote || jupResult) && error !== tImp("swap.solGuardBlocked") && !error?.includes("lighthouse_instrucao_nao_permitida") && (
+                  <button type="button" onClick={onExecute} disabled={executing} className="flex-1 btn btn-primary text-xs">
                     {t("swap.executeRetry")}
                   </button>
                 )}

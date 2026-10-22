@@ -9,7 +9,8 @@ import { motion } from "framer-motion";
 import { useConnect, useDisconnect, type Connector } from "wagmi";
 import { useWallet, type Wallet as SolWalletAdapter } from "@solana/wallet-adapter-react";
 import { X, Wallet, ExternalLink, Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 
@@ -31,6 +32,7 @@ export default function ConnectModal({
   const { connectors, connectAsync, isPending } = useConnect();
   const { disconnectAsync } = useDisconnect();
   const solana = useWallet();
+  const connectionPending = useRef(false);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,6 +47,8 @@ export default function ConnectModal({
     : "https://phantom.com/download";
 
   const onConnect = async (c: Connector) => {
+    if (connectionPending.current) return;
+    connectionPending.current = true;
     setError(null);
     setPendingId(c.uid);
     try {
@@ -67,15 +71,20 @@ export default function ConnectModal({
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg.includes("User rejected") || msg.includes("rejected") ? t("topbar.connectionRejected") : msg);
     } finally {
+      connectionPending.current = false;
       setPendingId(null);
     }
   };
 
   const onConnectSolana = async (w: SolWalletAdapter) => {
+    if (connectionPending.current) return;
+    connectionPending.current = true;
     setError(null);
     setPendingId(`sol:${w.adapter.name}`);
     try {
-      solana.select(w.adapter.name);
+      // Commit provider selection/listeners before a synchronous connect event.
+      // Keep this inside the user gesture so the injected wallet can open its prompt.
+      flushSync(() => solana.select(w.adapter.name));
       await w.adapter.connect();
       onOpenChange(false);
     } catch (e) {
@@ -83,6 +92,7 @@ export default function ConnectModal({
       const denied = msg.toLowerCase().includes("rejected") || msg.toLowerCase().includes("user denied");
       setError(denied ? t("topbar.connectionRejected") : msg);
     } finally {
+      connectionPending.current = false;
       setPendingId(null);
     }
   };
@@ -146,9 +156,8 @@ export default function ConnectModal({
                       <span className="flex-1 h-px bg-white/5" />
                     </div>
 
-                    {/* W4: no Chrome do Android o adaptador OFICIAL (Mobile Wallet Adapter) abre a Phantom para
-                        autorizar e VOLTA ao navegador — vem primeiro e com nome que o usuário reconhece. */}
-                    {[...solana.wallets].sort((a, b) => Number(b.adapter.name === MWA) - Number(a.adapter.name === MWA)).map((w, i) => {
+                    {/* Prefer an injected wallet inside its own browser; MWA remains available for external Android browsers. */}
+                    {[...solana.wallets].sort((a, b) => Number(b.readyState === "Installed") - Number(a.readyState === "Installed") || Number(b.adapter.name === MWA) - Number(a.adapter.name === MWA)).map((w, i) => {
                       const id = `sol:${w.adapter.name}`;
                       const isPendingThis = pendingId === id;
                       const installed = w.readyState === "Installed" || w.readyState === "Loadable";
@@ -191,7 +200,7 @@ export default function ConnectModal({
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: i * 0.04 }}
                           onClick={() => onConnectSolana(w)}
-                          disabled={!installed && !notDetected}
+                          disabled={pendingId !== null || solana.connecting || (!installed && !notDetected)}
                           className={cn(
                             "w-full flex items-center gap-3 px-3.5 py-3 rounded-xl border transition-all text-left group",
                             "border-white/5 bg-white/[0.02] hover:bg-white/[0.05] hover:border-[#14F195]/30",
@@ -255,7 +264,7 @@ export default function ConnectModal({
                 {sorted.map((c, i) => {
                   const meta = getWalletMeta(c);
                   const isPendingThis = pendingId === c.uid;
-                  const disabled = isPending && !isPendingThis;
+                  const disabled = pendingId !== null || isPending || solana.connecting;
                   return (
                     <motion.button
                       key={c.uid}
