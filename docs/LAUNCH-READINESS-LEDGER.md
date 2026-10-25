@@ -1472,3 +1472,13 @@ corrigidos (RUNBOOK, teste de rota no caminho padrão com o vínculo, comentári
 suíte 342 / 5203 · lint 0 erros. Fora do código: o bloqueio da Phantom ao domínio — não está na lista pública
 `phantom/blocklist` (scanner interno); caminho: o time do dApp escrever para review@phantom.com (rascunho entregue ao
 dono); domínio próprio é decisão do dono.
+
+**RECERT(C1c) = PASS — 25/10/2026 (atestação C2).** `CERTIFIED_FEATURE_SHA=cb8b9ac4b6293ef7f884b0a725eb8fced9c8f449`
+(tree `edcbb62f04a437bb6e3271e9328d6d26fd2b1685`) · `RECERT_RESULT=PASS` · `CONTROL_PLANE_HEAD=THIS_CONTROL_PLANE_COMMIT`
+(só `docs/**`; NÃO é CERTIFIED). Worktree limpo no SHA exato, Node 22.22.0 / npm 10.9.4, 15:34 UTC. Evidência fora do
+repo: `scratchpad/recert-cb8b9ac-20261025T153438Z/` (sessão cloud efêmera), `MANIFEST.sha256` sha256
+`82e02ef1159cf205e3c1833951100f4e9e63b4f64728f44d2b962ee7f8923064`. `npm ci` ✓ · type-check ✓ · lint 0 erros ✓ ·
+suíte ×2: 342 / 5203 nas duas ✓ · Solana 242 ✓ · `next build` ✓ · portão `npm audit` OK (R-04) ✓ · segredos ✓.
+CI oficial no SHA: run 40207596026 success. Desvios: arneses SQL (sem SQL no delta) e smoke (exige deploy). Prova:
+`git diff --stat cb8b9ac..HEAD -- . ':!docs/**'` vazio e `cb8b9ac` ancestral de HEAD (conferidos antes do push).
+`RELEASE_CANDIDATE` deste SHA: aguardando autorização escrita do dono (a de 25/10 valeu para `31920d7`).

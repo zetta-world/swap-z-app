@@ -1,6 +1,6 @@
 # PLANO — Phantom/Lighthouse v2: aceitar o formato REAL da Phantom (24/10/2026)
 
-Status: 🟡 EM PRODUÇÃO `0430644` (código `31920d7`); 1º swap real → `BlockhashNotFound` (blockhash velho da Jupiter) — C1c em andamento — plano escrito antes do código. Produção NÃO autorizada nesta etapa.
+Status: 🟢 C1c `cb8b9ac` CERTIFICADO (RECERT PASS, CI verde) — aguardando autorização do dono para produção (produção atual `0430644`) — plano escrito antes do código. Produção NÃO autorizada nesta etapa.
 PHASE_BASE_SHA: `cc79fc7886c2918a3cba2a44960cc67727365bfe` (`main`, PR #449). Branch: `claude/swap-z-recovery-deploy-b7y2cw`.
 
 ## Incidente que continua

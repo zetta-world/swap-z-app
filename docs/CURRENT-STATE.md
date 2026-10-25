@@ -12,6 +12,14 @@
 
 ---
 
+## Atualização C1c — blockhash do servidor (25/10/2026, tarde)
+
+Produção em `0430644` (código `31920d7`, Next 16.4.3). 1º swap real: o servidor ACEITOU a transação da Phantom e o nó
+recusou com `BlockhashNotFound` — o blockhash do `/build` da Jupiter vem de cache com ~35 s de vida (medido). Correção
+certificada: `CERTIFIED_FEATURE_SHA=cb8b9ac` (blockhash novo do RPC do servidor; cotação renovada com > 20 s), recert
+PASS e CI verde. **Pendente: autorização do dono para este SHA + deploy; e-mail do dono a review@phantom.com (a Phantom
+marca o domínio como suspeito).**
+
 ## Atualização PHANTOM-LIGHTHOUSE-V2 — swap Solana com a Phantom (25/10/2026)
 
 Produção segue em `cc79fc7` (#449): o swap assinado na Phantom é recusado antes do RPC
