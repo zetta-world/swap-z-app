@@ -1,6 +1,6 @@
 # PLANO — Phantom/Lighthouse v2: aceitar o formato REAL da Phantom (24/10/2026)
 
-Status: 🟢 EM PRODUÇÃO desde 25/10 (`main` `0430644`, código certificado `31920d7`, `dpl_DTzQ9Xy56yZroT1N5XBR8WuW3cAJ`) — falta o primeiro swap real do dono — plano escrito antes do código. Produção NÃO autorizada nesta etapa.
+Status: 🟡 EM PRODUÇÃO `0430644` (código `31920d7`); 1º swap real → `BlockhashNotFound` (blockhash velho da Jupiter) — C1c em andamento — plano escrito antes do código. Produção NÃO autorizada nesta etapa.
 PHASE_BASE_SHA: `cc79fc7886c2918a3cba2a44960cc67727365bfe` (`main`, PR #449). Branch: `claude/swap-z-recovery-deploy-b7y2cw`.
 
 ## Incidente que continua
@@ -112,6 +112,27 @@ C1b (sobre `6258d7a`):
     mudada) NÃO é decidido aqui: a exceção do portão é decisão do dono (`audit-exceptions.json`, R-03). Proponho o
     texto exato da revisão e só aplico com o "sim" dele.
 18. Recert COMPLETA no SHA do C1b (inclui build, a suíte ×2 e o portão), C2 só de docs, e então o pedido de deploy.
+
+### Primeiro swap real em produção (25/10, 11:29 UTC) → `BlockhashNotFound` → C1c
+
+O dono assinou na Phantom; o servidor ACEITOU a transação (sem asserções desta vez: a Phantom marcou o domínio como
+suspeito e o dono seguiu "não seguro") e a simulação do nó recusou com `BlockhashNotFound`, ~40 s depois da cotação.
+Medido em produção (só leitura): cotação firme 11:32:50 → `lastValidBlockHeight` 439 270 561; altura confirmada às
+11:33:18 → 439 270 548 (13 blocos ≈ 5 s de vida). **O blockhash do `/build` da Jupiter vem de cache (`fetchedAt`) e já
+chega com ~metade da validade gasta (~35 s restantes).** Somado às telas da Phantom, vence.
+
+19. `montarTransacaoJupiter`: blockhash NOVO do RPC do próprio servidor (`getLatestBlockhash`, `confirmed` — o mesmo nó
+    e o mesmo compromisso do preflight do envio) e o `lastValidBlockHeight` dele (vai para o vínculo HMAC e a trava
+    W3-C). RPC falhou ou resposta inválida → usa o da Jupiter, com log (não move dinheiro: no pior caso a tx expira,
+    como hoje). Prazo curto (2,5 s).
+20. Tela: `JUP_QUOTE_TTL_MS` 30 s → 20 s (sobram ~35–40 s para as telas da carteira, descontada a latência do
+    servidor); texto da nota nos 4 idiomas. O blockhash é buscado DEPOIS da simulação (começa a envelhecer o mais
+    tarde possível). Auditoria `wf_9c40c45c-d44`: lente dinheiro sem defeito; integração — 3 achados leves
+    corrigidos (RUNBOOK, teste de rota no caminho padrão, comentários).
+
+Fora do código: a Phantom bloqueia `swap-z-app.vercel.app` ("Esta dApp pode ser maliciosa" — não está na lista pública
+`phantom/blocklist`, é o scanner interno). Caminho indicado pela própria Phantom: o time do dApp escreve para
+review@phantom.com; domínio próprio é decisão do dono.
 
 ## Riscos e limites declarados
 

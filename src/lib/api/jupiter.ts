@@ -413,7 +413,7 @@ function precoDeCu(build: JupBuild): number | null {
   return null;
 }
 
-function compilar(build: JupBuild, taker: string, limite: number): VersionedTransaction {
+function compilar(build: JupBuild, taker: string, limite: number, blockhash?: string): VersionedTransaction {
   const alts = Object.entries(build.addressesByLookupTableAddress ?? {}).map(([chave, enderecos]) =>
     new AddressLookupTableAccount({
       key: new PublicKey(chave),
@@ -435,11 +435,39 @@ function compilar(build: JupBuild, taker: string, limite: number): VersionedTran
   const msg = new TransactionMessage({
     payerKey: new PublicKey(taker),
     // 32 bytes → base58: a mesma codificação de uma chave pública.
-    recentBlockhash: new PublicKey(Uint8Array.from(build.blockhashWithMetadata.blockhash)).toBase58(),
+    recentBlockhash: blockhash ?? new PublicKey(Uint8Array.from(build.blockhashWithMetadata.blockhash)).toBase58(),
     instructions: instrucoes,
   }).compileToV0Message(alts);
   return new VersionedTransaction(msg);
 }
+
+/**
+ * ⚠️⚠️ BLOCKHASH DO PRÓPRIO SERVIDOR (25/10, 1º swap real em produção → `BlockhashNotFound`). O `/build` da Jupiter
+ * devolve um blockhash de CACHE (`fetchedAt`): medido em produção, ele chega com ~35 s de vida restante. Somado ao
+ * tempo do usuário na carteira, vence antes do envio. Este vem do RPC do servidor — o MESMO nó e o MESMO
+ * compromisso (`confirmed`) do preflight do envio — com ~60–90 s de vida. Falhou → null (quem chama usa o da Jupiter:
+ * não move dinheiro; no pior caso a transação expira, como antes).
+ */
+export async function blockhashDoServidor(): Promise<{ blockhash: string; lastValidBlockHeight: number } | null> {
+  try {
+    const res = await fetch(rpcSolanaServidor(), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getLatestBlockhash", params: [{ commitment: "confirmed" }] }),
+      signal: AbortSignal.timeout(PRAZO_BLOCKHASH_MS),
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const j = await res.json() as { result?: { value?: { blockhash?: unknown; lastValidBlockHeight?: unknown } } };
+    const v = j.result?.value;
+    if (typeof v?.blockhash !== "string" || !Number.isSafeInteger(v.lastValidBlockHeight) || (v.lastValidBlockHeight as number) <= 0) return null;
+    if (new PublicKey(v.blockhash).toBase58() !== v.blockhash) return null;   // 32 bytes em base58, canônico
+    return { blockhash: v.blockhash, lastValidBlockHeight: v.lastValidBlockHeight as number };
+  } catch {
+    return null;
+  }
+}
+const PRAZO_BLOCKHASH_MS = 2_500;
 
 /** Compute units consumidas numa simulação sem assinatura; null se a simulação falhar. */
 async function simularCu(tx: VersionedTransaction): Promise<{ cu: number } | { cu: null; porque: string }> {
@@ -466,8 +494,8 @@ async function simularCu(tx: VersionedTransaction): Promise<{ cu: number } | { c
 }
 
 /**
- * ⚠️ Monta a transação que o usuário vai assinar — v0, pagador = `taker`, blockhash e lookup tables
- * da própria resposta do `/build`. Limite de CU = simulação × 1,2 (teto 1,4 M), como manda a docs da
+ * ⚠️ Monta a transação que o usuário vai assinar — v0, pagador = `taker`, lookup tables da resposta do
+ * `/build` e blockhash NOVO do RPC do servidor (`blockhashDoServidor`; o da Jupiter só se o RPC falhar). Limite de CU = simulação × 1,2 (teto 1,4 M), como manda a docs da
  * Jupiter; simulação falhou (ex.: saldo insuficiente — o swap falharia de qualquer jeito) → teto.
  * O web3.js nunca põe um programa invocado numa lookup table, então o guard do navegador
  * (`solana-guard.ts`) continua enxergando todos os programas.
@@ -481,12 +509,18 @@ export async function montarTransacaoJupiter(build: JupBuild, taker: string): Pr
   const t = tamanhoDaTransacao(rascunho);
   if (t.contas > MAX_CONTAS_TX || t.bytes > MAX_BYTES_TX) throw new TransacaoGrandeError(t.contas, t.bytes);
   const sim = await simularCu(rascunho);
+  // Blockhash novo DEPOIS da simulação (até 4 s): ele começa a envelhecer o mais tarde possível.
+  const bh = await blockhashDoServidor();
   const limite = sim.cu != null ? Math.min(CU_TETO, Math.ceil(sim.cu * 1.2)) : CU_TETO;
   if (sim.cu == null) console.warn("[jupiter]", JSON.stringify({ tipo: "simulacao", porque: sim.porque, limite }));
-  const tx = compilar(build, taker, limite);
+  const daJupiter = build.blockhashWithMetadata.lastValidBlockHeight;
+  if (bh) console.info("[jupiter]", JSON.stringify({ tipo: "blockhash", origem: "servidor", blocosAMais: bh.lastValidBlockHeight - daJupiter }));
+  else console.warn("[jupiter]", JSON.stringify({ tipo: "blockhash", origem: "jupiter", porque: "rpc_sem_blockhash" }));
+  const tx = compilar(build, taker, limite, bh?.blockhash);
   return {
     swapTransaction: Buffer.from(tx.serialize()).toString("base64"),
-    lastValidBlockHeight: build.blockhashWithMetadata.lastValidBlockHeight,
+    // ⚠️ O do blockhash QUE ESTÁ na transação: vai para o vínculo HMAC e para a trava W3-C.
+    lastValidBlockHeight: bh?.lastValidBlockHeight ?? daJupiter,
     computeUnitLimit: limite,
   };
 }

@@ -233,6 +233,12 @@ describe("Phantom: compatibilidade e não-custódia", () => {
     // A nota "cotação atualizada" só quando a nova CHEGOU (ramo de sucesso da busca), nunca antes.
     expect([...t.matchAll(/swap\.solQuoteRefreshed/g)]).toHaveLength(1);
     expect(t).toMatch(/jupQuoteAtRef\.current = Date\.now\(\);\s*if \(renovandoRef\.current\) \{ renovandoRef\.current = false; setSendNote\(tImp\("swap\.solQuoteRefreshed"\)\); \}/);
+    // 25/10: 20 s (blockhash do servidor ~60 s de vida − latência − telas da carteira) e o texto diz o mesmo número.
+    expect(t).toMatch(/const JUP_QUOTE_TTL_MS = 20_000;/);
+    const msgs = readFileSync("src/lib/i18n/messages.ts", "utf8");
+    const notas = [...msgs.matchAll(/solQuoteRefreshed: "([^"]+)"/g)].map((m) => m[1]);
+    expect(notas).toHaveLength(4);
+    for (const n of notas) expect(n).toMatch(/20 ?(s|秒)/);
   });
 
   it("o fluxo não contém NENHUMA forma de assinar fora da carteira", async () => {

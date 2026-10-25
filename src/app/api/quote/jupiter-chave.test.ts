@@ -9,7 +9,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { Keypair, VersionedTransaction } from "@solana/web3.js";
+import { createHash } from "node:crypto";
+import { Keypair, PublicKey, VersionedTransaction } from "@solana/web3.js";
 import fixture from "@/lib/api/__fixtures__/jupiter-build-20261016.json";
 import { verifyJupiterTransaction } from "@/lib/swap/solana-guard";
 
@@ -25,6 +26,7 @@ const s = vi.hoisted(() => ({
   jupStatus: 200,
   /** Jupiter "ignora" a taxa: devolve a resposta sem o feeAccount na instrução. */
   jupIgnoraTaxa: false,
+  semBlockhash: false,
   /** Jupiter devolve uma rota longa demais para UMA transação (65+ contas), sempre. */
   jupRotaGrande: false,
   jup: [] as { url: string; headers: Headers }[],
@@ -42,7 +44,7 @@ import { _limparCacheDeContas } from "@/lib/solana/conta-de-taxa";
 beforeEach(() => {
   vi.clearAllMocks();
   _limparCacheDeContas();
-  s.tier = "free"; s.contaOk = true; s.jupStatus = 200; s.jupIgnoraTaxa = false; s.jupRotaGrande = false; s.jup = [];
+  s.tier = "free"; s.contaOk = true; s.jupStatus = 200; s.jupIgnoraTaxa = false; s.jupRotaGrande = false; s.semBlockhash = false; s.jup = [];
   vi.stubEnv("JUPITER_API_KEY", CHAVE);
   vi.stubEnv("JUPITER_BASE_URL", "");
   vi.stubEnv("LIFI_INTEGRATOR", "");
@@ -70,6 +72,9 @@ beforeEach(() => {
     if (body.method === "simulateTransaction") {
       return Response.json({ jsonrpc: "2.0", id: 1, result: { value: { err: null, unitsConsumed: 150_000 } } });
     }
+    if (body.method === "getLatestBlockhash" && !s.semBlockhash) {
+      return Response.json({ jsonrpc: "2.0", id: 1, result: { context: { slot: 1 }, value: BLOCKHASH_SERVIDOR } });
+    }
     return new Response("?", { status: 404 });
   }));
 });
@@ -81,6 +86,8 @@ const firme = () => GET(new NextRequest("http://localhost/api/quote?" + new URLS
 const lista = (comTaker = true) => GET(new NextRequest("http://localhost/api/quote?" + new URLSearchParams({
   mode: "list", fromChain: "solana", toChain: "solana", sellToken: "native", buyToken: USDC, sellAmount: "100000000",
   ...(comTaker ? { taker: SOL_TAKER } : {}) })));
+/** O que o RPC do servidor responde a `getLatestBlockhash` (padrão dos testes desta rota). */
+const BLOCKHASH_SERVIDOR = { blockhash: "8yS3PdFxCtj8Um3YqLqH4rHwYVpnpwdx2q9pNtbMWqqB", lastValidBlockHeight: 439_999_999 };
 const alertas = () => vi.mocked(notifyTelegram).mock.calls.map((c) => String(c[0]));
 
 describe("H · escada da taxa inalterada, num único /build autenticado", () => {
@@ -108,7 +115,30 @@ describe("H · escada da taxa inalterada, num único /build autenticado", () => 
     const tx = VersionedTransaction.deserialize(Buffer.from(body.result.swap.swapTransaction, "base64"));
     expect(tx.message.staticAccountKeys[0].toBase58()).toBe(SOL_TAKER);
     expect(verifyJupiterTransaction(tx).ok).toBe(true);
-    expect(body.result.swap.lastValidBlockHeight).toBe(fixture.com_taxa_100bps_feeAccount_En1J8.blockhashWithMetadata.lastValidBlockHeight);
+    // 25/10: blockhash NOVO do RPC do servidor (o da Jupiter vem de cache, com ~35 s de vida).
+    expect(tx.message.recentBlockhash).toBe(BLOCKHASH_SERVIDOR.blockhash);
+    expect(body.result.swap.lastValidBlockHeight).toBe(BLOCKHASH_SERVIDOR.lastValidBlockHeight);
+  });
+
+  it("⚠️ o vínculo HMAC leva o blockhash e o lastValidBlockHeight do SERVIDOR (é o que a trava W3-C usa)", async () => {
+    const body = await (await firme()).json();
+    const swap = body.result.swap;
+    const d = JSON.parse(Buffer.from(String(swap.vinculo).split(".")[0], "base64url").toString());
+    expect(d.l).toBe(BLOCKHASH_SERVIDOR.lastValidBlockHeight);
+    const msg = VersionedTransaction.deserialize(Buffer.from(swap.swapTransaction, "base64")).message;
+    expect(msg.recentBlockhash).toBe(BLOCKHASH_SERVIDOR.blockhash);
+    expect(d.h).toBe(createHash("sha256").update(msg.serialize()).digest("hex"));
+  });
+
+  it("RPC do servidor sem blockhash → cai no da Jupiter, coerente no vínculo (e com log)", async () => {
+    s.semBlockhash = true;
+    const body = await (await firme()).json();
+    const jup = fixture.com_taxa_100bps_feeAccount_En1J8.blockhashWithMetadata;
+    const d = JSON.parse(Buffer.from(String(body.result.swap.vinculo).split(".")[0], "base64url").toString());
+    expect(body.result.swap.lastValidBlockHeight).toBe(jup.lastValidBlockHeight);
+    expect(d.l).toBe(jup.lastValidBlockHeight);
+    expect(VersionedTransaction.deserialize(Buffer.from(body.result.swap.swapTransaction, "base64")).message.recentBlockhash)
+      .toBe(new PublicKey(Uint8Array.from(jup.blockhash)).toBase58());
   });
 });
 

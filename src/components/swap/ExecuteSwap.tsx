@@ -68,11 +68,13 @@ type Phase =
 /** Firm 0x calldata embeds pricing — refetch before sending if older than this. */
 const ZX_QUOTE_TTL_MS = 30_000;
 /**
- * ⚠️ A transação Jupiter carrega o blockhash do `/build`, válido ~60–90 s. Assinada depois disso ela não
- * pousa — e a Phantom troca blockhash vencido, que o servidor recusa (`vinculo_mensagem_diferente:blockhash`).
- * Mais velha que isto: busca cotação firme nova e o usuário confirma de novo (nunca envia sem ele ver).
+ * ⚠️ A transação Jupiter carrega um blockhash válido por ~60–90 s (o servidor busca um novo no próprio RPC —
+ * o da Jupiter vem de cache, com metade da vida gasta: `BlockhashNotFound` no 1º swap real, 25/10). Assinada depois
+ * disso ela não pousa — e a Phantom troca blockhash vencido, que o servidor recusa. Mais velha que isto: busca
+ * cotação firme nova e o usuário confirma de novo (nunca envia sem ele ver). Com ~60 s de vida (150 blocos) e a
+ * latência do servidor, 20 s deixa ~35–40 s para as telas da carteira (inclusive os avisos de segurança dela).
  */
-const JUP_QUOTE_TTL_MS = 30_000;
+const JUP_QUOTE_TTL_MS = 20_000;
 
 export default function ExecuteSwap({
   open, onClose, fromToken, toToken, fromChain, toChain, sellAmount, slippageBps, source, recipient,

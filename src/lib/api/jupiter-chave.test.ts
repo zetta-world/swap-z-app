@@ -33,11 +33,16 @@ let jupiter: (c: Chamada, init?: RequestInit) => Response | Promise<Response>;
 let simulacao: () => Response | Promise<Response>;
 let corpoSimulacao: { params?: [string, Record<string, unknown>] } = {};
 let simulacoes = 0;
+/** `getLatestBlockhash` do RPC do servidor (padrão: indisponível → cai no blockhash da Jupiter, como antes). */
+let blockhashRpc: () => Response | Promise<Response>;
+let pedidosBlockhash = 0;
 
 beforeEach(() => {
   chamadas = [];
   corpoSimulacao = {};
   simulacoes = 0;
+  pedidosBlockhash = 0;
+  blockhashRpc = () => new Response("indisponível", { status: 503 });
   jupiter = (c) => Response.json(new URL(c.url).searchParams.has("platformFeeBps") ? COM_TAXA : SEM_TAXA);
   simulacao = () => Response.json({ jsonrpc: "2.0", id: 1, result: { value: { err: null, unitsConsumed: 100_000 } } });
   vi.stubEnv("JUPITER_API_KEY", "");
@@ -45,7 +50,11 @@ beforeEach(() => {
   vi.stubEnv("HELIUS_RPC_URL", "https://rpc.exemplo.test");
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     const c = { url: String(url), headers: new Headers(init?.headers), body: init?.body ? String(init.body) : undefined };
-    if (c.url.startsWith("https://rpc.exemplo.test")) { corpoSimulacao = JSON.parse(c.body ?? "{}"); simulacoes++; return simulacao(); }
+    if (c.url.startsWith("https://rpc.exemplo.test")) {
+      const corpo = JSON.parse(c.body ?? "{}");
+      if (corpo.method === "getLatestBlockhash") { pedidosBlockhash++; return blockhashRpc(); }
+      corpoSimulacao = corpo; simulacoes++; return simulacao();
+    }
     chamadas.push(c);
     return jupiter(c, init);
   }));
@@ -496,3 +505,61 @@ describe("⚠️ transação tem de caber na rede (64 contas, 1232 bytes)", () =
     });
   });
 });
+
+/**
+ * ⚠️ 1º SWAP REAL EM PRODUÇÃO (25/10): `BlockhashNotFound`. O blockhash do `/build` vem de cache da Jupiter e chegou com
+ * ~35 s de vida. A transação passa a usar um blockhash NOVO do RPC do servidor — o mesmo nó do preflight do envio.
+ */
+describe("blockhash do próprio servidor", () => {
+  const NOVO = Keypair.generate().publicKey.toBase58();
+  const ok = (blockhash: unknown, lastValidBlockHeight: unknown) => () =>
+    Response.json({ jsonrpc: "2.0", id: 1, result: { context: { slot: 1 }, value: { blockhash, lastValidBlockHeight } } });
+  const ler = (s: { swapTransaction: string }) => VersionedTransaction.deserialize(Buffer.from(s.swapTransaction, "base64"));
+  const daJupiter = (COM_TAXA as JupBuild).blockhashWithMetadata;
+
+  it("usa o blockhash e o lastValidBlockHeight do RPC do servidor (`confirmed`), não os da Jupiter", async () => {
+    blockhashRpc = ok(NOVO, daJupiter.lastValidBlockHeight + 120);
+    const swap = await montarTransacaoJupiter(COM_TAXA, TAKER);
+    expect(ler(swap).message.recentBlockhash).toBe(NOVO);
+    expect(swap.lastValidBlockHeight).toBe(daJupiter.lastValidBlockHeight + 120);
+    expect(pedidosBlockhash).toBe(1);
+    expect(logs()).toContain('\\"origem\\":\\"servidor\\",\\"blocosAMais\\":120');
+  });
+
+  it("o pedido é `getLatestBlockhash` com compromisso `confirmed` (o mesmo do preflight do envio)", async () => {
+    let corpo: { method?: string; params?: unknown[] } = {};
+    blockhashRpc = ok(NOVO, 5);
+    const original = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      const b = init?.body ? JSON.parse(String(init.body)) : {};
+      if (b.method === "getLatestBlockhash") corpo = b;
+      return (original as typeof fetch)(url, init);
+    }));
+    await montarTransacaoJupiter(COM_TAXA, TAKER);
+    expect(corpo).toMatchObject({ method: "getLatestBlockhash", params: [{ commitment: "confirmed" }] });
+  });
+
+  it.each<[string, () => Response | Promise<Response>]>([
+    ["RPC fora (503)", () => new Response("x", { status: 503 })],
+    ["blockhash ausente", ok(undefined, 10)],
+    ["blockhash que não é base58 de 32 bytes", ok("nao-e-blockhash", 10)],
+    ["lastValidBlockHeight inválido", ok(NOVO, -1)],
+    ["lastValidBlockHeight não inteiro", ok(NOVO, 1.5)],
+    ["resposta ilegível", () => new Response("<html>", { status: 200 })],
+    ["rede caiu", () => { throw new TypeError("fetch failed"); }],
+  ])("%s → cai no blockhash da Jupiter, com log, e a cotação sai", async (_, r) => {
+    blockhashRpc = r;
+    const swap = await montarTransacaoJupiter(COM_TAXA, TAKER);
+    expect(ler(swap).message.recentBlockhash).toBe(new PublicKey(Uint8Array.from(daJupiter.blockhash)).toBase58());
+    expect(swap.lastValidBlockHeight).toBe(daJupiter.lastValidBlockHeight);
+    expect(logs()).toContain('\\"origem\\":\\"jupiter\\"');
+  });
+
+  it("a cotação firme entrega o lastValidBlockHeight do blockhash que ESTÁ na transação (vai para o vínculo e a W3-C)", async () => {
+    blockhashRpc = ok(NOVO, 777);
+    const { swap } = await fetchJupiterFirm({ ...ARGS, taker: TAKER, platformFeeBps: 100, feeAccount: CONTA_USDC });
+    expect(ler(swap).message.recentBlockhash).toBe(NOVO);
+    expect(swap.lastValidBlockHeight).toBe(777);
+  });
+});
+

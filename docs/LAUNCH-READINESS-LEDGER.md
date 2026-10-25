@@ -1457,3 +1457,18 @@ do RC (run 40185503840). Vercel `dpl_DTzQ9Xy56yZroT1N5XBR8WuW3cAJ` READY (target
 `swap-z-app.vercel.app`), código = `CERTIFIED_FEATURE_SHA` `31920d7`. Smoke só-cotação: `/api/quote` Solana 200 (Jupiter,
 100 bps), home 200; runtime errors nenhum. `PRODUCTION=0430644`. Pendente: swap real do dono na Phantom (logs
 `[sol-tx]` / `[sol-tx-lighthouse]` dirão a forma aceita ou a regra recusada). Rollback: `dpl_3YkUirQdfetu5cSCoUqZX2kYaAkR`.
+
+**1º swap real em produção (25/10, 11:29 UTC) → `BlockhashNotFound` → C1c.** O dono assinou na Phantom
+(`swap-z-app.vercel.app` marcado pela Phantom como "dApp pode ser maliciosa"; o dono seguiu "não seguro"). O servidor
+ACEITOU a transação (sem asserções Lighthouse — a Phantom não as acrescentou com o domínio sinalizado) e a simulação do
+nó recusou: `[sol-tx] {"estado":"nao_enviada","motivo":"simulacao: \"BlockhashNotFound\""}`, ~40 s depois da cotação
+(`dpl_DTzQ9…`, logs Vercel, só leitura). Medição em produção sem assinatura (carteira aleatória): cotação 11:32:50 →
+`lastValidBlockHeight` 439 270 561; altura confirmada 11:33:18 → 439 270 548 — **o blockhash do `/build` (cache da
+Jupiter, `fetchedAt`) chega com ~35 s de vida.** Correção (plano itens 19–20): blockhash NOVO do RPC do servidor
+(`getLatestBlockhash`, `confirmed`, depois da simulação; o da Jupiter só se o RPC falhar, com log) e `lastValidBlockHeight`
+dele no vínculo/W3-C; tela renova a cotação com > 20 s. Auditoria `wf_9c40c45c-d44`: lente dinheiro sem defeito
+(blockhash e LVBH sempre do mesmo par; W3-C coerente; regra `blockhash` da extensão intacta); integração 3 leves
+corrigidos (RUNBOOK, teste de rota no caminho padrão com o vínculo, comentários). Validação pré-commit: `tsc` limpo ·
+suíte 342 / 5203 · lint 0 erros. Fora do código: o bloqueio da Phantom ao domínio — não está na lista pública
+`phantom/blocklist` (scanner interno); caminho: o time do dApp escrever para review@phantom.com (rascunho entregue ao
+dono); domínio próprio é decisão do dono.
