@@ -1393,3 +1393,22 @@ de 2,5 s, sem simulação desperdiçada e log do desfecho; testes reforçados (m
 `original_faltando`/`chave_duplicada`/`alt_leitura_sumiu`/`contas_demais` mortos).
 Validação pré-commit (25/10): `tsc` limpo · eslint 0 erros (2 avisos pré-existentes em `ExecuteSwap.tsx`) · suíte
 completa 342 arquivos / 5186 testes passando.
+
+**RECERT(C1) = FAIL — 25/10/2026.** `CANDIDATE_SHA=17f7eb3431b767fc2eb129139258eaecb80d41fe` (tree
+`561e23574ba85d89e26365941810b3d584f198c2`), worktree limpo (`git status` vazio), Node 22.22.0 / npm 10.9.4. Evidência fora
+do repo: `scratchpad/recert-17f7eb3-20261025T084623Z/` (sessão cloud efêmera), `MANIFEST.sha256` sha256
+`21ad3d152f923f0b460bd5be41177b1b90bfa3d9e719844b3dcc91cde4c09e48`.
+- PASS: `npm ci` · type-check · lint · suíte completa ×2 (342 arquivos / 5186 testes, nas duas) · testes Solana (242) ·
+  `next build` · varredura de segredos do delta.
+- **FAIL: portão `scripts/release/audit-gate.mjs`** — `npm audit`: critical=1 high=17. Alertas NOVOS publicados contra
+  dependências que esta fase NÃO tocou (`package.json`/`package-lock.json` idênticos a `cc79fc7`, que é o código em
+  produção): `next` 16.3.8 (faixa 16.0.0–16.4.0; correção sem quebra de major: 16.4.3) — GHSA-2464-fhr4-w9xw (crítico:
+  RCE sem autenticação no Image Optimization com SVG), GHSA-673q-mjm6-r5xr (crítico: RCE em funções `use cache`),
+  GHSA-p3m5-59mp-jv5r (alto: DoS com Server Actions); `zod` <4.6.6 (alto, GHSA-mrhx-c7xc-m3w5, transitivo, sem correção
+  fora de major); e deriva da cadeia da exceção R-03 (pacotes que saíram/entraram). Exposição medida no código (não é
+  prova de ausência): sem `images.dangerouslyAllowSVG`/`remotePatterns` em `next.config.mjs`, nenhum `"use cache"`,
+  nenhum `"use server"` em `src/`.
+- CI oficial no mesmo SHA (run 40178003000): 5186 testes passando, falha SÓ no mesmo portão. O CI de `cc79fc7` (run
+  40083160256, 24/10) também está vermelho.
+- Conforme §5.2: SEM atestação PASS, sem retry-to-pass, sem reclassificar. `RELEASE_CANDIDATE=NONE`. Próximo passo
+  depende de decisão do dono (dependências / revisão da exceção R-03); qualquer correção vira C1b com recert completa.
