@@ -67,6 +67,12 @@ type Phase =
 
 /** Firm 0x calldata embeds pricing — refetch before sending if older than this. */
 const ZX_QUOTE_TTL_MS = 30_000;
+/**
+ * ⚠️ A transação Jupiter carrega o blockhash do `/build`, válido ~60–90 s. Assinada depois disso ela não
+ * pousa — e a Phantom troca blockhash vencido, que o servidor recusa (`vinculo_mensagem_diferente:blockhash`).
+ * Mais velha que isto: busca cotação firme nova e o usuário confirma de novo (nunca envia sem ele ver).
+ */
+const JUP_QUOTE_TTL_MS = 30_000;
 
 export default function ExecuteSwap({
   open, onClose, fromToken, toToken, fromChain, toChain, sellAmount, slippageBps, source, recipient,
@@ -107,6 +113,18 @@ export default function ExecuteSwap({
   // Guards the firm-quote fetch so it runs once per unique param set per open —
   // not on every currentChainId / publicClient / token-object identity change.
   const fetchKeyRef = useRef("");
+  /** Quando a cotação Jupiter firme chegou (ver `JUP_QUOTE_TTL_MS`). */
+  const jupQuoteAtRef = useRef(0);
+  /** Incrementar = buscar cotação firme nova (entra na chave do efeito de busca). */
+  const [renovacao, setRenovacao] = useState(0);
+  /** Uma renovação por cotação velha está em curso: a nota "atualizada" só aparece quando a nova CHEGA. */
+  const renovandoRef = useRef(false);
+  /**
+   * ⚠️ DUPLO TOQUE (auditoria 24/10). O botão de assinar continua visível durante `needs_tx_signature`:
+   * um segundo toque abria um segundo pedido de assinatura da MESMA cotação — com a Phantom, outra
+   * transação (outras asserções), que podia pousar depois da primeira. Uma execução por vez.
+   */
+  const executandoRef = useRef(false);
   const { push: pushHistory, update: updateHistory } = useTxHistory();
 
   // Preço vivo para dimensionar a gorjeta do bundle privado (Solana). O SOL
@@ -229,7 +247,7 @@ export default function ExecuteSwap({
     // EVM-targeting sources need a numeric chain id to proceed
     if (!isJupiter && !targetChainId) return;
 
-    const fetchKey = `${source}|${fromChain}|${toChain}|${fromToken.address}|${toToken.address}|${sellAmount}|${slippageBps}|${taker}|${recipient ?? ""}`;
+    const fetchKey = `${source}|${fromChain}|${toChain}|${fromToken.address}|${toToken.address}|${sellAmount}|${slippageBps}|${taker}|${recipient ?? ""}|${renovacao}`;
     if (fetchKeyRef.current === fetchKey) return;
     fetchKeyRef.current = fetchKey;
 
@@ -298,10 +316,13 @@ export default function ExecuteSwap({
         } else {
           // Jupiter — body.result = { quote, swap }
           setJupResult(body.result as { quote: JupQuote; swap: JupSwapResponse });
+          jupQuoteAtRef.current = Date.now();
+          if (renovandoRef.current) { renovandoRef.current = false; setSendNote(tImp("swap.solQuoteRefreshed")); }
           setPhase("needs_tx_signature");
         }
       } catch (e) {
         if (cancelled) return;
+        renovandoRef.current = false;
         setError(e instanceof Error ? e.message : String(e));
         setPhase("tx_failed");
       }
@@ -312,7 +333,7 @@ export default function ExecuteSwap({
     // intentionally excluded from deps — they're captured at fetch time and
     // re-evaluated live in onExecute. See the comment above the effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, taker, isJupiter, targetChainId, source, fromChain, toChain, fromToken.address, toToken.address, sellAmount, slippageBps, recipient]);
+  }, [open, taker, isJupiter, targetChainId, source, fromChain, toChain, fromToken.address, toToken.address, sellAmount, slippageBps, recipient, renovacao]);
 
   // Announce confirmed swaps to the god theme layer (no-op without a
   // listener — free tier / reduced motion). Covers all three sources,
@@ -477,6 +498,7 @@ export default function ExecuteSwap({
    */
   const onExecute = useCallback(async () => {
     setError(null);
+    setSendNote(null);
     /**
      * ⚠⚠ O PORTÃO FICA AQUI, na ÚNICA porta por onde as três fontes passam
      * (0x, LiFi, Jupiter) — antes de qualquer pedido de assinatura.
@@ -493,6 +515,14 @@ export default function ExecuteSwap({
         if (!sol.signTransaction) {
           setError(tImp("swap.solNoSign"));
           setPhase("tx_failed");
+          return;
+        }
+        // Cotação velha (blockhash perto de vencer): renova e o usuário confirma de novo — ver JUP_QUOTE_TTL_MS.
+        // Os valores velhos saem da tela enquanto a nova não chega; a nota só aparece quando ela chegar.
+        if (Date.now() - jupQuoteAtRef.current > JUP_QUOTE_TTL_MS) {
+          renovandoRef.current = true;
+          setJupResult(null);
+          setRenovacao((n) => n + 1);
           return;
         }
         setPhase("needs_tx_signature");
@@ -786,6 +816,13 @@ export default function ExecuteSwap({
     }
   }, [vereditoFirme, vereditoDeSaida, source, isJupiter, jupResult, sol, zxQuote, lfQuote, fetchFreshZxQuote, sendTransactionAsync, writeContractAsync, switchChainAsync, publicClient, address, sellAmount, fromToken, isCrossChain, toChain, toToken, targetChainId, currentChainId, pushHistory, updateHistory, arrecadacao, pontePartindoDeSolana]);
 
+  /** A única porta dos botões: uma execução por vez (ver `executandoRef`). */
+  const executarUmaVez = useCallback(async () => {
+    if (executandoRef.current) return;
+    executandoRef.current = true;
+    try { await onExecute(); } finally { executandoRef.current = false; }
+  }, [onExecute]);
+
 
   const explorerBase = isJupiter ? "https://solscan.io" : explorerForChain(fromChain);
   const sourceLabel  = source === "0x"      ? t("swap.routerZeroEx")
@@ -794,8 +831,10 @@ export default function ExecuteSwap({
   // For Solana, the explorer URL path is /tx/<sig>; we reuse the same prop.
   const txDisplayHash: string | null = isJupiter ? solSig : (txHash ?? null);
 
+  // ⚠️ Fechar no meio de uma execução perderia a trava de "uma por vez" com o pedido de assinatura ainda aberto
+  // na carteira (auditoria 24/10): Esc, clique fora e o X não fecham enquanto `executandoRef` está ligado.
   return (
-    <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog.Root open={open} onOpenChange={(o) => { if (!o && !executandoRef.current) onClose(); }}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-[60] bg-bg/80 backdrop-blur-sm animate-fade-in" />
         <Dialog.Content className="fixed left-1/2 top-1/2 z-[60] w-[95%] max-w-md -translate-x-1/2 -translate-y-1/2 outline-none max-h-[90vh]">
@@ -806,7 +845,8 @@ export default function ExecuteSwap({
                   {t("swap.executeSwap")}
                 </Dialog.Title>
                 <Dialog.Close asChild>
-                  <button type="button" aria-label={t("common.close")} className="w-7 h-7 rounded-md flex items-center justify-center text-ink-3 hover:text-ink hover:bg-white/5">
+                  <button type="button" aria-label={t("common.close")} className="w-7 h-7 rounded-md flex items-center justify-center text-ink-3 hover:text-ink hover:bg-white/5 disabled:opacity-40"
+                    disabled={phase === "approving" || phase === "needs_tx_signature" || phase === "tx_pending"}>
                     <X className="w-4 h-4" />
                   </button>
                 </Dialog.Close>
@@ -911,12 +951,12 @@ export default function ExecuteSwap({
                 {/* Single CTA — network switch, approval and send are all
                     chained behind this one click. */}
                 {(phase === "needs_chain_switch" || phase === "needs_approval" || phase === "needs_tx_signature") && (
-                  <button type="button" onClick={onExecute} className="flex-1 btn btn-primary text-xs">
+                  <button type="button" onClick={executarUmaVez} className="flex-1 btn btn-primary text-xs">
                     {t("swap.executeSignAndSend")}
                   </button>
                 )}
                 {phase === "tx_failed" && (zxQuote || lfQuote || jupResult) && error !== tImp("swap.solGuardBlocked") && (
-                  <button type="button" onClick={onExecute} className="flex-1 btn btn-primary text-xs">
+                  <button type="button" onClick={executarUmaVez} className="flex-1 btn btn-primary text-xs">
                     {t("swap.executeRetry")}
                   </button>
                 )}

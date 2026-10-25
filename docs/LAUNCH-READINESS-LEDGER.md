@@ -1353,3 +1353,43 @@ credencial no bundle. Fee accounts (`En1J8…`, `7PPDQ…`): 1 transação cada 
 ## PHANTOM-LIGHTHOUSE-20261021 — correção restrita
 CURRENT_DEVELOPMENT. PHASE_BASE_SHA=bc6f67acbe6f3f0391ea998cb9a645a15fa7659b.
 Missão do dono de21/10: compatibilidade Phantom/Lighthouse preservando W3/W3-C/W3-D/W4. Branch codex/phantom-lighthouse-20261021 isolada; plano PLANO-PHANTOM-LIGHTHOUSE-20261021.md. PR/CI/Preview autorizados; produção depende de aprovação final. Nenhum fundo movimentado.
+
+## PHANTOM-LIGHTHOUSE-V2-20261024 — formato real da Phantom (24/10/2026)
+CURRENT_DEVELOPMENT. PHASE_BASE_SHA=cc79fc7886c2918a3cba2a44960cc67727365bfe (tree 8972c2b34b943ca0fe7ba6c25341a4acb25d4f63).
+Pedido do dono (24/10): "o swap continua falhando… quero que resolva". Push do branch autorizado pelo dono nesta conversa
+(`claude/swap-z-recovery-deploy-b7y2cw` → `cc79fc7`, force-with-lease sobre `d7741bb`, preservado em `platform-closure`).
+Deploy NÃO autorizado ainda. Plano: `docs/PLANO-PHANTOM-LIGHTHOUSE-V2-20261024.md`.
+
+**Evidência de produção (logs Vercel, só leitura):** `dpl_3YkUirQdfetu5cSCoUqZX2kYaAkR` (código `cc79fc7`) →
+`{"recusada":"lighthouse_instrucao_nao_permitida"}` 21/10 23:48:06 UTC; antes, em `bc6f67a`,
+`programa_nao_permitido:L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95`. Banco de produção NÃO consultado nesta fase.
+
+**Evidência externa (fontes públicas, lidas; nenhum código de terceiros executado no repo):** Lighthouse upstream `Jac0xb/lighthouse@4c579479`
+(= v2.0.0; instruction.rs:16-94, types/assert/*, log_level.rs; borsh =0.10.3); SDK `lighthouse-sdk@2.1.0` e
+`lighthouse-sdk-legacy@2.0.1` (codecs conferidos); instrução Phantom real de mainnet
+`06040203000001000000000000000000` (McRitchie-Studio/turf-monster@9eff39c
+test/integration/lighthouse_cosign_guard_lifecycle_test.rb:22-25) = AssertAccountInfoMulti, log 4, [KnownOwner System,
+DataLength 0]; relatos de prefixos 06 04/06 05 e de AssertTokenAccountMulti (ssadkov/yield-ai-os-sol@323d549 docs:172-240;
+cowprotocol/services@7732573 tests/api.rs:968-990; x402-foundation/x402@4241d56 constants.ts:10-17); doc oficial de
+priority fee da Phantom (phantom/docs@6e53c267 solana-priority-fees.md:45-53). Causa: o parser do #449 recusa log level 4
+e a variante KnownOwner (lighthouse.ts:22 e :33 em `cc79fc7`).
+
+**Auditoria adversarial independente (24/10, workflow `wf_b5b701a5-7cb`, 14 agentes; o crítico de completude caiu por
+limite de sessão e é refeito na rodada de verificação das correções):** especificação — 0 divergências contra o upstream
+(101.418 casos válidos, 6.349.731 mutações de byte, 300 mil corpos aleatórios; ida e volta pelos codecs do
+`lighthouse-sdk@2.1.0`, executado só numa cópia isolada fora do repo); segurança — 120.000 mensagens mutadas e assinadas
+de verdade, 0 aceitas mexendo em taxa/rota/valor/destino/privilégio/assinante/pagador/blockhash/preço do compute;
+compatibilidade — nenhuma forma documentada da Phantom recusada na resposta REAL do `/build` (3 ALTs). 5 achados
+baixos sobreviveram aos céticos e foram corrigidos (plano, itens 5–9): uma cotação, um swap (`em-voo.ts`, 409
+`cotacao_ja_enviada`); duplo toque e cotação Jupiter > 30 s renovada (`ExecuteSwap.tsx`, i18n 4 locales); folga para a
+carteira no montador (`jupiter.ts`); testes de `original_faltando`/`chave_duplicada`/`alt_leitura_sumiu`/`contas_demais`
+e de segredos ausentes nos logs. Achado à parte: a suíte completa precisa do histórico git (`regressao-qualidade.test.ts`
+lê `0afa841`) — clone raso completado com `git fetch --unshallow` (só leitura).
+**Segunda rodada (25/10, `wf_75fe6f03-adb`, auditoria das correções):** 11 achados baixos/informativos (parte dos
+céticos caiu por limite de sessão; avaliados pela reprodução anexada), nenhum de transação maliciosa. Corrigidos (plano,
+itens 10–15): texto próprio para `cotacao_ja_enviada`; erro em `processed` não é mais falha final; critério da cotação no
+SQL; modal não fecha no meio da execução; nota de renovação só com a cotação nova; rota menor só com a mesma taxa, prazo
+de 2,5 s, sem simulação desperdiçada e log do desfecho; testes reforçados (mutantes de taxa/mínimo/prazo e das regras
+`original_faltando`/`chave_duplicada`/`alt_leitura_sumiu`/`contas_demais` mortos).
+Validação pré-commit (25/10): `tsc` limpo · eslint 0 erros (2 avisos pré-existentes em `ExecuteSwap.tsx`) · suíte
+completa 342 arquivos / 5186 testes passando.

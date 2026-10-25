@@ -32,14 +32,15 @@ export async function transmitirAssinada(txBase64: string, owner: string, assina
     // Não sabemos se o servidor chegou a transmitir.
     return { estado: "incerta", assinatura, motivo: "conexao_com_servidor" };
   }
-  let j: { ok?: boolean; fase?: string; estado?: string; assinatura?: string; motivo?: string; erro?: string } = {};
+  let j: { ok?: boolean; fase?: string; estado?: string; assinatura?: string; motivo?: string; erro?: string; detalhe?: unknown } = {};
   try { j = await res.json(); } catch { /* tratado abaixo */ }
   // ⚠️ "Não transmitida" só com PROVA: recusa estruturada da aplicação marcada `antes_do_rpc`.
   // Um 503/429/504 de gateway ou da infraestrutura (sem a marca) pode ter chegado DEPOIS de o
   // servidor transmitir — é incerto, e a assinatura pública reconcilia.
   if (!res.ok) {
     if (j.ok === false && j.fase === "antes_do_rpc" && typeof j.erro === "string") {
-      return { estado: "nao_enviada", assinatura, motivo: j.erro };
+      // A regra que falhou vai junto (aparece na mensagem e no histórico — o print já diagnostica).
+      return { estado: "nao_enviada", assinatura, motivo: typeof j.detalhe === "string" ? `${j.erro}:${j.detalhe.slice(0, 60)}` : j.erro };
     }
     return { estado: "incerta", assinatura, motivo: `http_${res.status}` };
   }

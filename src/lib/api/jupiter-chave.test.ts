@@ -13,8 +13,9 @@ import { ComputeBudgetProgram, Keypair, PublicKey, VersionedTransaction } from "
 import fixture from "./__fixtures__/jupiter-build-20261016.json";
 import {
   configJupiter, CU_PRECO_TETO, CU_TETO, fetchJupiterBuild, fetchJupiterFirm, fetchJupiterQuote,
-  JupiterError, MAX_ACCOUNTS_REDUZIDO, MAX_BYTES_TX, MAX_CONTAS_TX, montarTransacaoJupiter, quoteDoBuild,
-  tamanhoDaTransacao, taxaNaInstrucao, TransacaoGrandeError, type JupBuild,
+  ACRESCIMO_MINIMO_CARTEIRA, FOLGA_BYTES_CARTEIRA, FOLGA_CONTAS_CARTEIRA, JupiterError, PRAZO_ROTA_MENOR_MS, MAX_ACCOUNTS_REDUZIDO, MAX_BYTES_TX, MAX_CONTAS_TX,
+  montarTransacaoJupiter, quoteDoBuild, tamanhoDaTransacao, taxaNaInstrucao, temFolgaParaCarteira, TransacaoGrandeError,
+  type JupBuild,
 } from "@/lib/api/jupiter";
 import { verifyJupiterTransaction, extractProgramIds } from "@/lib/swap/solana-guard";
 import { CARTEIRA_TAXA_SOLANA } from "@/lib/tier/fees";
@@ -28,13 +29,15 @@ const ARGS = { inputMint: "So11111111111111111111111111111111111111112", outputM
 
 type Chamada = { url: string; headers: Headers; body?: string };
 let chamadas: Chamada[] = [];
-let jupiter: (c: Chamada) => Response | Promise<Response>;
+let jupiter: (c: Chamada, init?: RequestInit) => Response | Promise<Response>;
 let simulacao: () => Response | Promise<Response>;
 let corpoSimulacao: { params?: [string, Record<string, unknown>] } = {};
+let simulacoes = 0;
 
 beforeEach(() => {
   chamadas = [];
   corpoSimulacao = {};
+  simulacoes = 0;
   jupiter = (c) => Response.json(new URL(c.url).searchParams.has("platformFeeBps") ? COM_TAXA : SEM_TAXA);
   simulacao = () => Response.json({ jsonrpc: "2.0", id: 1, result: { value: { err: null, unitsConsumed: 100_000 } } });
   vi.stubEnv("JUPITER_API_KEY", "");
@@ -42,9 +45,9 @@ beforeEach(() => {
   vi.stubEnv("HELIUS_RPC_URL", "https://rpc.exemplo.test");
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     const c = { url: String(url), headers: new Headers(init?.headers), body: init?.body ? String(init.body) : undefined };
-    if (c.url.startsWith("https://rpc.exemplo.test")) { corpoSimulacao = JSON.parse(c.body ?? "{}"); return simulacao(); }
+    if (c.url.startsWith("https://rpc.exemplo.test")) { corpoSimulacao = JSON.parse(c.body ?? "{}"); simulacoes++; return simulacao(); }
     chamadas.push(c);
-    return jupiter(c);
+    return jupiter(c, init);
   }));
   vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.spyOn(console, "info").mockImplementation(() => {});
@@ -365,5 +368,131 @@ describe("⚠️ transação tem de caber na rede (64 contas, 1232 bytes)", () =
     jupiter = () => Response.json(inchada(30));
     await expect(fetchJupiterFirm({ ...ARGS, taker: TAKER })).rejects.toBeInstanceOf(TransacaoGrandeError);
     expect(chamadas).toHaveLength(2);
+  });
+
+  /**
+   * ⚠️ LIGHTHOUSE v2 (24/10): a Phantom assina ACRESCENTANDO asserções (programa Lighthouse = conta nova,
+   * ~220 B na resposta real). Uma transação no limite exato é assinada e depois não cabe.
+   */
+  describe("folga para o que a carteira acrescenta", () => {
+    const tam = async (b: JupBuild) => tamanhoDaTransacao(VersionedTransaction.deserialize(
+      Buffer.from((await montarTransacaoJupiter(b, TAKER)).swapTransaction, "base64")));
+    const tamSwap = (s: { swapTransaction: string }) => tamanhoDaTransacao(VersionedTransaction.deserialize(Buffer.from(s.swapTransaction, "base64")));
+    /** Cabe na rede, mas sem a folga de bytes. */
+    const semFolgaDeBytes = async () => {
+      const base = await tam(COM_TAXA);
+      const b = inchada(0, "x".repeat(MAX_BYTES_TX - FOLGA_BYTES_CARTEIRA - base.bytes + 40));
+      const t = await tam(b);
+      expect(t.bytes).toBeGreaterThan(MAX_BYTES_TX - FOLGA_BYTES_CARTEIRA);
+      expect(t.bytes).toBeLessThanOrEqual(MAX_BYTES_TX);
+      return b;
+    };
+
+    it("a resposta real tem folga → uma chamada só, nada refeito", async () => {
+      expect(temFolgaParaCarteira(await tam(COM_TAXA))).toBe(true);
+      await fetchJupiterFirm({ ...ARGS, taker: TAKER, platformFeeBps: 100, feeAccount: CONTA_USDC });
+      expect(chamadas).toHaveLength(1);
+      expect(logs()).not.toContain("tx-sem-folga");
+    });
+
+    it("sem folga de BYTES → refaz UMA vez com maxAccounts reduzido e usa a menor", async () => {
+      const grande = await semFolgaDeBytes();
+      jupiter = (c) => Response.json(new URL(c.url).searchParams.has("maxAccounts") ? COM_TAXA : grande);
+      const { quote, swap } = await fetchJupiterFirm({ ...ARGS, taker: TAKER, platformFeeBps: 100, feeAccount: CONTA_USDC });
+      expect(chamadas).toHaveLength(2);
+      expect(new URL(chamadas[1].url).searchParams.get("maxAccounts")).toBe(String(MAX_ACCOUNTS_REDUZIDO));
+      expect(new URL(chamadas[1].url).searchParams.get("feeAccount")).toBe(CONTA_USDC);
+      expect(quote.platformFee).toEqual({ feeBps: 100, feeAccount: CONTA_USDC });
+      expect(temFolgaParaCarteira(tamSwap(swap))).toBe(true);
+      expect(logs()).toContain("tx-sem-folga");
+    });
+
+    it("EXATAMENTE 64 contas (a Phantom faria 65) → refaz", async () => {
+      const base = await tam(COM_TAXA);
+      // Contas a mais vindas das PRÓPRIAS lookup tables (1 byte cada) — 64 contas estáticas não caberiam em bytes.
+      const usadas = new Set(VersionedTransaction.deserialize(Buffer.from((await montarTransacaoJupiter(COM_TAXA, TAKER)).swapTransaction, "base64")).message.staticAccountKeys.map((k) => k.toBase58()));
+      const daTabela = Object.values(COM_TAXA.addressesByLookupTableAddress ?? {}).flat().filter((a) => !usadas.has(a));
+      const extras = MAX_CONTAS_TX - base.contas - 1;   // +1 = o programa Memo
+      const no64: JupBuild = { ...COM_TAXA, otherInstructions: [{ programId: MEMO, data: "",
+        accounts: [...new Set(daTabela)].slice(0, extras).map((pubkey) => ({ pubkey, isSigner: false, isWritable: false })) }] };
+      // Endereços da tabela já usados pela rota não contam de novo: ajusta até dar 64.
+      let t = await tam(no64);
+      const pool = [...new Set(daTabela)];
+      for (let i = extras; t.contas < MAX_CONTAS_TX && i < pool.length; i++) {
+        no64.otherInstructions![0].accounts.push({ pubkey: pool[i], isSigner: false, isWritable: false });
+        t = await tam(no64);
+      }
+      expect(t.contas).toBe(MAX_CONTAS_TX);
+      expect(t.bytes).toBeLessThanOrEqual(MAX_BYTES_TX);
+      jupiter = (c) => Response.json(new URL(c.url).searchParams.has("maxAccounts") ? COM_TAXA : no64);
+      const { swap } = await fetchJupiterFirm({ ...ARGS, taker: TAKER });
+      expect(chamadas).toHaveLength(2);
+      expect(tamSwap(swap).contas).toBeLessThanOrEqual(MAX_CONTAS_TX - FOLGA_CONTAS_CARTEIRA);
+    });
+
+    it("nem a rota menor tem folga, ou ela falhou → fica a PRIMEIRA (cabe na rede), nunca erro", async () => {
+      const grande = await semFolgaDeBytes();
+      jupiter = () => Response.json(grande);
+      const a = await fetchJupiterFirm({ ...ARGS, taker: TAKER });
+      expect(chamadas).toHaveLength(2);
+      expect(tamSwap(a.swap).bytes).toBeLessThanOrEqual(MAX_BYTES_TX);
+      chamadas = [];
+      jupiter = (c) => new URL(c.url).searchParams.has("maxAccounts") ? new Response("erro", { status: 500 }) : Response.json(grande);
+      const b = await fetchJupiterFirm({ ...ARGS, taker: TAKER });
+      expect(chamadas.length).toBeGreaterThanOrEqual(2);
+      expect(tamSwap(b.swap)).toEqual(await tam(grande));
+    });
+
+    /** Uma resposta do `/build` com exatamente `alvo` bytes a mais que a real (instrução Memo). */
+    const comBytes = async (alvo: number) => {
+      // O tamanho dos dados é compact-u16 (1 byte < 128, 2 bytes depois): ajusta pela medida.
+      let n = alvo - (await tam(inchada(0, ""))).bytes;
+      let b = inchada(0, "x".repeat(n));
+      for (let i = 0; i < 3 && (await tam(b)).bytes !== alvo; i++) { n -= (await tam(b)).bytes - alvo; b = inchada(0, "x".repeat(n)); }
+      expect((await tam(b)).bytes).toBe(alvo);
+      return b;
+    };
+
+    it("⚠️ a rota menor SEM a mesma taxa nunca substitui a primeira (a taxa da plataforma não se perde)", async () => {
+      const grande = await semFolgaDeBytes();
+      jupiter = (c) => Response.json(new URL(c.url).searchParams.has("maxAccounts") ? SEM_TAXA : grande);
+      simulacoes = 0;
+      const { quote } = await fetchJupiterFirm({ ...ARGS, taker: TAKER, platformFeeBps: 100, feeAccount: CONTA_USDC });
+      expect(chamadas).toHaveLength(2);
+      expect(quote.platformFee).toEqual({ feeBps: 100, feeAccount: CONTA_USDC });
+      expect(logs()).toContain('\\"porque\\":\\"taxa_diferente\\"');
+      expect(simulacoes).toBe(1);   // a rota descartada nem foi simulada
+    });
+
+    it("nenhuma tem folga completa, mas só a menor comporta o MÍNIMO da carteira → a menor", async () => {
+      const limite = MAX_BYTES_TX - ACRESCIMO_MINIMO_CARTEIRA.bytes;
+      const primeira = await comBytes(MAX_BYTES_TX - 10);          // não comporta nem a asserção do pagador
+      const menor = await comBytes(limite - 20);                   // sem folga completa, mas comporta o mínimo
+      expect((await tam(menor)).bytes).toBeGreaterThan(MAX_BYTES_TX - FOLGA_BYTES_CARTEIRA);
+      jupiter = (c) => Response.json(new URL(c.url).searchParams.has("maxAccounts") ? menor : primeira);
+      const { swap } = await fetchJupiterFirm({ ...ARGS, taker: TAKER });
+      expect(tamSwap(swap).bytes).toBe(limite - 20);
+      expect(logs()).toContain('\\"escolhida\\":\\"segunda\\"');
+    });
+
+    it("rota menor que não responde no prazo → fica a primeira, sem prender a cotação", async () => {
+      const grande = await semFolgaDeBytes();
+      jupiter = (c, init) => new URL(c.url).searchParams.has("maxAccounts")
+        ? new Promise<Response>((_, rej) => init?.signal?.addEventListener("abort", () => rej(new DOMException("prazo", "TimeoutError"))))
+        : Response.json(grande);
+      const inicio = Date.now();
+      const { swap } = await fetchJupiterFirm({ ...ARGS, taker: TAKER });
+      expect(Date.now() - inicio).toBeLessThan(PRAZO_ROTA_MENOR_MS + 2_000);
+      expect(tamSwap(swap)).toEqual(await tam(grande));
+      expect(logs()).toContain('\\"escolhida\\":\\"primeira\\"');
+      expect(logs()).toContain('\\"porque\\":\\"erro:');
+    }, 10_000);
+
+    it("pedido que JÁ veio com maxAccounts não refaz (sem laço)", async () => {
+      const grande = await semFolgaDeBytes();
+      jupiter = () => Response.json(grande);
+      await fetchJupiterFirm({ ...ARGS, taker: TAKER, maxAccounts: 30 });
+      expect(chamadas).toHaveLength(1);
+    });
   });
 });

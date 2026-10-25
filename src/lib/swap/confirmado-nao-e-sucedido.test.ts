@@ -35,11 +35,14 @@ const MSG  = leia("src/lib/i18n/messages.ts");
 describe("① o desfecho on-chain é lido, e o erro decide", () => {
   it("⚠️⚠️ `consultarStatus` olha `err` ANTES de chamar de confirmada", () => {
     const iAusente = STATUS.indexOf('if (!("err" in st) || st.err === undefined) return { estado: "desconhecido"');
-    const iErr = STATUS.indexOf('if (st.err !== null) return { estado: "falhou_na_rede"');
+    // 24/10: o ramo do erro virou bloco — erro em `processed` ainda é pendente; só confirmed/finalized é falha.
+    const iErr = STATUS.indexOf("if (st.err !== null) {");
+    const iFalhou = STATUS.indexOf('return { estado: "falhou_na_rede"', iErr);
     const iConf = STATUS.indexOf('return { estado: "confirmada"');
     expect(iAusente).toBeGreaterThan(0);
     expect(iErr).toBeGreaterThan(iAusente);
-    expect(iConf).toBeGreaterThan(iErr);
+    expect(iFalhou).toBeGreaterThan(iErr);
+    expect(iConf).toBeGreaterThan(iFalhou);
   });
 
   it("⚠️⚠️ o caminho Solana não chama mais `confirmTransaction` do navegador (403 no RPC público)", () => {

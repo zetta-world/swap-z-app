@@ -294,8 +294,9 @@ export async function fetchJupiterQuote(args: BuildArgs, opts: OpcoesJupiter = {
 /** Cotação FIRME: um `/build` para a carteira de quem troca + a transação montada aqui. */
 export async function fetchJupiterFirm(args: BuildArgs & { taker: string }, opts: OpcoesJupiter = {}): Promise<{ quote: JupQuote; swap: JupSwapResponse }> {
   const build = await fetchJupiterBuild(args, opts);
+  let primeira: { quote: JupQuote; swap: JupSwapResponse };
   try {
-    return { quote: quoteDoBuild(build, args), swap: await montarTransacaoJupiter(build, args.taker) };
+    primeira = { quote: quoteDoBuild(build, args), swap: await montarTransacaoJupiter(build, args.taker) };
   } catch (e) {
     if (!(e instanceof TransacaoGrandeError) || args.maxAccounts) throw e;
     // ⚠️ Rota longa demais para UMA transação (L-062B, produção 16/10: JUP→WIF em 5 trechos deu 65
@@ -305,6 +306,31 @@ export async function fetchJupiterFirm(args: BuildArgs & { taker: string }, opts
     const b2 = await fetchJupiterBuild(menor, opts);
     return { quote: quoteDoBuild(b2, menor), swap: await montarTransacaoJupiter(b2, args.taker) };
   }
+  const t1 = tamanhoDoSwap(primeira.swap);
+  if (args.maxAccounts || temFolgaParaCarteira(t1)) return primeira;
+  // Cabe na rede, mas não sobra espaço para o que a Phantom acrescenta: tenta UMA rota menor — com prazo curto
+  // (a primeira já é válida e o blockhash dela envelhece) e SEM simular antes de saber que ela serve.
+  console.warn("[jupiter]", JSON.stringify({ tipo: "tx-sem-folga", contas: t1.contas, bytes: t1.bytes, refazendo: { maxAccounts: MAX_ACCOUNTS_REDUZIDO } }));
+  let porque = "sem_folga";
+  let t2: { contas: number; bytes: number } | null = null;
+  try {
+    const menor = { ...args, maxAccounts: MAX_ACCOUNTS_REDUZIDO };
+    const b2 = await fetchJupiterBuild(menor, opts, { cache: "no-store", signal: AbortSignal.timeout(PRAZO_ROTA_MENOR_MS) });
+    const q2 = quoteDoBuild(b2, menor);
+    t2 = tamanhoDoBuild(b2, args.taker);
+    // ⚠️ A taxa da plataforma não se perde na troca: rota menor sem a MESMA taxa → fica a primeira.
+    if (!mesmaTaxa(primeira.quote, q2)) porque = "taxa_diferente";
+    else if (temFolgaParaCarteira(t2) || (!absorveMinimoDaCarteira(t1) && absorveMinimoDaCarteira(t2))) {
+      const segunda = { quote: q2, swap: await montarTransacaoJupiter(b2, args.taker) };
+      console.info("[jupiter]", JSON.stringify({ tipo: "tx-sem-folga-resultado", escolhida: "segunda", primeira: t1, segunda: tamanhoDoSwap(segunda.swap) }));
+      return segunda;
+    }
+  } catch (e) {
+    porque = `erro:${e instanceof Error ? e.name : "desconhecido"}`;
+  }
+  // Só inteiros e nomes — nada de chave, blockhash ou bytes da transação.
+  console.warn("[jupiter]", JSON.stringify({ tipo: "tx-sem-folga-resultado", escolhida: "primeira", porque, primeira: t1, segunda: t2 }));
+  return primeira;
 }
 
 // ─── Montagem da transação (v0) ─────────────────────────────────────
@@ -318,6 +344,23 @@ export const MAX_CONTAS_TX = 64;
 export const MAX_BYTES_TX = 1232;
 /** `maxAccounts` da segunda tentativa quando a rota não coube (a docs da Jupiter indica reduzir). */
 export const MAX_ACCOUNTS_REDUZIDO = 40;
+/**
+ * ⚠️ FOLGA PARA A CARTEIRA (Lighthouse v2, 24/10). A Phantom assina a transação ACRESCENTANDO asserções
+ * Lighthouse: no mínimo o programa como conta nova (+1) e a asserção do pagador; com as de conta de token,
+ * ~220 B na resposta real da Jupiter. Montada sem essa folga, ela é assinada e depois não cabe (65 contas /
+ * > 1232 B). Sem folga → `fetchJupiterFirm` tenta UMA rota menor; se nem ela tiver folga, fica a que cabe
+ * na rede (a carteira pode acrescentar menos).
+ */
+export const FOLGA_CONTAS_CARTEIRA = 1;
+export const FOLGA_BYTES_CARTEIRA = 232;
+/**
+ * O que a Phantom SEMPRE acrescenta: o programa Lighthouse como conta nova e a asserção do pagador
+ * (`06 04 …`, 16 B de dados) — +1 conta, ~52 B. Uma transação que nem isso comporta é recusada com certeza
+ * depois de assinada; entre duas sem folga completa, vale a que comporta este mínimo.
+ */
+export const ACRESCIMO_MINIMO_CARTEIRA = { contas: 1, bytes: 56 } as const;
+/** Prazo da rota menor (opcional): a primeira já é válida, e o blockhash dela envelhece enquanto se espera. */
+export const PRAZO_ROTA_MENOR_MS = 2_500;
 
 /** A transação montada não cabe numa transação Solana — nunca é devolvida ao navegador. */
 export class TransacaoGrandeError extends Error {
@@ -335,6 +378,16 @@ export function tamanhoDaTransacao(tx: VersionedTransaction): { contas: number; 
   try { bytes = tx.serialize().length; } catch { bytes = MAX_BYTES_TX + 1; }
   return { contas: tx.message.staticAccountKeys.length + viaAlt, bytes };
 }
+
+const tamanhoDoSwap = (s: JupSwapResponse) => tamanhoDaTransacao(VersionedTransaction.deserialize(Buffer.from(s.swapTransaction, "base64")));
+/** Tamanho que a transação deste `/build` teria — sem simular (o limite de CU não muda o tamanho). */
+const tamanhoDoBuild = (b: JupBuild, taker: string) => tamanhoDaTransacao(compilar(b, taker, CU_TETO));
+export const temFolgaParaCarteira = (t: { contas: number; bytes: number }) =>
+  t.contas <= MAX_CONTAS_TX - FOLGA_CONTAS_CARTEIRA && t.bytes <= MAX_BYTES_TX - FOLGA_BYTES_CARTEIRA;
+export const absorveMinimoDaCarteira = (t: { contas: number; bytes: number }) =>
+  t.contas <= MAX_CONTAS_TX - ACRESCIMO_MINIMO_CARTEIRA.contas && t.bytes <= MAX_BYTES_TX - ACRESCIMO_MINIMO_CARTEIRA.bytes;
+const mesmaTaxa = (a: JupQuote, b: JupQuote) =>
+  (a.platformFee?.feeBps ?? 0) === (b.platformFee?.feeBps ?? 0) && (a.platformFee?.feeAccount ?? null) === (b.platformFee?.feeAccount ?? null);
 
 /** Teto de compute units de uma transação Solana. */
 export const CU_TETO = 1_400_000;

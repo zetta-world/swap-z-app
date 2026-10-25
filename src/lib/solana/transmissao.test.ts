@@ -18,8 +18,8 @@ const s = vi.hoisted(() => ({ rl: true }));
  * `supabase/tests/24_solana_tx_em_voo.sql` — aqui se prova o comportamento da ROTA.
  */
 const banco = vi.hoisted(() => {
-  type Linha = { carteira: string; assinatura: string; lvbh: number; estado: string; desfecho: string | null };
-  const b = { linhas: [] as Linha[], fora: false, chamadas: [] as string[] };
+  type Linha = { carteira: string; assinatura: string; lvbh: number; estado: string; desfecho: string | null; hash?: string };
+  const b = { linhas: [] as Linha[], fora: false, consultaFora: false, chamadas: [] as string[] };
   const rpc = async (nome: string, a: Record<string, unknown>) => {
     b.chamadas.push(nome);
     if (b.fora) return { data: null, error: { message: "banco fora" } };
@@ -32,7 +32,7 @@ const banco = vi.hoisted(() => {
       const aberta = b.linhas.find((l) => l.carteira === a.p_carteira && l.estado !== "resolvida" && l.assinatura !== a.p_assinatura);
       if (aberta) return { data: { resultado: "bloqueada", assinatura: aberta.assinatura, valido_ate_bloco: aberta.lvbh }, error: null };
       if (propria) { propria.estado = "reservada"; propria.desfecho = null; }
-      else b.linhas.push({ carteira: String(a.p_carteira), assinatura: String(a.p_assinatura), lvbh: Number(a.p_valido_ate_bloco), estado: "reservada", desfecho: null });
+      else b.linhas.push({ carteira: String(a.p_carteira), assinatura: String(a.p_assinatura), lvbh: Number(a.p_valido_ate_bloco), estado: "reservada", desfecho: null, hash: String(a.p_hash) });
       return { data: { resultado: "reservada" }, error: null };
     }
     if (nome === "solana_tx_marcar") {
@@ -43,9 +43,34 @@ const banco = vi.hoisted(() => {
     }
     return { data: null, error: { message: "rpc desconhecida" } };
   };
-  return { b, rpc };
+  /**
+   * `from("solana_tx_em_voo").select(…).eq(…).eq(…).neq(…).or("a.op.v,b.op.v").limit(n)` — a consulta "uma cotação,
+   * um swap", com a semântica do PostgREST: filtros em AND, `or` entre os termos, `limit` corta o resultado.
+   */
+  const from = (tabela: string) => {
+    type Termo = [op: string, coluna: string, valor: unknown];
+    const filtros: Termo[] = [];
+    let ou: Termo[] | null = null;
+    const coluna = (l: Linha, c: string) => c === "hash_mensagem" ? l.hash : (l as Record<string, unknown>)[c];
+    const vale = (l: Linha, [op, c, v]: Termo) => op === "eq" ? coluna(l, c) === v : op === "neq" ? coluna(l, c) !== v : false;
+    const q = {
+      select: () => q,
+      eq: (c: string, v: unknown) => { filtros.push(["eq", c, v]); return q; },
+      neq: (c: string, v: unknown) => { filtros.push(["neq", c, v]); return q; },
+      or: (expr: string) => { ou = expr.split(",").map((t) => { const [c, op, v] = t.split("."); return [op, c, v] as Termo; }); return q; },
+      limit: async (n: number) => {
+        b.chamadas.push(`from:${tabela}`);
+        if (b.fora || b.consultaFora || tabela !== "solana_tx_em_voo") return { data: null, error: { message: "banco fora" } };
+        const data = b.linhas.filter((l) => filtros.every((f) => vale(l, f)) && (!ou || ou.some((f) => vale(l, f))))
+          .slice(0, n).map((l) => ({ assinatura: l.assinatura, estado: l.estado, desfecho: l.desfecho }));
+        return { data, error: null };
+      },
+    };
+    return q;
+  };
+  return { b, rpc, from };
 });
-vi.mock("@/lib/supabase/server", () => ({ getSupabaseAdmin: () => ({ rpc: banco.rpc }) }));
+vi.mock("@/lib/supabase/server", () => ({ getSupabaseAdmin: () => ({ rpc: banco.rpc, from: banco.from }) }));
 vi.mock("@/lib/rate-limit", () => ({
   rateLimitDurable: async () => ({ ok: s.rl, retryAfter: 30, remaining: 0, resetAt: 0 }),
   getClientId: () => "ip",
@@ -55,6 +80,8 @@ import { consultarStatus, transmitir, validarTransacaoAssinada, assinaturaDe, ba
 import { POST } from "@/app/api/solana/transmitir/route";
 import { conferirVinculo, emitirVinculo } from "@/lib/solana/vinculo";
 import { GET } from "@/app/api/solana/status/route";
+import { reservarTransmissao } from "@/lib/solana/em-voo";
+import { createHash } from "node:crypto";
 
 const RPC_SECRETO = "https://mainnet.helius-rpc.com/?api-key=SEGREDO-HELIUS-456";
 const JUP = new PublicKey("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4");
@@ -87,7 +114,7 @@ const ok = (result: unknown) => Response.json({ jsonrpc: "2.0", id: 1, result })
 
 beforeEach(() => {
   s.rl = true; pedidos = [];
-  banco.b.linhas = []; banco.b.fora = false; banco.b.chamadas = [];
+  banco.b.linhas = []; banco.b.fora = false; banco.b.consultaFora = false; banco.b.chamadas = [];
   vi.stubEnv("HELIUS_RPC_URL", RPC_SECRETO);
   vi.stubEnv("AUTH_JWT_SECRET", "segredo-de-sessao-de-teste-0123456789");
   vi.stubEnv("TX_VINCULO_SECRET", "");
@@ -152,7 +179,10 @@ describe("validação da transação assinada (antes de qualquer RPC)", () => {
 
   it("acima de 1232 bytes, lixo, vazio, owner inválido → recusada", () => {
     const grande = Buffer.alloc(1300, 1).toString("base64");
-    expect(validarTransacaoAssinada(grande, dono.publicKey.toBase58())).toEqual({ ok: false, motivo: "tamanho" });
+    expect(validarTransacaoAssinada(grande, dono.publicKey.toBase58())).toEqual({ ok: false, motivo: "tamanho", detalhe: `b64:${grande.length}` });
+    // 1233–1236 bytes passam no corte do base64 e caem no de bytes — com o tamanho no detalhe.
+    expect(validarTransacaoAssinada(Buffer.alloc(1234, 1).toString("base64"), dono.publicKey.toBase58()))
+      .toEqual({ ok: false, motivo: "formato", detalhe: "bytes:1234" });
     expect(validarTransacaoAssinada("@@@", dono.publicKey.toBase58())).toMatchObject({ ok: false });
     expect(validarTransacaoAssinada("", dono.publicKey.toBase58())).toEqual({ ok: false, motivo: "tamanho" });
     expect(validarTransacaoAssinada(b64(txSwap()), "0xabc")).toEqual({ ok: false, motivo: "owner" });
@@ -213,6 +243,17 @@ describe("status on-chain — confirmada só com err nulo", () => {
   it("'processed' ainda pode ser descartada → pendente", async () => {
     rpc = status({ slot: 9, err: null, confirmationStatus: "processed" });
     expect(await consultarStatus(SIG, 2000)).toMatchObject({ estado: "pendente" });
+  });
+
+  it("⚠️ erro visto só em 'processed' (ou sem status) NÃO é falha final → pendente; status desconhecido → desconhecido", async () => {
+    rpc = status({ slot: 9, err: { InstructionError: [2, { Custom: 6001 }] }, confirmationStatus: "processed" });
+    expect(await consultarStatus(SIG, 2000)).toEqual({ estado: "pendente", alturaAtual: null });
+    rpc = status({ slot: 9, err: { InstructionError: [2, { Custom: 6001 }] }, confirmationStatus: null });
+    expect(await consultarStatus(SIG, 2000)).toEqual({ estado: "pendente", alturaAtual: null });
+    rpc = status({ slot: 9, err: { InstructionError: [2, { Custom: 6001 }] }, confirmationStatus: "talvez" });
+    expect(await consultarStatus(SIG, 2000)).toEqual({ estado: "desconhecido", motivo: "resposta_inconsistente" });
+    rpc = status({ slot: 9, err: { InstructionError: [2, { Custom: 6001 }] }, confirmationStatus: "finalized" });
+    expect(await consultarStatus(SIG, 2000)).toMatchObject({ estado: "falhou_na_rede" });
   });
 
   it("sem registro e altura ≤ lastValidBlockHeight → pendente (ainda pode pousar)", async () => {
@@ -519,5 +560,169 @@ describe("Lighthouse passa pelo vínculo e pela reserva W3-C", () => {
     const second = txSwap({extra:[extra]});
     expect((await request(second)).status).toBe(409);
     expect(pedidos.filter(p=>p.corpo.method==="sendTransaction")).toHaveLength(1);
+  });
+});
+
+describe("Lighthouse v2 (24/10): o formato REAL da Phantom pela rota", () => {
+  const L = new PublicKey("L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95");
+  /** AssertAccountInfoMulti, log 4, [KnownOwner == System, DataLength == 0] — de uma tx real de mainnet. */
+  const pagadorPhantom = () => new TransactionInstruction({ programId: L, data: Buffer.from("06040203000001000000000000000000", "hex"),
+    keys: [{ pubkey: dono.publicKey, isSigner: false, isWritable: false }] });
+  /** AssertTokenAccountMulti, log 4, [Amount >= n] — a parte que a Phantom tira da PRÓPRIA simulação. */
+  const saldoPhantom = (n: number) => new TransactionInstruction({ programId: L,
+    data: Buffer.from([10, 4, 1, 2, n, 0, 0, 0, 0, 0, 0, 0, 4]), keys: [{ pubkey: dono.publicKey, isSigner: false, isWritable: false }] });
+  /** A cotada, assinada pela "Phantom" com estas instruções a mais no fim. */
+  const comAssercoes = (cotada: VersionedTransaction, extras: TransactionInstruction[]) => {
+    const t = new VersionedTransaction(new TransactionMessage({ payerKey: dono.publicKey, recentBlockhash: BLOCKHASH,
+      instructions: [...TransactionMessage.decompile(cotada.message).instructions, ...extras] }).compileToV0Message());
+    t.sign([dono]);
+    return t;
+  };
+  const corpoDe = (assinada: VersionedTransaction, cotada: VersionedTransaction) => ({
+    tx: b64(assinada), owner: dono.publicKey.toBase58(), vinculo: vin(cotada),
+    mensagemOriginal: Buffer.from(cotada.message.serialize()).toString("base64"),
+  });
+  const logs = () => [...vi.mocked(console.info).mock.calls, ...vi.mocked(console.warn).mock.calls].flat().join("\n");
+  /** Nenhum log carrega bytes assinados, a mensagem original, o token (corpo ou MAC), o pagador ou a conta de taxa. */
+  const semSegredosNoLog = (corpo: { tx: string; vinculo?: string; mensagemOriginal?: string }) => {
+    const [tokenCorpo, tokenMac] = (corpo.vinculo ?? ".").split(".");
+    for (const segredo of [corpo.tx.slice(0, 40), corpo.tx.slice(-40), corpo.mensagemOriginal?.slice(0, 40), tokenCorpo?.slice(0, 40), tokenMac,
+      dono.publicKey.toBase58(), "En1J8udXpzyAwuziqdpWWHvHV7p95RG1b2iAgpcvxNuo"]) {
+      if (segredo) expect(logs()).not.toContain(segredo);
+    }
+  };
+  const enviadas = () => pedidos.filter((p) => p.corpo.method === "sendTransaction").length;
+
+  it("⚠️ asserção antes E depois da rota + limite de CU elevado → transmitida byte a byte", async () => {
+    const cotada = txSwap();
+    const msg = new TransactionMessage({ payerKey: dono.publicKey, recentBlockhash: BLOCKHASH, instructions: [
+      pagadorPhantom(), ComputeBudgetProgram.setComputeUnitLimit({ units: 260_000 }), ...TransactionMessage.decompile(cotada.message).instructions.slice(1),
+      pagadorPhantom(),
+    ] }).compileToV0Message();
+    const assinada = new VersionedTransaction(msg); assinada.sign([dono]);
+    rpc = (c) => c.method === "sendTransaction" ? ok(assinaturaDe(assinada)) : ok(null);
+    const corpo = corpoDe(assinada, cotada);
+    const r = await postar(corpo);
+    expect(await r.json()).toMatchObject({ ok: true, estado: "enviada", assinatura: assinaturaDe(assinada) });
+    expect(pedidos[0].corpo.params[0]).toBe(b64(assinada));
+    expect(logs()).toContain('"cuElevado":true');
+    expect(logs()).toContain('"variantes":["6/4","6/4"]');
+    semSegredosNoLog(corpo);
+  });
+
+  it("recusa diz a REGRA (resposta e log) — sem bytes assinados, token ou chave de conta no log", async () => {
+    const cotada = txSwap();
+    const outroBloco = new TransactionMessage({ payerKey: dono.publicKey, recentBlockhash: Keypair.generate().publicKey.toBase58(),
+      instructions: [...TransactionMessage.decompile(cotada.message).instructions, pagadorPhantom()] }).compileToV0Message();
+    const assinada = new VersionedTransaction(outroBloco); assinada.sign([dono]);
+    const corpo = corpoDe(assinada, cotada);
+    const r = await postar(corpo);
+    expect(r.status).toBe(400);
+    expect(await r.json()).toMatchObject({ fase: "antes_do_rpc", erro: "vinculo_mensagem_diferente", detalhe: "blockhash" });
+    expect(logs()).toContain('"detalhe":"blockhash"');
+    expect(logs()).toContain("L2TE:1:16:6/4");
+    semSegredosNoLog(corpo);
+    expect(pedidos).toHaveLength(0);
+    expect(banco.b.chamadas).toEqual([]);
+  });
+
+  it("instrução Lighthouse proibida → 400 com detalhe; nada reservado nem transmitido; nada secreto no log", async () => {
+    const memoryWrite = new TransactionInstruction({ programId: L, data: Buffer.from([0, 0, 255, 0, 2, 7, 1, 0, 0, 0, 0, 0, 0, 0]),
+      keys: [{ pubkey: dono.publicKey, isSigner: false, isWritable: false }] });
+    const corpo = { tx: b64(txSwap({ extra: [memoryWrite] })), owner: dono.publicKey.toBase58() };
+    const r = await postar(corpo);
+    expect(await r.json()).toMatchObject({ erro: "lighthouse_instrucao_nao_permitida", detalhe: "ix2:op0:log0:c1:opcode:0" });
+    expect(logs()).toContain("L2TE:1:14:0/0");
+    semSegredosNoLog(corpo);
+    expect(pedidos).toHaveLength(0);
+    expect(banco.b.chamadas).toEqual([]);
+  });
+
+  it("assinatura INVÁLIDA + instrução proibida → recusa antes de olhar instruções: sem `forma` nem `detalhe` no log", async () => {
+    const memoryWrite = new TransactionInstruction({ programId: L, data: Buffer.from([0, 0, 255, 0, 2, 7, 1, 0, 0, 0, 0, 0, 0, 0]),
+      keys: [{ pubkey: dono.publicKey, isSigner: false, isWritable: false }] });
+    const t = txSwap({ extra: [memoryWrite] });
+    t.signatures[0] = new Uint8Array(64).fill(3);
+    const r = await postar({ tx: b64(t), owner: dono.publicKey.toBase58() });
+    expect(await r.json()).toMatchObject({ erro: "assinatura_invalida" });
+    expect(logs()).toContain('"recusada":"assinatura_invalida","detalhe":null,"forma":null');
+  });
+
+  describe("⚠️⚠️ uma cotação, um swap (auditoria 24/10)", () => {
+    it("reassinar a MESMA cotação (outras asserções) depois que a 1ª confirmou → 409, a 2ª NÃO vai à rede", async () => {
+      const cotada = txSwap();
+      const v1 = comAssercoes(cotada, [pagadorPhantom(), saldoPhantom(5)]), v2 = comAssercoes(cotada, [pagadorPhantom(), saldoPhantom(9)]);
+      expect(assinaturaDe(v1)).not.toBe(assinaturaDe(v2));
+      rpc = (c) => c.method === "sendTransaction" ? ok(c.params[0] === b64(v1) ? assinaturaDe(v1) : assinaturaDe(v2))
+        : c.method === "getSignatureStatuses" ? ok({ value: [{ slot: 9, err: null, confirmationStatus: "confirmed" }] }) : ok(LVBH - 10);
+      expect(await (await postar(corpoDe(v1, cotada))).json()).toMatchObject({ estado: "enviada" });
+      // a 1ª ainda em aberto (enviada) → recusada pela cotação
+      const r2 = await postar(corpoDe(v2, cotada));
+      expect(r2.status).toBe(409);
+      expect(await r2.json()).toMatchObject({ fase: "antes_do_rpc", erro: "cotacao_ja_enviada", assinaturaDaCotacao: assinaturaDe(v1) });
+      // a 1ª já encerrada como CONFIRMADA (pelo /status) → continua recusada
+      banco.b.linhas[0].estado = "resolvida"; banco.b.linhas[0].desfecho = "confirmada";
+      expect((await postar(corpoDe(v2, cotada))).status).toBe(409);
+      expect(enviadas()).toBe(1);
+      expect(logs()).toContain('"recusada":"cotacao_ja_enviada"');
+      semSegredosNoLog(corpoDe(v2, cotada));
+      semSegredosNoLog(corpoDe(v1, cotada));
+    });
+
+    it("o ramo `bloqueada` confere a cotação DE NOVO depois de encerrar a anterior (janela entre as idas ao banco)", async () => {
+      const chamadas: string[] = [];
+      let consultas = 0;
+      const r = await reservarTransmissao(
+        { carteira: dono.publicKey.toBase58(), assinatura: "SIG2", hashMensagem: "h".repeat(64), blockhash: BLOCKHASH, validoAteBloco: LVBH },
+        {
+          // 1ª consulta não vê a anterior; depois de encerrada como confirmada, ela aparece
+          cotacao: async () => { chamadas.push("cotacao"); return ++consultas === 1 ? null : { assinatura: "SIG1" }; },
+          reservar: async () => { chamadas.push("reservar"); return { resultado: "bloqueada", assinatura: "SIG1", validoAteBloco: LVBH }; },
+          status: async () => ({ estado: "confirmada", slot: 9, confirmacao: "confirmed" }),
+          marcar: async () => { chamadas.push("marcar"); return true; },
+        });
+      expect(r).toEqual({ resultado: "cotacao_usada", assinatura: "SIG1" });
+      expect(chamadas).toEqual(["cotacao", "reservar", "marcar", "cotacao"]);
+    });
+
+    it("muitas tentativas recusadas da mesma cotação não escondem a CONFIRMADA (critério no SQL, sem janela)", async () => {
+      const cotada = txSwap(), h = createHash("sha256").update(cotada.message.serialize()).digest("hex");
+      for (let i = 0; i < 25; i++) {
+        banco.b.linhas.push({ carteira: dono.publicKey.toBase58(), assinatura: `RECUSADA${i}`, lvbh: LVBH, estado: "resolvida", desfecho: "nao_enviada", hash: h });
+      }
+      banco.b.linhas.push({ carteira: dono.publicKey.toBase58(), assinatura: "A_CONFIRMADA", lvbh: LVBH, estado: "resolvida", desfecho: "confirmada", hash: h });
+      const v = comAssercoes(cotada, [saldoPhantom(7)]);
+      rpc = () => ok(assinaturaDe(v));
+      const r = await postar(corpoDe(v, cotada));
+      expect(r.status).toBe(409);
+      expect(await r.json()).toMatchObject({ erro: "cotacao_ja_enviada", assinaturaDaCotacao: "A_CONFIRMADA" });
+      expect(enviadas()).toBe(0);
+    });
+
+    it("a 1ª FALHOU na rede (não executou o swap) → reassinar a mesma cotação é permitido", async () => {
+      const cotada = txSwap(), v1 = comAssercoes(cotada, [saldoPhantom(5)]), v2 = comAssercoes(cotada, [saldoPhantom(9)]);
+      banco.b.linhas.push({ carteira: dono.publicKey.toBase58(), assinatura: assinaturaDe(v1), lvbh: LVBH, estado: "resolvida",
+        desfecho: "falhou_na_rede", hash: createHash("sha256").update(cotada.message.serialize()).digest("hex") });
+      rpc = () => ok(assinaturaDe(v2));
+      expect(await (await postar(corpoDe(v2, cotada))).json()).toMatchObject({ estado: "enviada", assinatura: assinaturaDe(v2) });
+    });
+
+    it("outra cotação da mesma carteira não é afetada pela regra da cotação (só pela trava de sempre)", async () => {
+      const a = txSwap({ dados: 16 }), b = txSwap({ dados: 23 });
+      banco.b.linhas.push({ carteira: dono.publicKey.toBase58(), assinatura: assinaturaDe(a), lvbh: LVBH, estado: "resolvida",
+        desfecho: "confirmada", hash: createHash("sha256").update(a.message.serialize()).digest("hex") });
+      rpc = () => ok(assinaturaDe(b));
+      expect(await (await postar({ tx: b64(b), owner: dono.publicKey.toBase58(), vinculo: vin(b) })).json()).toMatchObject({ estado: "enviada" });
+    });
+
+    it("⚠️ consulta da cotação falhou → FALHA FECHADA: 503 antes do RPC, nada reservado nem transmitido", async () => {
+      banco.b.consultaFora = true;
+      const a = txSwap();
+      const r = await postar({ tx: b64(a), owner: dono.publicKey.toBase58(), vinculo: vin(a) });
+      expect(r.status).toBe(503);
+      expect(await r.json()).toMatchObject({ fase: "antes_do_rpc", erro: "trava_indisponivel" });
+      expect(banco.b.chamadas).not.toContain("solana_tx_reservar");
+      expect(enviadas()).toBe(0);
+    });
   });
 });

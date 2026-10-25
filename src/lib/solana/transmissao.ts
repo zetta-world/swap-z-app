@@ -25,7 +25,7 @@ import { createPublicKey, verify } from "node:crypto";
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { rpcSolanaServidor } from "@/lib/solana/rpc-servidor";
 import { JUPITER_ALLOWED_PROGRAMS } from "@/lib/swap/solana-guard";
-import { LIGHTHOUSE, assercaoLighthouse } from "@/lib/solana/lighthouse";
+import { LIGHTHOUSE, diagnosticoLighthouse } from "@/lib/solana/lighthouse";
 import { assinaturaDe, base58, deBase58 } from "@/lib/solana/assinatura";
 
 export const MAX_BYTES_TX = 1232;
@@ -45,7 +45,8 @@ export const assinaturaValidaFormato = (s: unknown): s is string =>
 
 export type Validacao =
   | { ok: true; tx: VersionedTransaction; bytes: Buffer; assinatura: string }
-  | { ok: false; motivo: string };
+  /** `detalhe`: só inteiros e nomes de regra (nunca bytes, chave de carteira ou token) — para o log e o suporte. */
+  | { ok: false; motivo: string; detalhe?: string };
 
 /**
  * A transação recebida pode ser transmitida? Só se for EXATAMENTE uma transação v0 assinada pela
@@ -54,13 +55,16 @@ export type Validacao =
  */
 export function validarTransacaoAssinada(base64: unknown, owner: unknown): Validacao {
   if (typeof base64 !== "string" || base64.length === 0 || base64.length > Math.ceil(MAX_BYTES_TX / 3) * 4 + 4) {
-    return { ok: false, motivo: "tamanho" };
+    // Só o comprimento (inteiro): uma tx que a carteira aumentou além do limite aparece no log.
+    return typeof base64 === "string" && base64.length > 0
+      ? { ok: false, motivo: "tamanho", detalhe: `b64:${base64.length}` } : { ok: false, motivo: "tamanho" };
   }
   if (typeof owner !== "string") return { ok: false, motivo: "owner" };
   let dono: PublicKey;
   try { dono = new PublicKey(owner); } catch { return { ok: false, motivo: "owner" }; }
   const bytes = Buffer.from(base64, "base64");
-  if (bytes.length === 0 || bytes.length > MAX_BYTES_TX || bytes.toString("base64") !== base64.replace(/\s/g, "")) {
+  if (bytes.length > MAX_BYTES_TX) return { ok: false, motivo: "formato", detalhe: `bytes:${bytes.length}` };
+  if (bytes.length === 0 || bytes.toString("base64") !== base64.replace(/\s/g, "")) {
     return { ok: false, motivo: "formato" };
   }
   let tx: VersionedTransaction;
@@ -83,11 +87,15 @@ export function validarTransacaoAssinada(base64: unknown, owner: unknown): Valid
 
   // Programas: os invocados são sempre chaves estáticas (o guard do navegador depende disso também).
   const programas = new Set<string>();
-  for (const ix of msg.compiledInstructions) {
+  for (const [i, ix] of msg.compiledInstructions.entries()) {
     const p = msg.staticAccountKeys[ix.programIdIndex];
     if (!p) return { ok: false, motivo: "programa_em_alt" };
-    if (p.toBase58() === LIGHTHOUSE && !assercaoLighthouse(ix.data, ix.accountKeyIndexes.length)) {
-      return { ok: false, motivo: "lighthouse_instrucao_nao_permitida" };
+    if (p.toBase58() === LIGHTHOUSE) {
+      const falha = diagnosticoLighthouse(ix.data, ix.accountKeyIndexes.length);
+      if (falha) {
+        return { ok: false, motivo: "lighthouse_instrucao_nao_permitida",
+          detalhe: `ix${i}:op${ix.data[0] ?? "-"}:log${ix.data[1] ?? "-"}:c${ix.accountKeyIndexes.length}:${falha}` };
+      }
     }
     programas.add(p.toBase58());
   }
@@ -96,6 +104,23 @@ export function validarTransacaoAssinada(base64: unknown, owner: unknown): Valid
     if (!(p in JUPITER_ALLOWED_PROGRAMS) && !(p in PROGRAMAS_DE_CARTEIRA)) return { ok: false, motivo: `programa_nao_permitido:${p}` };
   }
   return { ok: true, tx, bytes, assinatura: assinaturaDe(tx) };
+}
+
+/**
+ * Forma da mensagem para o log de RECUSA — prefixo do programa, nº de contas, tamanho dos dados e, no
+ * Lighthouse, opcode/log level. Sem bytes, sem chaves de conta, sem token: é o que faltou em 21/10 para
+ * saber o que a carteira mandou.
+ */
+export function formaDaMensagem(tx: VersionedTransaction): string {
+  const m = tx.message;
+  const ixs = m.compiledInstructions.map((ix) => {
+    const p = m.staticAccountKeys[ix.programIdIndex]?.toBase58() ?? "alt";
+    const extra = p === LIGHTHOUSE ? `:${ix.data[0] ?? "-"}/${ix.data[1] ?? "-"}` : "";
+    return `${p.slice(0, 4)}:${ix.accountKeyIndexes.length}:${ix.data.length}${extra}`;
+  });
+  const alts = "addressTableLookups" in m ? m.addressTableLookups.map((t) => `${t.writableIndexes.length}w${t.readonlyIndexes.length}r`) : [];
+  const h = m.header;
+  return `h${h.numRequiredSignatures}/${h.numReadonlySignedAccounts}/${h.numReadonlyUnsignedAccounts} k${m.staticAccountKeys.length} alt[${alts.join(",")}] ix[${ixs.join(" ")}]`;
 }
 
 export type ResultadoEnvio =
@@ -187,7 +212,16 @@ export async function consultarStatus(assinatura: string, lastValidBlockHeight: 
     if (typeof st.slot !== "number" || !Number.isSafeInteger(st.slot)) return { estado: "desconhecido", motivo: "resposta_ilegivel" };
     // ⚠️⚠️ SUCESSO SÓ COM `err === null` EXPLÍCITO. Campo ausente/undefined NÃO é "sem erro".
     if (!("err" in st) || st.err === undefined) return { estado: "desconhecido", motivo: "resposta_incompleta" };
-    if (st.err !== null) return { estado: "falhou_na_rede", slot: st.slot, erro: JSON.stringify(st.err).slice(0, 160) };
+    if (st.err !== null) {
+      // ⚠️ Erro em `processed` (ou sem status) ainda pode ser DESCARTADO com o fork e a transação pousar de novo,
+      // com outro resultado, até o lastValidBlockHeight. Só `confirmed`/`finalized` encerra como falha — "falhou"
+      // libera nova tentativa (inclusive da MESMA cotação, ver `em-voo.ts`). Auditoria 24/10.
+      if (st.confirmationStatus === "confirmed" || st.confirmationStatus === "finalized") {
+        return { estado: "falhou_na_rede", slot: st.slot, erro: JSON.stringify(st.err).slice(0, 160) };
+      }
+      if (st.confirmationStatus === "processed" || st.confirmationStatus === null) return { estado: "pendente", alturaAtual: null };
+      return { estado: "desconhecido", motivo: "resposta_inconsistente" };
+    }
     if (st.confirmationStatus === "confirmed" || st.confirmationStatus === "finalized") {
       return { estado: "confirmada", slot: st.slot, confirmacao: st.confirmationStatus };
     }

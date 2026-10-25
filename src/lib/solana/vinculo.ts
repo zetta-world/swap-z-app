@@ -13,9 +13,10 @@
  *
  * O navegador não forja: não tem o segredo. Nada do token vem de parâmetro declarado pelo navegador.
  *
- * Compatibilidade Lighthouse: o hash original permanece obrigatório. A carteira pode acrescentar
- * somente um sufixo de asserções reconhecidas, mediante comparação restrita com a mensagem original
- * autenticada pelo mesmo HMAC. Nenhum campo financeiro ou privilégio é excluído da comparação.
+ * Compatibilidade Lighthouse (v2, 24/10): o hash original permanece obrigatório. A carteira pode
+ * acrescentar asserções somente leitura (em qualquer posição) e elevar o `SetComputeUnitLimit`, mediante
+ * comparação restrita com a mensagem original autenticada pelo mesmo HMAC — regras em `compararExtensao`
+ * (`lighthouse.ts`). Nenhum campo financeiro, privilégio, assinante ou blockhash é excluído da comparação.
  *
  * Segredo: `TX_VINCULO_SECRET`, ou derivado de `AUTH_JWT_SECRET` com separação de domínio. Sem nenhum,
  * nada é emitido e a transmissão recusa (falha fechada).
@@ -23,7 +24,7 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { VersionedMessage, type VersionedTransaction } from "@solana/web3.js";
 
-import { extensaoLighthouse } from "@/lib/solana/lighthouse";
+import { compararExtensao } from "@/lib/solana/lighthouse";
 
 const VALIDADE_MS = 3 * 60_000;   // > validade do blockhash (~60–90 s) com folga; nunca permanente
 
@@ -66,9 +67,13 @@ export function emitirVinculo(a: { mensagem: Uint8Array; owner: string; bps: num
   return `${corpo}.${b64u(createHmac("sha256", k).update(corpo).digest())}`;
 }
 
-export type ConferenciaVinculo = { ok: true; dados: DadosVinculo } | { ok: false; motivo: string };
+export type ConferenciaVinculo =
+  /** `extensao`: presente quando a carteira acrescentou asserções Lighthouse à mensagem autenticada. */
+  | { ok: true; dados: DadosVinculo; extensao?: { assercoes: number; cuElevado: boolean } }
+  /** `detalhe`: a regra que falhou (nome curto, sem bytes nem token) — para o log e o suporte. */
+  | { ok: false; motivo: string; detalhe?: string };
 
-/** Authenticate the quoted message, then require exact bytes or a restricted assertion suffix. */
+/** Authenticate the quoted message, then require exact bytes or a restricted Lighthouse extension of it. */
 export function conferirVinculo(token: unknown, tx: VersionedTransaction, agora = Date.now(), mensagemOriginal?: unknown): ConferenciaVinculo {
   const k = chave();
   if (!k) return { ok: false, motivo: "vinculo_indisponivel" };
@@ -88,19 +93,23 @@ export function conferirVinculo(token: unknown, tx: VersionedTransaction, agora 
   }
   if (agora > d.x) return { ok: false, motivo: "vinculo_expirado" };
   if (tx.message.staticAccountKeys[0]?.toBase58() !== d.o) return { ok: false, motivo: "vinculo_pagador" };
+  let extensao: { assercoes: number; cuElevado: boolean } | undefined;
   if (hashDaMensagem(tx.message.serialize()) !== d.h) {
     // The browser supplies evidence, not authority: authenticate the original bytes
     // with the EXISTING HMAC before considering the narrowly allowed extension.
-    try {
-      if (typeof mensagemOriginal !== "string" || mensagemOriginal.length > 1644) throw new Error("original");
-      const bytes = Buffer.from(mensagemOriginal, "base64");
-      if (bytes.toString("base64") !== mensagemOriginal || hashDaMensagem(bytes) !== d.h) throw new Error("hash");
-      const original = VersionedMessage.deserialize(bytes);
-      if (original.version !== 0 || tx.message.version !== 0
-          || !Buffer.from(original.serialize()).equals(bytes)
-          || !extensaoLighthouse(original, tx.message)) throw new Error("extension");
-    } catch { return { ok: false, motivo: "vinculo_mensagem_diferente" }; }
+    const recusa = (detalhe: string): ConferenciaVinculo => ({ ok: false, motivo: "vinculo_mensagem_diferente", detalhe });
+    if (typeof mensagemOriginal !== "string" || mensagemOriginal.length > 1644) return recusa("original_ausente");
+    const bytes = Buffer.from(mensagemOriginal, "base64");
+    if (bytes.toString("base64") !== mensagemOriginal || hashDaMensagem(bytes) !== d.h) return recusa("original_hash");
+    let original: VersionedMessage;
+    try { original = VersionedMessage.deserialize(bytes); } catch { return recusa("original_formato"); }
+    if (original.version !== 0 || tx.message.version !== 0 || !Buffer.from(original.serialize()).equals(bytes)) {
+      return recusa("original_formato");
+    }
+    const r = compararExtensao(original, tx.message);
+    if (!r.ok) return recusa(r.regra);
+    extensao = { assercoes: r.assercoes, cuElevado: r.cuElevado };
   }
   if ((d.b > 0) !== (d.f !== null)) return { ok: false, motivo: "vinculo_taxa_inconsistente" };
-  return { ok: true, dados: d };
+  return extensao ? { ok: true, dados: d, extensao } : { ok: true, dados: d };
 }

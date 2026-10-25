@@ -55,7 +55,7 @@ export interface DepsSwapSolana {
     nota: (msg: string | null) => void;
     assinatura: (sig: string) => void;
   };
-  texto: (k: "solPreviousOpen" | "solSendFailed" | "solSendUncertain" | "solExecutionFailed" | "solExpired" | "solStillChecking") => string;
+  texto: (k: "solPreviousOpen" | "solQuoteAlreadySent" | "solSendFailed" | "solSendUncertain" | "solExecutionFailed" | "solExpired" | "solStillChecking") => string;
 }
 
 export async function executarSwapSolana(d: DepsSwapSolana): Promise<{ historyId: string | null; resultado: ResultadoSwapSolana }> {
@@ -98,7 +98,10 @@ export async function executarSwapSolana(d: DepsSwapSolana): Promise<{ historyId
   if (envio.estado === "nao_enviada") {
     marcar("envio_falhou", { motivo: envio.motivo.slice(0, 120) });
     // W3-C: o servidor recusou porque OUTRA transação desta carteira (talvez de outro aparelho) ainda pode pousar.
+    // ⚠️ `cotacao_ja_enviada`: outra assinatura DESTA cotação está em aberto ou CONFIRMADA — o swap pode já ter
+    // acontecido. Nunca dizer "nada saiu da carteira" aqui (o texto de `solSendFailed`).
     d.ui.erro(envio.motivo === "anterior_em_aberto" ? d.texto("solPreviousOpen")
+      : envio.motivo === "cotacao_ja_enviada" ? d.texto("solQuoteAlreadySent")
       : `${d.texto("solSendFailed")} (${envio.motivo.slice(0, 80)})`);
     d.ui.fase("tx_failed");
     return { historyId: id, resultado: "envio_falhou" };

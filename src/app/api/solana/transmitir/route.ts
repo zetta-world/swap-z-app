@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { VersionedTransaction } from "@solana/web3.js";
 import { rateLimitDurable, getClientId } from "@/lib/rate-limit";
-import { transmitir, validarTransacaoAssinada } from "@/lib/solana/transmissao";
+import { formaDaMensagem, transmitir, validarTransacaoAssinada } from "@/lib/solana/transmissao";
 import { LIGHTHOUSE } from "@/lib/solana/lighthouse";
 import { hashDaMensagem, conferirVinculo } from "@/lib/solana/vinculo";
 import { marcarTentativa, reservarTransmissao } from "@/lib/solana/em-voo";
@@ -17,7 +18,9 @@ export const runtime = "nodejs";
  *       SEMPRE junto (derivada da própria transação), para reconciliar mesmo se o envio falhar.
  *   400 transação inválida (não chegou ao RPC) · 413 grande demais · 429/503 limites.
  *   409 `anterior_em_aberto` — W3-C: outra transação DESTA carteira ainda pode pousar (trava no banco,
- *       vale entre aparelhos). 503 `trava_indisponivel` — banco fora: falha FECHADA, nada transmitido.
+ *       vale entre aparelhos). 409 `cotacao_ja_enviada` — outra assinatura da MESMA cotação está em aberto
+ *       ou confirmada (com a Phantom, reassinar gera outra transação). 503 `trava_indisponivel` — banco
+ *       fora: falha FECHADA, nada transmitido.
  */
 const RL_IP     = { windowMs: 60_000, max: 20 };
 const RL_GLOBAL = { windowMs: 60_000, max: Number(process.env.TRANSMISSAO_SOLANA_GLOBAL_MAX ?? 600) };
@@ -28,6 +31,16 @@ const SEM_CACHE = { "Cache-Control": "no-store" };
  * vindo DEPOIS de o servidor transmitir, e é tratado como incerto.
  */
 const ANTES = { fase: "antes_do_rpc" } as const;
+
+/**
+ * Recusas que só acontecem DEPOIS de conferidas as assinaturas da carteira: aí a forma da mensagem
+ * (`formaDaMensagem` — sem bytes, sem chaves) vai para o log, para casar com o que a carteira mandou.
+ */
+const RECUSA_ESTRUTURAL = /^(lighthouse_instrucao_nao_permitida|programa_nao_permitido|sem_jupiter|programa_em_alt|vinculo_mensagem_diferente)/;
+function forma(tx: unknown): string | null {
+  try { return typeof tx === "string" ? formaDaMensagem(VersionedTransaction.deserialize(Buffer.from(tx, "base64"))) : null; }
+  catch { return null; }
+}
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const tamanho = Number(req.headers.get("content-length") ?? "0");
@@ -49,14 +62,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const v = validarTransacaoAssinada(corpo.tx, corpo.owner);
   if (!v.ok) {
-    console.warn("[sol-tx]", JSON.stringify({ recusada: v.motivo }));
-    return NextResponse.json({ ok: false, ...ANTES, erro: v.motivo }, { status: 400, headers: SEM_CACHE });
+    console.warn("[sol-tx]", JSON.stringify({
+      recusada: v.motivo, detalhe: v.detalhe ?? null, forma: RECUSA_ESTRUTURAL.test(v.motivo) ? forma(corpo.tx) : null,
+    }));
+    return NextResponse.json({ ok: false, ...ANTES, erro: v.motivo, ...(v.detalhe ? { detalhe: v.detalhe } : {}) },
+      { status: 400, headers: SEM_CACHE });
   }
   // W3: só a transação que a Z-SWAP cotou (hash, pagador, taxa decidida no servidor) — ver `vinculo.ts`.
   const vin = conferirVinculo(corpo.vinculo, v.tx, Date.now(), corpo.mensagemOriginal);
   if (!vin.ok) {
-    console.warn("[sol-tx]", JSON.stringify({ recusada: vin.motivo }));
-    return NextResponse.json({ ok: false, ...ANTES, erro: vin.motivo }, { status: 400, headers: SEM_CACHE });
+    console.warn("[sol-tx]", JSON.stringify({
+      recusada: vin.motivo, detalhe: vin.detalhe ?? null,
+      forma: RECUSA_ESTRUTURAL.test(vin.motivo) ? formaDaMensagem(v.tx) : null,
+    }));
+    return NextResponse.json({ ok: false, ...ANTES, erro: vin.motivo, ...(vin.detalhe ? { detalhe: vin.detalhe } : {}) },
+      { status: 400, headers: SEM_CACHE });
   }
   const assertions = v.tx.message.compiledInstructions.filter(ix =>
     v.tx.message.staticAccountKeys[ix.programIdIndex]?.toBase58() === LIGHTHOUSE);
@@ -64,7 +84,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // Only after HMAC + signatures: structural evidence, never signed bytes or token.
     console.info("[sol-tx-lighthouse]", JSON.stringify({
       origem: hashDaMensagem(v.tx.message.serialize()) === vin.dados.h ? "na_cotacao" : "apos_cotacao",
-      variantes: assertions.map(ix => ix.data[0]),
+      variantes: assertions.map(ix => `${ix.data[0]}/${ix.data[1]}`),
+      cuElevado: vin.extensao?.cuElevado ?? false,
+      forma: formaDaMensagem(v.tx),
     }));
   }
   /**
@@ -78,6 +100,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (reserva.resultado === "indisponivel") {
     console.warn("[sol-tx]", JSON.stringify({ recusada: "trava_indisponivel", motivo: reserva.motivo }));
     return NextResponse.json({ ok: false, ...ANTES, erro: "trava_indisponivel" }, { status: 503, headers: SEM_CACHE });
+  }
+  if (reserva.resultado === "cotacao_usada") {
+    // Outra assinatura DESTA cotação já está em aberto ou confirmada (Phantom: cada assinatura é outra tx).
+    console.warn("[sol-tx]", JSON.stringify({ recusada: "cotacao_ja_enviada" }));
+    return NextResponse.json({ ok: false, ...ANTES, erro: "cotacao_ja_enviada", assinaturaDaCotacao: reserva.assinatura },
+      { status: 409, headers: SEM_CACHE });
   }
   if (reserva.resultado === "bloqueada") {
     return NextResponse.json({ ok: false, ...ANTES, erro: "anterior_em_aberto", assinaturaEmAberto: reserva.assinatura },

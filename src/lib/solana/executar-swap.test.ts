@@ -75,6 +75,15 @@ describe("⚠️⚠️ o caso real do dono: Phantom assina → envio dá 403", (
     expect(JSON.stringify(h.get())).not.toContain(transmitir.mock.calls[0][0].slice(0, 30));
   });
 
+  it("⚠️ 409 `cotacao_ja_enviada` (outra assinatura DESTA cotação em aberto/confirmada): nunca 'nada saiu da carteira'", async () => {
+    const { d, h, ui } = montar({ envio: (sig) => ({ estado: "nao_enviada", assinatura: sig, motivo: "cotacao_ja_enviada" }) });
+    const r = await executarSwapSolana(d);
+    expect(r.resultado).toBe("envio_falhou");                         // ESTA assinatura não foi à rede
+    expect(h.get()[0]).toMatchObject({ etapa: "envio_falhou", motivo: "cotacao_ja_enviada" });
+    expect(ui.erro).toHaveBeenCalledWith("solQuoteAlreadySent");
+    expect(ui.erro.mock.calls.flat().join(" ")).not.toContain("solSendFailed");
+  });
+
   it("e ela pode ser tentada de novo (não ficou 'em aberto'): a recusa foi certa, antes da rede", async () => {
     const { d, h } = montar({ envio: (sig) => ({ estado: "nao_enviada", assinatura: sig, motivo: "proibido" }) });
     await executarSwapSolana(d);
@@ -202,6 +211,30 @@ describe("Phantom: compatibilidade e não-custódia", () => {
     expect(transmitir.mock.calls[0][1]).toBe(OWNER);
   });
 
+  it("⚠️ tela (auditoria 24/10): uma execução por vez e cotação Jupiter velha renovada ANTES de pedir assinatura", async () => {
+    const { readFileSync } = await import("node:fs");
+    const t = readFileSync("src/components/swap/ExecuteSwap.tsx", "utf8");
+    // Duplo toque: os botões chamam só a porta com trava; nenhum chama a execução direto.
+    expect(t).toMatch(/if \(executandoRef\.current\) return;\s*executandoRef\.current = true;\s*try \{ await onExecute\(\); \} finally \{ executandoRef\.current = false; \}/);
+    expect(t).not.toMatch(/onClick=\{onExecute\}/);
+    expect([...t.matchAll(/onClick=\{executarUmaVez\}/g)].length).toBeGreaterThan(0);
+    expect([...t.matchAll(/onClick=\{executarUmaVez\}/g)]).toHaveLength(2);                 // assinar E tentar de novo
+    expect([...t.matchAll(/onExecute\(/g)]).toHaveLength(1);                               // só dentro da porta
+    // Fechar no meio da execução (Esc / clique fora / X) não derruba a trava.
+    expect(t).toMatch(/onOpenChange=\{\(o\) => \{ if \(!o && !executandoRef\.current\) onClose\(\); \}\}/);
+    // Blockhash da cotação perto de vencer: renova (o usuário confirma de novo) antes do pedido de assinatura —
+    // e SAI sem assinar; a renovação entra na chave e nas dependências do efeito que busca a cotação.
+    const ttl = t.indexOf("Date.now() - jupQuoteAtRef.current > JUP_QUOTE_TTL_MS"), assina = t.indexOf("await executarSwapSolana(");
+    expect(ttl).toBeGreaterThan(0);
+    expect(ttl).toBeLessThan(assina);
+    expect(t).toMatch(/renovandoRef\.current = true;\s*setJupResult\(null\);\s*setRenovacao\(\(n\) => n \+ 1\);\s*return;/);
+    expect(t).toMatch(/const fetchKey = `[^`]*\|\$\{renovacao\}`;/);
+    expect(t).toMatch(/\[open, taker, [^\]]*, renovacao\]\);/);
+    // A nota "cotação atualizada" só quando a nova CHEGOU (ramo de sucesso da busca), nunca antes.
+    expect([...t.matchAll(/swap\.solQuoteRefreshed/g)]).toHaveLength(1);
+    expect(t).toMatch(/jupQuoteAtRef\.current = Date\.now\(\);\s*if \(renovandoRef\.current\) \{ renovandoRef\.current = false; setSendNote\(tImp\("swap\.solQuoteRefreshed"\)\); \}/);
+  });
+
   it("o fluxo não contém NENHUMA forma de assinar fora da carteira", async () => {
     const { readFileSync } = await import("node:fs");
     for (const f of ["src/lib/solana/executar-swap.ts", "src/lib/solana/transmissao.ts", "src/lib/solana/transmissao-cliente.ts", "src/app/api/solana/transmitir/route.ts"]) {
@@ -226,6 +259,14 @@ describe("cliente: transmitirAssinada e acompanhar", () => {
     expect((await transmitirAssinada("x", OWNER, "SIG")).estado).toBe("nao_enviada");
     resp(503, { ok: false, fase: "antes_do_rpc", erro: "ocupado" });
     expect((await transmitirAssinada("x", OWNER, "SIG")).estado).toBe("nao_enviada");
+  });
+  it("a regra que falhou (`detalhe`) acompanha o motivo; detalhe que não é texto é ignorado", async () => {
+    resp(400, { ok: false, fase: "antes_do_rpc", erro: "vinculo_mensagem_diferente", detalhe: "blockhash" });
+    expect(await transmitirAssinada("x", OWNER, "SIG")).toMatchObject({ estado: "nao_enviada", motivo: "vinculo_mensagem_diferente:blockhash" });
+    resp(400, { ok: false, fase: "antes_do_rpc", erro: "vinculo_mensagem_diferente", detalhe: { x: 1 } });
+    expect(await transmitirAssinada("x", OWNER, "SIG")).toMatchObject({ motivo: "vinculo_mensagem_diferente" });
+    resp(409, { ok: false, fase: "antes_do_rpc", erro: "anterior_em_aberto" });
+    expect(await transmitirAssinada("x", OWNER, "SIG")).toMatchObject({ motivo: "anterior_em_aberto" });
   });
 
   it("⚠️⚠️ revisão: 503/429/504 de GATEWAY (sem a marca — pode ter vindo DEPOIS de o backend transmitir) → incerta", async () => {
