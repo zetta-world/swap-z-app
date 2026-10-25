@@ -12,6 +12,17 @@
 
 ---
 
+## Atualização PHANTOM-LIGHTHOUSE-V2 — swap Solana com a Phantom (25/10/2026)
+
+Produção segue em `cc79fc7` (#449): o swap assinado na Phantom é recusado antes do RPC
+(`lighthouse_instrucao_nao_permitida`, 21/10) porque a instrução Lighthouse REAL da Phantom (log level 4, KnownOwner)
+caía no parser restrito. Correção certificada em `claude/swap-z-recovery-deploy-b7y2cw`:
+`CERTIFIED_FEATURE_SHA=31920d7` (decodificador completo do Lighthouse, extensão restrita da cotação, diagnóstico por
+regra, "uma cotação, um swap", Next.js 16.4.3 — fecha 2 alertas CRÍTICOS de RCE que estão em produção — e exceção R-04
+do `npm audit` aprovada pelo dono). Recert PASS e CI verde no SHA exato. **Pendente: autorização do dono para
+`RELEASE_CANDIDATE` + deploy, e o primeiro swap real assinado.** Riscos declarados: troca de blockhash pela Phantom
+continua recusada (aparece como `:blockhash`); trava por cotação não atômica com a 0077.
+
 ## Atualização L-064 — W3 transmissão Solana (21/10/2026)
 
 Produção segue em `986ae75`: swap Solana falha no ENVIO (403 do RPC público) e **`NEXT_PUBLIC_SOLANA_JITO` está "on"** —

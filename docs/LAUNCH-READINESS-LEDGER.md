@@ -1427,3 +1427,21 @@ EXCECAO_EM_USO). Testes do portão: R-03 provada contra a exceção congelada; R
 16.3.8 crítico reprovaria". Validação local: `tsc` limpo · suíte 342 arquivos / 5191 testes · lint 0 erros (144 avisos) · `next build` OK.
 Revisão independente do C1b (`wf_170f8f74-950`): sem defeito bloqueante; integridade das 13 entradas Next conferida no
 registro; 4 achados leves corrigidos (campo `libc`, caminhos do zod no texto da R-04, contagem de testes).
+
+**RECERT(C1b) = PASS — 25/10/2026 (atestação C2).**
+`CERTIFIED_FEATURE_SHA=31920d73e93194113a68ac021bbd370b05621cee` (tree `e317825d6528c23144dd7e7314b4a55bde6957c4`) ·
+`RECERT_RESULT=PASS` · `CONTROL_PLANE_HEAD=THIS_CONTROL_PLANE_COMMIT` (este commit, só `docs/**`; NÃO é CERTIFIED).
+Worktree limpo no SHA exato (`git status` vazio), Node 22.22.0 / npm 10.9.4, 25/10 10:27 UTC. Evidência fora do repo:
+`scratchpad/recert-31920d7-20261025T102726Z/` (sessão cloud efêmera; 14 arquivos), `MANIFEST.sha256` sha256
+`33e1ad3df67cf8877a1c5f7a9c757def9a8fe5beda164c5f1161028fc8a243a9`.
+- `npm ci` ✓ · type-check ✓ · lint 0 erros (144 avisos) ✓ · suíte completa ×2: 342 arquivos / 5191 testes nas duas ✓ ·
+  Solana 242 ✓ · `next build` (Next.js 16.4.3) ✓ · portão `npm audit`: OK com a R-04 (critical=0; aviso EXCECAO_EM_USO) ✓ ·
+  varredura de segredos do delta `cc79fc7..31920d7` ✓.
+- CI oficial no SHA exato: run 40184848534 — **success**.
+- Desvios declarados: arneses SQL não rodados (a fase não muda SQL; a consulta nova de `em-voo.ts` lê `solana_tx_em_voo`
+  da 0077 com o grant de SELECT existente — provada com banco falso fiel à 0077, não contra PostgreSQL); smoke não feito
+  (exige deploy/preview autorizado); migrations: nenhuma nova nesta fase.
+- Prova da atestação: `git diff --stat 31920d7..HEAD -- . ':!docs/**' ':!CLAUDE.md' ':!AGENTS.md'` vazio e
+  `git merge-base --is-ancestor 31920d7 HEAD` → OK (conferido antes do push deste commit).
+- `RELEASE_CANDIDATE=NONE` até a autorização escrita do dono para este SHA (RELEASE-CHAIN §3, item 7). Deploy é outra
+  autorização (AI-OPERATING-RULES §6.1).
