@@ -1482,3 +1482,7 @@ suíte ×2: 342 / 5203 nas duas ✓ · Solana 242 ✓ · `next build` ✓ · por
 CI oficial no SHA: run 40207596026 success. Desvios: arneses SQL (sem SQL no delta) e smoke (exige deploy). Prova:
 `git diff --stat cb8b9ac..HEAD -- . ':!docs/**'` vazio e `cb8b9ac` ancestral de HEAD (conferidos antes do push).
 `RELEASE_CANDIDATE` deste SHA: aguardando autorização escrita do dono (a de 25/10 valeu para `31920d7`).
+
+**RELEASE_CANDIDATE C1c (25/10/2026):** autorização escrita do dono nesta conversa — "Autorizo produção (Recomendado)" —
+para `CERTIFIED_FEATURE_SHA=cb8b9ac` (atestação `5749418`). Marcado em `docs/RELEASE-CHAIN.md` (seção C1c) por um commit
+só de docs. Deploy: CI verde no commit do RC → `main` por fast-forward → produção. Rollback `dpl_DTzQ9Xy56yZroT1N5XBR8WuW3cAJ`.

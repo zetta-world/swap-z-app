@@ -452,3 +452,17 @@ Resultado (25/10): `main` → `0430644` (fast-forward, `cc79fc7..0430644`), prod
 READY, aliases `swap-z-app.vercel.app` no deploy novo; smoke só-cotação PASS (`/api/quote` Solana SOL→USDC 200, rota
 Jupiter, taxa 100 bps; home 200); runtime errors: nenhum nos 30 min seguintes. Pendente: primeiro swap real assinado
 pelo dono na Phantom. Rollback: `dpl_3YkUirQdfetu5cSCoUqZX2kYaAkR`.
+
+## Atualização C1c — candidato blockhash do servidor (25/10/2026)
+
+RELEASE_CANDIDATE = THIS_RELEASE_CANDIDATE_COMMIT (docs-only, filho de `5749418adf1b9dc136ab8faf06971cfcbf403801`).
+CERTIFIED_FEATURE_SHA = `cb8b9ac4b6293ef7f884b0a725eb8fced9c8f449` (tree `edcbb62f04a437bb6e3271e9328d6d26fd2b1685`),
+base `0430644` (= `main` = produção, `dpl_DTzQ9Xy56yZroT1N5XBR8WuW3cAJ`). Delta: `lib/api/jupiter.ts` (blockhash e
+`lastValidBlockHeight` do RPC do servidor, `getLatestBlockhash` `confirmed`; o da Jupiter só como reserva, com log),
+`ExecuteSwap.tsx` (cotação Jupiter renovada com > 20 s), i18n 4 locales, RUNBOOK, testes. Motivo: 1º swap real em
+produção recusado com `BlockhashNotFound` (ledger, 25/10). Regras §3: (1) descende de `0d21874` ✓; (2) RECERT(C1c)=PASS
+no SHA exato, `MANIFEST.sha256` `82e02ef1…923064` ✓ (desvios: SQL e smoke); (3) CI 40207596026 success ✓; (4) nenhuma
+migration no delta ✓; (5) nenhum `OPEN_BLOCKER` no escopo ✓; (6) gates de exposição inalterados ✓; (7) autorização do
+dono, 25/10, nesta conversa — "Autorizo produção (Recomendado)" para `cb8b9ac` ✓. Condição antes do merge: CI verde no
+SHA deste commit. Stop: build/deploy com erro, runtime errors novos, `/api/quote` Solana quebrada, log
+`[jupiter] {"tipo":"blockhash","origem":"jupiter"}` recorrente. Rollback: `dpl_DTzQ9Xy56yZroT1N5XBR8WuW3cAJ` (`0430644`).
