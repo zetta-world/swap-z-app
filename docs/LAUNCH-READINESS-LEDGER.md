@@ -1493,3 +1493,12 @@ Smoke sem assinatura: cotação firme 17:00:37 → `lastValidBlockHeight` 439 36
 439 362 938 (113 blocos restantes ⇒ ~53 s de vida a partir da cotação); log `origem: servidor` (`blocosAMais: -1` — o
 cache da Jupiter varia; o do servidor fica sempre perto do máximo); runtime errors nenhum. `PRODUCTION=10ebd12`.
 Pendente: swap real do dono; e-mail do dono a review@phantom.com.
+
+**✅ 1º SWAP SOLANA REAL COM A PHANTOM ACEITO E TRANSMITIDO (25/10/2026, 17:02:57 UTC, `dpl_7KTQpQSh3BWYzrVJsb22TH5n7zdR`).**
+SOL→USDC assinado pelo dono na Phantom Android, sem aviso vermelho desta vez. Logs (só leitura):
+`[sol-tx-lighthouse] {"origem":"apos_cotacao","variantes":["6/4","10/4"],"cuElevado":false,"forma":"h1/0/8 k12 alt[3w6r] ix[… JUP6:26:40 … L2TE:1:26:6/4 L2TE:1:17:10/4]"}`
+→ `[sol-tx] {"estado":"enviada","assinatura":"5pZHbNzTC5MW…"}`. A Phantom acrescentou EXATAMENTE as asserções
+documentadas (AssertAccountInfoMulti log 4 sobre o pagador e AssertTokenAccountMulti log 4), em sufixo, sem elevar o CU
+— aceitas pela `compararExtensao` com o vínculo HMAC da cotação (taxa 100 bps na conta `En1J8…`). Desfecho on-chain
+conforme o dono ("deu certo"); conta de taxa (`H7zw…`, USDC) lida em 17:05:59: 2,504129 USDC — sem saldo anterior medido,
+o crédito exato desta taxa (~0,0045 USDC = 1% da saída bruta) se confirma no explorer da transação.
