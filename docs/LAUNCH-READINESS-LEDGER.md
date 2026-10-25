@@ -1445,3 +1445,9 @@ Worktree limpo no SHA exato (`git status` vazio), Node 22.22.0 / npm 10.9.4, 25/
   `git merge-base --is-ancestor 31920d7 HEAD` → OK (conferido antes do push deste commit).
 - `RELEASE_CANDIDATE=NONE` até a autorização escrita do dono para este SHA (RELEASE-CHAIN §3, item 7). Deploy é outra
   autorização (AI-OPERATING-RULES §6.1).
+
+**RELEASE_CANDIDATE (25/10/2026):** autorização escrita do dono nesta conversa — "Autorizo produção (Recomendado)" — para
+`CERTIFIED_FEATURE_SHA=31920d7` (atestação `4110720`). Marcado em `docs/RELEASE-CHAIN.md` (seção PHANTOM-LIGHTHOUSE-V2)
+por um commit só de docs, filho de `4110720`. Plano do deploy: CI verde no commit do RC → `main` por fast-forward →
+produção Vercel a partir do `main` → conferência do deploy e dos logs → swap pequeno do dono na Phantom. Rollback:
+`dpl_3YkUirQdfetu5cSCoUqZX2kYaAkR`.

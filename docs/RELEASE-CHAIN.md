@@ -428,3 +428,22 @@ build · audit-gate OK (sem exceção nova) · 0 credencial e 0 Jito no bundle �
 autorizada; operação financeira só com assinatura do dono). Rollback de código: `dpl_7ZLUX4fN3nmNHKoetVxdr7fTrLUg`
 (⚠️ religa a Jito no navegador — só com `disable_swap` ligado) ou nova build do candidato anterior com
 `NEXT_PUBLIC_SOLANA_JITO=off`. Rollback de banco: não necessário (colunas/tabela novas são ignoradas pelo código antigo).
+
+## Atualização PHANTOM-LIGHTHOUSE-V2 — candidato swap Solana com a Phantom + Next.js 16.4.3 (25/10/2026)
+
+RELEASE_CANDIDATE = THIS_RELEASE_CANDIDATE_COMMIT (docs-only, filho de `4110720d3c6e9c9a429868c4a0e2ebcf868667a6`).
+CERTIFIED_FEATURE_SHA = `31920d73e93194113a68ac021bbd370b05621cee` (tree `e317825d6528c23144dd7e7314b4a55bde6957c4`),
+base `cc79fc7` (= `main` = produção, `dpl_3YkUirQdfetu5cSCoUqZX2kYaAkR`). Delta: decodificador completo do Lighthouse e
+extensão restrita da cotação (`lib/solana/lighthouse.ts`, `vinculo.ts`, `transmissao.ts`), diagnóstico por regra,
+"uma cotação, um swap" (`em-voo.ts`, rota `transmitir`), tela (`ExecuteSwap.tsx`: uma execução por vez, cotação Jupiter
+> 30 s renovada), folga para a carteira no montador (`lib/api/jupiter.ts`), i18n 4 locales, `next` 16.4.3 (fecha 2
+alertas CRÍTICOS de RCE), exceção R-04 do `npm audit` (decisão do dono) — ledger `PHANTOM-LIGHTHOUSE-V2-20261024`.
+Regras §3: (1) descende de `0d21874` ✓; (2) RECERT(C1b)=PASS no SHA exato, evidência com `MANIFEST.sha256`
+`33e1ad3d…a243a9` ✓ (desvios: arneses SQL e smoke — ledger); (3) CI 40184848534 success no SHA ✓; (4) migrations no
+delta `cc79fc7..` = **nenhuma** (medido no repo; banco de produção não lido nesta fase); (5) nenhum `OPEN_BLOCKER` de
+`AUDIT-RECONCILIATION.md` §5 no escopo (os abertos são Early Access/autopilot) ✓; (6) gates de exposição pública
+inalterados ✓; (7) autorização do dono: 25/10/2026, nesta conversa — "Autorizo produção (Recomendado)" ✓.
+Condição antes do merge: CI verde no SHA deste commit. Merge: `main` avança por fast-forward (SHAs preservados).
+Stop: build/deploy com erro, runtime errors novos, `/api/quote` Solana quebrada, recusa inesperada em
+`/api/solana/transmitir` (o `detalhe` diz a regra), regressão EVM/LI.FI. Rollback: `dpl_3YkUirQdfetu5cSCoUqZX2kYaAkR`
+(`cc79fc7`; ⚠️ volta o Next 16.3.8 com os alertas críticos).
