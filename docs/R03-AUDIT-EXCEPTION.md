@@ -1,4 +1,36 @@
-# R-03 — EXCEÇÃO ESTREITA E TEMPORÁRIA DO `npm audit` · 🟡 EM USO (lane B) · revisão obrigatória antes do RC
+# R-03 → R-04 — EXCEÇÃO ESTREITA E TEMPORÁRIA DO `npm audit` · 🟡 R-04 EM USO · revisão obrigatória antes do RC
+
+## R-04 (zod) — EM USO desde 25/10/2026 · R-03 RETIRADA
+
+> **Decisão do dono (25/10/2026, conversa da fase PHANTOM-LIGHTHOUSE-V2):** "Aprovo a R-04". Contexto: a recert do
+> candidato `17f7eb3` reprovou no portão por alertas NOVOS em dependências que a fase não tocou. O dono escolheu
+> corrigir antes do deploy: `next` 16.3.8 → 16.4.3 (fecha os dois CRÍTICOS de RCE e o alto de DoS); o que sobrou é
+> esta exceção. **Isto NÃO desliga o `npm audit` e NÃO afirma que a vulnerabilidade foi corrigida.**
+
+| campo | valor |
+|---|---|
+| advisory | `zod` **GHSA-mrhx-c7xc-m3w5** (npm source **1243066**), severidade **high**, faixa `<4.6.6` (memória ao validar coleções grandes com restrição) |
+| correção upstream | só `zod` ≥ 4.6.6 — major para quem depende de zod 3 (toda a linha 3.x está na faixa) |
+| cadeia aceita | **17** pacotes high, registrados item a item em `scripts/release/audit-exceptions.json` |
+| caminhos | `viem`/`abitype` · `wagmi` → `@wagmi/connectors` → reown/walletconnect/coinbase/porto (navegador) · `@vercel/functions` → `@vercel/oidc` → `@vercel/cli-config` (servidor, zod 4.1.11) · `eslint-config-next` → `eslint-plugin-react-hooks` (só lint, fora da cadeia do audit) · `@anthropic-ai/sdk`: zod é peer OPCIONAL, usado só em `helpers/zod`, que o app não importa |
+| uso direto no app | **nenhum** (`grep` em `src/` e `scripts/`: nenhum import de zod) |
+| pendente antes do RC | a cópia `zod` 4.4.3 sob `@wagmi/connectors` (via porto, `^4.1.5`) pode ir a 4.6.7 sem major; se for, a lista de nós da cadeia muda e a exceção é revista |
+| lockfile na criação | `package-lock.json` sha256 `75f6bd2b…9af8` |
+| prova | `src/lib/release/audit-gate.test.ts` (bloco R-04, fixture `fixtures/npm-audit-r04-20261025.json` = `npm audit --json` real desse lock) |
+
+**Por que é aceitável por ora:** o ataque exige que entrada controlada pelo atacante chegue a um schema zod com
+coleção restrita dentro dessas bibliotecas; o app não valida entrada de usuário com zod. Avaliação de alcance, não
+prova formal — por isso é TEMPORÁRIA, revista antes de cada RC, e migrar para zod 4 é fase própria.
+
+**R-03 retirada:** o registro npm deixou de reportar o advisory do `braces` (1240992). O `braces` 3.0.3 **continua
+instalado** (via `tailwindcss`); isto é "não reportado", NÃO "corrigido". O portão exige cadeia idêntica, então a
+R-03 não podia ficar. Conteúdo congelado em `src/lib/release/fixtures/audit-exceptions-r03-20261007.json`; um teste
+garante que o relatório antigo do braces reprova contra a exceção viva.
+
+---
+
+## Histórico: R-03 (braces) — 04/10 a 25/10/2026 · RETIRADA
+
 
 > **Decisão do dono (04/10/2026):** `R03_DECISION=TEMPORARY_NARROW_CI_EXCEPTION`. O Tailwind v4 **não** é adotado
 > para R-03 (spike: remediação PARTIAL, ~98 arquivos, CSS +51%/+16% gzip, 21/30 capturas mudaram; branch

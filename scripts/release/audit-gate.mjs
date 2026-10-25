@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * CI: npm audit --json > npm-audit.json || true ; node scripts/release/audit-gate.mjs npm-audit.json
- * Exit 0 = só a cadeia R-03 registrada (e nada critical/novo). Exit 1 = falha. Exit 2 = uso/leitura.
+ * Exit 0 = só a cadeia da exceção registrada (hoje R-04; e nada critical/novo). Exit 1 = falha. Exit 2 = uso/leitura.
  * `--gerar-cadeia` imprime a cadeia atual (para REVISÃO humana da exceção; nunca grava sozinho).
  */
 import { readFileSync } from "node:fs";
@@ -24,5 +24,5 @@ const m = audit?.metadata?.vulnerabilities ?? {};
 console.log(`npm audit: critical=${m.critical ?? "?"} high=${m.high ?? "?"} moderate=${m.moderate ?? "?"} low=${m.low ?? "?"}`);
 for (const a of r.avisos) console.log(`AVISO ${a}`);
 for (const f of r.falhas) console.log(`FALHA ${f}`);
-console.log(r.ok ? "PORTÃO: OK (exceção R-03 estreita; NÃO corrigido)" : "PORTÃO: FALHOU");
+console.log(r.ok ? `PORTÃO: OK (exceção estreita ${(excecoes.excecoes ?? []).map((e) => e.id).join(", ") || "nenhuma"}; NÃO corrigido)` : "PORTÃO: FALHOU");
 process.exit(r.ok ? 0 : 1);

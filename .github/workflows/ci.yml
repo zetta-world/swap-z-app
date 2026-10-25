@@ -69,14 +69,14 @@ jobs:
         run: npm run type-check
       - name: Unit tests
         run: npm test
-      # Advisory scan — BLOQUEANTE, com UMA exceção estreita e temporária (R-03,
-      # decisão do dono 04/10/2026; docs/R03-AUDIT-EXCEPTION.md). O portão reprova:
-      # qualquer CRITICAL, qualquer advisory HIGH novo, e qualquer deriva da cadeia
-      # registrada de `braces` (GHSA-vfj7-8cjw-p6xm). A vulnerabilidade NÃO está
-      # corrigida; a exceção tem revisão obrigatória antes da seleção de RC.
+      # Advisory scan — BLOQUEANTE, com UMA exceção estreita e temporária (R-04,
+      # decisão do dono 25/10/2026, substituiu a R-03 de 04/10; docs/R03-AUDIT-EXCEPTION.md).
+      # O portão reprova: qualquer CRITICAL, qualquer advisory HIGH novo, e qualquer
+      # deriva da cadeia registrada de `zod` (GHSA-mrhx-c7xc-m3w5). A vulnerabilidade
+      # NÃO está corrigida; a exceção tem revisão obrigatória antes da seleção de RC.
       # `|| true` só no `npm audit --json` (que sai 1 quando há achado): quem decide
       # é o portão, e relatório ilegível/ausente falha fechado.
-      - name: npm audit (portão estreito R-03)
+      - name: npm audit (portão estreito R-04)
         run: |
           npm audit --json > npm-audit.json || true
           node scripts/release/audit-gate.mjs npm-audit.json

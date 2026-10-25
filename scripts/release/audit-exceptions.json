@@ -2,334 +2,246 @@
   "versao": 1,
   "status": "TEMPORARIA",
   "revisar_antes_do_rc": true,
-  "decisao": "dono, 2026-10-04: R03_DECISION=TEMPORARY_NARROW_CI_EXCEPTION (Tailwind v4 NÃO adotado para R-03; spike spike-tailwind-v4-20261004T113734Z = evidência)",
-  "criado_em": "2026-10-04",
-  "lockfile_sha256_na_criacao": "8e9b522771c06ba6415c025ca363cb5015f8c3dc221b31dd191ab014766dd38a",
+  "decisao": "dono, 2026-10-25: R-04 aprovada na conversa da fase PHANTOM-LIGHTHOUSE-V2 (\"Aprovo a R-04\") — exceção TEMPORÁRIA e estreita para o advisory zod; R-03 (braces) retirada porque o npm deixou de reportá-la (braces 3.0.3 continua instalado: NÃO é correção). Ver docs/R03-AUDIT-EXCEPTION.md.",
+  "criado_em": "2026-10-25",
+  "lockfile_sha256_na_criacao": "75f6bd2ba0f2336054707a94b917f50e87a05d6af38eaf1e3c3402f86b2e9af8",
+  "historico": "R-03 (braces GHSA-vfj7-8cjw-p6xm, 04/10–25/10): conteúdo congelado em src/lib/release/fixtures/audit-exceptions-r03-20261007.json",
   "excecoes": [
     {
-      "id": "R-03",
+      "id": "R-04",
       "advisory": {
-        "source": 1240992,
-        "name": "braces",
+        "source": 1243066,
+        "name": "zod",
         "severity": "high",
-        "range": "<=3.0.3",
-        "url": "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm"
+        "range": "<4.6.6",
+        "url": "https://github.com/advisories/GHSA-mrhx-c7xc-m3w5"
       },
       "corrigido": false,
-      "por_que": "braces <=3.0.3 (DoS por padrão aninhado; não há versão corrigida). Alcançado por tailwindcss@3 (build), eslint-config-next (lint) e @solana/wallet-adapter-react → @solana-mobile/* → react-native → metro/jest-haste-map → micromatch (dependência de produção, código de bundler/teste do React Native que não processa entrada de usuário no app web). Tailwind v4 removeria só 1 das 3 raízes (spike). Ver docs/R03-AUDIT-EXCEPTION.md.",
+      "por_que": "zod <4.6.6 (consumo de memória ao validar coleções grandes com restrição). A linha 3.x inteira está na faixa; correção só no 4.6.6+, major para quem depende de zod 3. Nenhum código do app (src/, scripts/) importa zod. Caminhos (npm ls zod): viem → abitype; wagmi → @wagmi/connectors → reown/walletconnect/coinbase/porto (navegador); @vercel/functions → @vercel/oidc → @vercel/cli-config (servidor, zod 4.1.11); eslint-config-next → eslint-plugin-react-hooks (só lint, fora da cadeia do audit); @anthropic-ai/sdk declara zod como peer OPCIONAL e só o usa em helpers/zod, que o app não importa. A cópia zod 4.4.3 sob @wagmi/connectors (via porto, ^4.1.5) pode subir para 4.6.7 sem major — pendente para a revisão antes do RC (se subir, a lista de nós desta cadeia muda). Avaliação de alcance, não prova: por isso TEMPORÁRIA, revista antes de cada RC; migrar para zod 4 é fase própria.",
       "cadeia": [
         {
-          "name": "@jest/environment",
+          "name": "@coinbase/cdp-sdk",
           "severity": "high",
           "isDirect": false,
           "nodes": [
-            "node_modules/@jest/environment"
+            "node_modules/@coinbase/cdp-sdk"
           ],
           "via": [
-            "@jest/fake-timers"
+            "abitype",
+            "zod"
           ]
         },
         {
-          "name": "@jest/fake-timers",
+          "name": "@reown/appkit",
           "severity": "high",
           "isDirect": false,
           "nodes": [
-            "node_modules/@jest/fake-timers"
+            "node_modules/@reown/appkit"
           ],
           "via": [
-            "jest-message-util"
+            "@reown/appkit-controllers",
+            "@reown/appkit-pay",
+            "@reown/appkit-scaffold-ui",
+            "@reown/appkit-ui",
+            "@reown/appkit-utils",
+            "@reown/appkit-wallet",
+            "@walletconnect/universal-provider"
           ]
         },
         {
-          "name": "@jest/transform",
+          "name": "@reown/appkit-controllers",
           "severity": "high",
           "isDirect": false,
           "nodes": [
-            "node_modules/@jest/transform"
+            "node_modules/@reown/appkit-controllers"
           ],
           "via": [
-            "babel-plugin-istanbul",
-            "jest-haste-map",
-            "micromatch"
+            "@reown/appkit-wallet",
+            "@walletconnect/universal-provider"
           ]
         },
         {
-          "name": "@next/eslint-plugin-next",
+          "name": "@reown/appkit-pay",
           "severity": "high",
           "isDirect": false,
           "nodes": [
-            "node_modules/@next/eslint-plugin-next"
+            "node_modules/@reown/appkit-pay"
           ],
           "via": [
-            "fast-glob"
+            "@reown/appkit-controllers",
+            "@reown/appkit-ui",
+            "@reown/appkit-utils"
           ]
         },
         {
-          "name": "@react-native/community-cli-plugin",
+          "name": "@reown/appkit-scaffold-ui",
           "severity": "high",
           "isDirect": false,
           "nodes": [
-            "node_modules/@react-native/community-cli-plugin",
-            "node_modules/@solana-mobile/mobile-wallet-adapter-protocol-web3js/node_modules/@react-native/community-cli-plugin",
-            "node_modules/@solana-mobile/wallet-standard-mobile/node_modules/@react-native/community-cli-plugin"
+            "node_modules/@reown/appkit-scaffold-ui"
           ],
           "via": [
-            "metro",
-            "metro-config"
+            "@reown/appkit-controllers",
+            "@reown/appkit-ui",
+            "@reown/appkit-utils",
+            "@reown/appkit-wallet"
           ]
         },
         {
-          "name": "@react-native/virtualized-lists",
+          "name": "@reown/appkit-ui",
           "severity": "high",
           "isDirect": false,
           "nodes": [
-            "node_modules/@solana/wallet-adapter-react/node_modules/@react-native/virtualized-lists"
+            "node_modules/@reown/appkit-ui"
           ],
           "via": [
-            "react-native"
+            "@reown/appkit-controllers",
+            "@reown/appkit-wallet"
           ]
         },
         {
-          "name": "@solana-mobile/mobile-wallet-adapter-protocol",
+          "name": "@reown/appkit-utils",
           "severity": "high",
           "isDirect": false,
           "nodes": [
-            "node_modules/@solana-mobile/mobile-wallet-adapter-protocol-web3js/node_modules/@solana-mobile/mobile-wallet-adapter-protocol",
-            "node_modules/@solana-mobile/wallet-standard-mobile/node_modules/@solana-mobile/mobile-wallet-adapter-protocol",
-            "node_modules/@solana/wallet-adapter-react/node_modules/@solana-mobile/mobile-wallet-adapter-protocol"
+            "node_modules/@reown/appkit-utils"
           ],
           "via": [
-            "react-native"
+            "@reown/appkit-controllers",
+            "@reown/appkit-wallet",
+            "@walletconnect/universal-provider"
           ]
         },
         {
-          "name": "@solana-mobile/mobile-wallet-adapter-protocol-web3js",
+          "name": "@reown/appkit-wallet",
           "severity": "high",
           "isDirect": false,
           "nodes": [
-            "node_modules/@solana-mobile/mobile-wallet-adapter-protocol-web3js"
+            "node_modules/@reown/appkit-wallet"
           ],
           "via": [
-            "@solana-mobile/mobile-wallet-adapter-protocol",
-            "@solana/web3.js"
+            "zod"
           ]
         },
         {
-          "name": "@solana-mobile/wallet-adapter-mobile",
+          "name": "@vercel/cli-config",
           "severity": "high",
           "isDirect": false,
           "nodes": [
-            "node_modules/@solana/wallet-adapter-react/node_modules/@solana-mobile/wallet-adapter-mobile"
+            "node_modules/@vercel/cli-config"
           ],
           "via": [
-            "@solana-mobile/mobile-wallet-adapter-protocol",
-            "@solana-mobile/mobile-wallet-adapter-protocol-web3js",
-            "@solana-mobile/wallet-standard-mobile",
-            "@solana/wallet-adapter-base",
-            "@solana/web3.js",
-            "react-native"
+            "zod"
           ]
         },
         {
-          "name": "@solana-mobile/wallet-standard-mobile",
-          "severity": "high",
-          "isDirect": false,
-          "nodes": [
-            "node_modules/@solana-mobile/wallet-standard-mobile"
-          ],
-          "via": [
-            "@solana-mobile/mobile-wallet-adapter-protocol"
-          ]
-        },
-        {
-          "name": "babel-jest",
-          "severity": "high",
-          "isDirect": false,
-          "nodes": [
-            "node_modules/babel-jest"
-          ],
-          "via": [
-            "@jest/transform",
-            "babel-plugin-istanbul"
-          ]
-        },
-        {
-          "name": "braces",
-          "severity": "high",
-          "isDirect": false,
-          "nodes": [
-            "node_modules/braces"
-          ],
-          "via": [
-            "advisory:1240992"
-          ]
-        },
-        {
-          "name": "chokidar",
-          "severity": "high",
-          "isDirect": false,
-          "nodes": [
-            "node_modules/chokidar"
-          ],
-          "via": [
-            "braces"
-          ]
-        },
-        {
-          "name": "eslint-config-next",
+          "name": "@vercel/functions",
           "severity": "high",
           "isDirect": true,
           "nodes": [
-            "node_modules/eslint-config-next"
+            "node_modules/@vercel/functions"
           ],
           "via": [
-            "@next/eslint-plugin-next"
+            "@vercel/oidc"
           ]
         },
         {
-          "name": "fast-glob",
+          "name": "@vercel/oidc",
           "severity": "high",
           "isDirect": false,
           "nodes": [
-            "node_modules/@next/eslint-plugin-next/node_modules/fast-glob",
-            "node_modules/fast-glob"
+            "node_modules/@vercel/oidc"
           ],
           "via": [
-            "micromatch"
+            "@vercel/cli-config"
           ]
         },
         {
-          "name": "jest-environment-node",
+          "name": "@wagmi/connectors",
           "severity": "high",
           "isDirect": false,
           "nodes": [
-            "node_modules/jest-environment-node"
+            "node_modules/@wagmi/connectors"
           ],
           "via": [
-            "@jest/environment",
-            "@jest/fake-timers"
+            "@gemini-wallet/core",
+            "@metamask/sdk",
+            "@walletconnect/ethereum-provider"
           ]
         },
         {
-          "name": "jest-haste-map",
+          "name": "@walletconnect/ethereum-provider",
           "severity": "high",
           "isDirect": false,
           "nodes": [
-            "node_modules/jest-haste-map"
+            "node_modules/@walletconnect/ethereum-provider"
           ],
           "via": [
-            "micromatch"
+            "@reown/appkit",
+            "@walletconnect/sign-client",
+            "@walletconnect/universal-provider",
+            "@walletconnect/utils"
           ]
         },
         {
-          "name": "jest-message-util",
+          "name": "@walletconnect/utils",
           "severity": "high",
           "isDirect": false,
           "nodes": [
-            "node_modules/jest-message-util"
+            "node_modules/@reown/appkit-controllers/node_modules/@walletconnect/utils",
+            "node_modules/@reown/appkit-utils/node_modules/@walletconnect/utils",
+            "node_modules/@reown/appkit/node_modules/@walletconnect/utils",
+            "node_modules/@walletconnect/utils"
           ],
           "via": [
-            "micromatch"
+            "query-string",
+            "viem"
           ]
         },
         {
-          "name": "metro",
+          "name": "abitype",
           "severity": "high",
           "isDirect": false,
           "nodes": [
-            "node_modules/@solana-mobile/mobile-wallet-adapter-protocol-web3js/node_modules/metro",
-            "node_modules/@solana-mobile/wallet-standard-mobile/node_modules/metro",
-            "node_modules/metro"
+            "node_modules/@coinbase/cdp-sdk/node_modules/abitype",
+            "node_modules/@reown/appkit-controllers/node_modules/abitype",
+            "node_modules/@reown/appkit-utils/node_modules/abitype",
+            "node_modules/@reown/appkit/node_modules/abitype",
+            "node_modules/@walletconnect/utils/node_modules/abitype"
           ],
           "via": [
-            "metro-config",
-            "metro-file-map",
-            "metro-transform-worker"
+            "zod"
           ]
         },
         {
-          "name": "metro-config",
+          "name": "viem",
           "severity": "high",
           "isDirect": false,
           "nodes": [
-            "node_modules/@solana-mobile/mobile-wallet-adapter-protocol-web3js/node_modules/metro-config",
-            "node_modules/@solana-mobile/wallet-standard-mobile/node_modules/metro-config",
-            "node_modules/metro-config"
+            "node_modules/@reown/appkit-controllers/node_modules/@walletconnect/utils/node_modules/viem",
+            "node_modules/@reown/appkit-utils/node_modules/@walletconnect/utils/node_modules/viem",
+            "node_modules/@reown/appkit/node_modules/@walletconnect/utils/node_modules/viem",
+            "node_modules/@walletconnect/utils/node_modules/viem"
           ],
           "via": [
-            "metro"
+            "abitype"
           ]
         },
         {
-          "name": "metro-file-map",
+          "name": "zod",
           "severity": "high",
           "isDirect": false,
           "nodes": [
-            "node_modules/@solana-mobile/mobile-wallet-adapter-protocol-web3js/node_modules/metro-file-map",
-            "node_modules/@solana-mobile/wallet-standard-mobile/node_modules/metro-file-map",
-            "node_modules/metro-file-map"
+            "node_modules/@reown/appkit-wallet/node_modules/zod",
+            "node_modules/@vercel/cli-config/node_modules/zod",
+            "node_modules/@wagmi/connectors/node_modules/zod",
+            "node_modules/zod"
           ],
           "via": [
-            "micromatch"
-          ]
-        },
-        {
-          "name": "metro-transform-worker",
-          "severity": "high",
-          "isDirect": false,
-          "nodes": [
-            "node_modules/@solana-mobile/mobile-wallet-adapter-protocol-web3js/node_modules/metro-transform-worker",
-            "node_modules/@solana-mobile/wallet-standard-mobile/node_modules/metro-transform-worker",
-            "node_modules/metro-transform-worker"
-          ],
-          "via": [
-            "metro"
-          ]
-        },
-        {
-          "name": "micromatch",
-          "severity": "high",
-          "isDirect": false,
-          "nodes": [
-            "node_modules/micromatch"
-          ],
-          "via": [
-            "braces"
-          ]
-        },
-        {
-          "name": "react-native",
-          "severity": "high",
-          "isDirect": false,
-          "nodes": [
-            "node_modules/@solana-mobile/mobile-wallet-adapter-protocol-web3js/node_modules/react-native",
-            "node_modules/@solana-mobile/wallet-standard-mobile/node_modules/react-native",
-            "node_modules/@solana/wallet-adapter-react/node_modules/react-native"
-          ],
-          "via": [
-            "@react-native/community-cli-plugin",
-            "@react-native/virtualized-lists",
-            "babel-jest",
-            "jest-environment-node"
-          ]
-        },
-        {
-          "name": "tailwindcss",
-          "severity": "high",
-          "isDirect": true,
-          "nodes": [
-            "node_modules/tailwindcss"
-          ],
-          "via": [
-            "chokidar",
-            "fast-glob",
-            "micromatch"
+            "advisory:1243066"
           ]
         }
       ]
     }
-  ],
-  "revisado_em": "2026-10-07",
-  "lockfile_sha256_na_revisao": "8969d5501b2e52f46ef0a1c2e14fe0b4dcaad9979448683fe507094ee8334f17",
-  "revisao": "Supply Chain disposition: CRITICAL removido; advisory HIGH braces preservado como exceção temporária e non-runtime candidate, sujeito à auditoria independente."
+  ]
 }

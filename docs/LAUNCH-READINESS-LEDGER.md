@@ -1412,3 +1412,18 @@ do repo: `scratchpad/recert-17f7eb3-20261025T084623Z/` (sessão cloud efêmera),
   40083160256, 24/10) também está vermelho.
 - Conforme §5.2: SEM atestação PASS, sem retry-to-pass, sem reclassificar. `RELEASE_CANDIDATE=NONE`. Próximo passo
   depende de decisão do dono (dependências / revisão da exceção R-03); qualquer correção vira C1b com recert completa.
+
+**Decisões do dono (25/10, nesta conversa):** (1) "Corrigir dependências antes" do deploy; (2) "Aprovo a R-04". C1b
+(sobre `6258d7a`): `next` 16.3.8 → 16.4.3 (exato), `eslint-config-next` e `@next/bundle-analyzer` → `^16.4.3` — lockfile
+muda SÓ a família Next.js (13 entradas, todas 16.4.3; o campo `libc` que o npm 10.9 local apagava de 26 entradas de
+plataforma foi restaurado na ordem original — revisão independente do C1b, `wf_170f8f74-950`); `npm audit` depois:
+critical=0. Exceção do portão revista
+(`scripts/release/audit-exceptions.json`, `docs/R03-AUDIT-EXCEPTION.md`): R-03 (braces) RETIRADA porque o npm deixou de
+reportá-la (braces 3.0.3 segue instalado — não é correção; conteúdo congelado em
+`src/lib/release/fixtures/audit-exceptions-r03-20261007.json`); R-04 TEMPORÁRIA só para `zod` GHSA-mrhx-c7xc-m3w5
+(1243066, high, `<4.6.6`), cadeia exata de 17 pacotes, lock sha256 `75f6bd2ba0f2336054707a94b917f50e87a05d6af38eaf1e3c3402f86b2e9af8`. Portão com o lock novo: OK (aviso
+EXCECAO_EM_USO). Testes do portão: R-03 provada contra a exceção congelada; R-04 contra o `npm audit --json` real do lock
+(`fixtures/npm-audit-r04-20261025.json`), inclusive "o relatório do braces reprova contra a exceção viva" e "o next
+16.3.8 crítico reprovaria". Validação local: `tsc` limpo · suíte 342 arquivos / 5191 testes · lint 0 erros (144 avisos) · `next build` OK.
+Revisão independente do C1b (`wf_170f8f74-950`): sem defeito bloqueante; integridade das 13 entradas Next conferida no
+registro; 4 achados leves corrigidos (campo `libc`, caminhos do zod no texto da R-04, contagem de testes).

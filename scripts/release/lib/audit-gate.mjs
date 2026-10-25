@@ -1,6 +1,7 @@
 /**
  * PORTÃO ESTREITO DO `npm audit` — R-03 (decisão do dono, 04/10/2026:
- * R03_DECISION=TEMPORARY_NARROW_CI_EXCEPTION). Ver docs/R03-AUDIT-EXCEPTION.md.
+ * R03_DECISION=TEMPORARY_NARROW_CI_EXCEPTION), substituída pela R-04 (zod, decisão do dono 25/10/2026).
+ * Ver docs/R03-AUDIT-EXCEPTION.md.
  *
  * NÃO é "audit desligado". Regras, todas FALHA FECHADA:
  *   1. CRITICAL em qualquer pacote ou advisory → falha (a exceção nunca cobre critical);

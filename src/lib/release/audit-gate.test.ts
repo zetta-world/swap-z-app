@@ -7,12 +7,16 @@ import { avaliar, cadeiaAtual } from "../../../scripts/release/lib/audit-gate.mj
  * R-03 — exceção ESTREITA do `npm audit` (decisão do dono 04/10/2026). Fixture = `npm audit --json` real da
  * lane B (lock 8969d550…, 25 high, todos do advisory braces 1240992). Cada teste muda UMA coisa e o portão
  * tem de reprovar — exceto o relatório idêntico ao registrado.
+ *
+ * 25/10/2026: a R-03 foi RETIRADA (o npm deixou de reportar o advisory do braces) e substituída pela R-04 (zod).
+ * A lógica do portão continua provada contra a R-03 CONGELADA (`fixtures/audit-exceptions-r03-20261007.json`);
+ * a exceção VIVA é provada contra o `npm audit --json` real do lock que a criou (bloco R-04 abaixo).
  */
 const RAIZ = process.cwd();
 const base = () => JSON.parse(readFileSync(join(RAIZ, "src/lib/release/fixtures/npm-audit-r03-20261004.json"), "utf8"));
-const excecoes = JSON.parse(readFileSync(join(RAIZ, "scripts/release/audit-exceptions.json"), "utf8"));
+const excecoes = JSON.parse(readFileSync(join(RAIZ, "src/lib/release/fixtures/audit-exceptions-r03-20261007.json"), "utf8"));
 
-describe("portão R-03 do npm audit", () => {
+describe("portão R-03 do npm audit (exceção congelada)", () => {
   it("passa SÓ com a cadeia registrada, e avisa que não está corrigido", () => {
     const r = avaliar(base(), excecoes);
     expect(r.falhas).toEqual([]);
@@ -95,5 +99,49 @@ describe("portão R-03 do npm audit", () => {
     expect(bloco).toMatch(/node scripts\/release\/audit-gate\.mjs/);
     expect(bloco).not.toMatch(/continue-on-error/);
     expect(ci).not.toMatch(/--audit-level=(none|critical)|npm audit --audit-level[^\n]*\|\|\s*true/);
+  });
+});
+
+describe("portão R-04 do npm audit — a exceção VIVA (zod, decisão do dono 25/10/2026)", () => {
+  const viva = JSON.parse(readFileSync(join(RAIZ, "scripts/release/audit-exceptions.json"), "utf8"));
+  const real = () => JSON.parse(readFileSync(join(RAIZ, "src/lib/release/fixtures/npm-audit-r04-20261025.json"), "utf8"));
+
+  it("o audit real do lock que a criou passa, avisando que NÃO está corrigido", () => {
+    const r = avaliar(real(), viva);
+    expect(r.falhas).toEqual([]);
+    expect(r.avisos.join()).toMatch(/R-04.*NÃO corrigida.*antes da seleção de RC/);
+  });
+
+  it("é temporária, só o advisory do zod, cadeia idêntica, sem a R-03 e sem dizer que corrigiu", () => {
+    expect(viva).toMatchObject({ status: "TEMPORARIA", revisar_antes_do_rc: true });
+    expect(viva.decisao).toMatch(/^dono, 2026-10-25/);
+    expect(viva.excecoes).toHaveLength(1);
+    expect(viva.excecoes[0]).toMatchObject({ id: "R-04", corrigido: false });
+    expect(viva.excecoes[0].advisory).toEqual({ source: 1243066, name: "zod", severity: "high", range: "<4.6.6",
+      url: "https://github.com/advisories/GHSA-mrhx-c7xc-m3w5" });
+    expect(cadeiaAtual(real())).toEqual(viva.excecoes[0].cadeia);
+    expect(JSON.stringify(viva.excecoes)).not.toMatch(/1240992|braces/);
+  });
+
+  it("a R-03 não volta escondida: o relatório antigo do braces REPROVA contra a exceção viva", () => {
+    expect(avaliar(base(), viva).falhas.join()).toMatch(/NOVO_HIGH: advisory 1240992/);
+  });
+
+  it("critical (inclusive no zod) e high novo continuam reprovando", () => {
+    const a = real();
+    a.vulnerabilities.zod.severity = "critical";
+    a.metadata.vulnerabilities.critical = 1;
+    expect(avaliar(a, viva).falhas.join()).toMatch(/CRITICAL/);
+    const b = real();
+    b.vulnerabilities.viem.via.push({ source: 999998, name: "viem", severity: "high", range: "<3", url: "https://github.com/advisories/GHSA-novo2" });
+    expect(avaliar(b, viva).falhas.join()).toMatch(/NOVO_HIGH: advisory 999998/);
+  });
+
+  it("o próprio next que motivou a troca (16.3.8, crítico) reprovaria", () => {
+    const a = real();
+    a.vulnerabilities.next = { name: "next", severity: "critical", isDirect: true, nodes: ["node_modules/next"], range: "16.0.0 - 16.4.0",
+      via: [{ source: 1242816, name: "next", severity: "critical", range: ">=16.0.0 <=16.4.0", url: "https://github.com/advisories/GHSA-2464-fhr4-w9xw" }] };
+    a.metadata.vulnerabilities.critical = 1;
+    expect(avaliar(a, viva).ok).toBe(false);
   });
 });

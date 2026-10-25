@@ -1,0 +1,1174 @@
+{
+  "auditReportVersion": 2,
+  "vulnerabilities": {
+    "@coinbase/cdp-sdk": {
+      "name": "@coinbase/cdp-sdk",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        "abitype",
+        "zod"
+      ],
+      "effects": [],
+      "range": ">=1.0.0",
+      "nodes": [
+        "node_modules/@coinbase/cdp-sdk"
+      ],
+      "fixAvailable": true
+    },
+    "@gemini-wallet/core": {
+      "name": "@gemini-wallet/core",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "@metamask/rpc-errors"
+      ],
+      "effects": [
+        "@wagmi/connectors"
+      ],
+      "range": "*",
+      "nodes": [
+        "node_modules/@gemini-wallet/core"
+      ],
+      "fixAvailable": {
+        "name": "wagmi",
+        "version": "3.7.9",
+        "isSemVerMajor": true
+      }
+    },
+    "@metamask/rpc-errors": {
+      "name": "@metamask/rpc-errors",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "@metamask/utils"
+      ],
+      "effects": [
+        "@gemini-wallet/core"
+      ],
+      "range": ">=6.3.1",
+      "nodes": [
+        "node_modules/@metamask/eth-json-rpc-provider/node_modules/@metamask/rpc-errors",
+        "node_modules/@metamask/json-rpc-engine/node_modules/@metamask/rpc-errors",
+        "node_modules/@metamask/providers/node_modules/@metamask/rpc-errors",
+        "node_modules/@metamask/rpc-errors"
+      ],
+      "fixAvailable": {
+        "name": "wagmi",
+        "version": "3.7.9",
+        "isSemVerMajor": true
+      }
+    },
+    "@metamask/sdk": {
+      "name": "@metamask/sdk",
+      "severity": "moderate",
+      "isDirect": true,
+      "via": [
+        "@metamask/sdk-communication-layer",
+        "uuid"
+      ],
+      "effects": [
+        "@wagmi/connectors"
+      ],
+      "range": "*",
+      "nodes": [
+        "node_modules/@metamask/sdk",
+        "node_modules/@wagmi/connectors/node_modules/@metamask/sdk"
+      ],
+      "fixAvailable": {
+        "name": "wagmi",
+        "version": "3.7.9",
+        "isSemVerMajor": true
+      }
+    },
+    "@metamask/sdk-communication-layer": {
+      "name": "@metamask/sdk-communication-layer",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "uuid"
+      ],
+      "effects": [],
+      "range": "*",
+      "nodes": [
+        "node_modules/@metamask/sdk-communication-layer"
+      ],
+      "fixAvailable": true
+    },
+    "@metamask/utils": {
+      "name": "@metamask/utils",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "uuid"
+      ],
+      "effects": [
+        "@metamask/rpc-errors"
+      ],
+      "range": ">=8.4.0",
+      "nodes": [
+        "node_modules/@metamask/eth-json-rpc-provider/node_modules/@metamask/json-rpc-engine/node_modules/@metamask/utils",
+        "node_modules/@metamask/eth-json-rpc-provider/node_modules/@metamask/rpc-errors/node_modules/@metamask/utils",
+        "node_modules/@metamask/json-rpc-engine/node_modules/@metamask/rpc-errors/node_modules/@metamask/utils",
+        "node_modules/@metamask/json-rpc-engine/node_modules/@metamask/utils",
+        "node_modules/@metamask/json-rpc-middleware-stream/node_modules/@metamask/utils",
+        "node_modules/@metamask/providers/node_modules/@metamask/rpc-errors/node_modules/@metamask/utils",
+        "node_modules/@metamask/providers/node_modules/@metamask/utils",
+        "node_modules/@metamask/utils"
+      ],
+      "fixAvailable": {
+        "name": "wagmi",
+        "version": "3.7.9",
+        "isSemVerMajor": true
+      }
+    },
+    "@reown/appkit": {
+      "name": "@reown/appkit",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        "@reown/appkit-controllers",
+        "@reown/appkit-pay",
+        "@reown/appkit-scaffold-ui",
+        "@reown/appkit-ui",
+        "@reown/appkit-utils",
+        "@reown/appkit-wallet",
+        "@walletconnect/universal-provider"
+      ],
+      "effects": [
+        "@walletconnect/ethereum-provider"
+      ],
+      "range": "*",
+      "nodes": [
+        "node_modules/@reown/appkit"
+      ],
+      "fixAvailable": {
+        "name": "wagmi",
+        "version": "3.7.9",
+        "isSemVerMajor": true
+      }
+    },
+    "@reown/appkit-controllers": {
+      "name": "@reown/appkit-controllers",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        "@reown/appkit-wallet",
+        "@walletconnect/universal-provider"
+      ],
+      "effects": [
+        "@reown/appkit",
+        "@reown/appkit-scaffold-ui",
+        "@reown/appkit-utils"
+      ],
+      "range": "*",
+      "nodes": [
+        "node_modules/@reown/appkit-controllers"
+      ],
+      "fixAvailable": {
+        "name": "wagmi",
+        "version": "3.7.9",
+        "isSemVerMajor": true
+      }
+    },
+    "@reown/appkit-pay": {
+      "name": "@reown/appkit-pay",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        "@reown/appkit-controllers",
+        "@reown/appkit-ui",
+        "@reown/appkit-utils"
+      ],
+      "effects": [
+        "@reown/appkit"
+      ],
+      "range": "*",
+      "nodes": [
+        "node_modules/@reown/appkit-pay"
+      ],
+      "fixAvailable": {
+        "name": "wagmi",
+        "version": "3.7.9",
+        "isSemVerMajor": true
+      }
+    },
+    "@reown/appkit-scaffold-ui": {
+      "name": "@reown/appkit-scaffold-ui",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        "@reown/appkit-controllers",
+        "@reown/appkit-ui",
+        "@reown/appkit-utils",
+        "@reown/appkit-wallet"
+      ],
+      "effects": [],
+      "range": "*",
+      "nodes": [
+        "node_modules/@reown/appkit-scaffold-ui"
+      ],
+      "fixAvailable": true
+    },
+    "@reown/appkit-ui": {
+      "name": "@reown/appkit-ui",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        "@reown/appkit-controllers",
+        "@reown/appkit-wallet"
+      ],
+      "effects": [
+        "@reown/appkit",
+        "@reown/appkit-pay",
+        "@reown/appkit-scaffold-ui"
+      ],
+      "range": ">=1.7.1-449657bc8f95adcfd295a2e883c4bcd439045044.0",
+      "nodes": [
+        "node_modules/@reown/appkit-ui"
+      ],
+      "fixAvailable": {
+        "name": "wagmi",
+        "version": "3.7.9",
+        "isSemVerMajor": true
+      }
+    },
+    "@reown/appkit-utils": {
+      "name": "@reown/appkit-utils",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        "@reown/appkit-controllers",
+        "@reown/appkit-wallet",
+        "@walletconnect/universal-provider"
+      ],
+      "effects": [],
+      "range": "*",
+      "nodes": [
+        "node_modules/@reown/appkit-utils"
+      ],
+      "fixAvailable": true
+    },
+    "@reown/appkit-wallet": {
+      "name": "@reown/appkit-wallet",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        "zod"
+      ],
+      "effects": [
+        "@reown/appkit",
+        "@reown/appkit-controllers",
+        "@reown/appkit-scaffold-ui",
+        "@reown/appkit-ui",
+        "@reown/appkit-utils"
+      ],
+      "range": "*",
+      "nodes": [
+        "node_modules/@reown/appkit-wallet"
+      ],
+      "fixAvailable": {
+        "name": "wagmi",
+        "version": "3.7.9",
+        "isSemVerMajor": true
+      }
+    },
+    "@solana-mobile/mobile-wallet-adapter-protocol-web3js": {
+      "name": "@solana-mobile/mobile-wallet-adapter-protocol-web3js",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "@solana/web3.js"
+      ],
+      "effects": [],
+      "range": "*",
+      "nodes": [
+        "node_modules/@solana-mobile/mobile-wallet-adapter-protocol-web3js"
+      ],
+      "fixAvailable": true
+    },
+    "@solana-mobile/wallet-adapter-mobile": {
+      "name": "@solana-mobile/wallet-adapter-mobile",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "@solana-mobile/mobile-wallet-adapter-protocol-web3js",
+        "@solana/wallet-adapter-base",
+        "@solana/web3.js"
+      ],
+      "effects": [
+        "@solana/wallet-adapter-react"
+      ],
+      "range": "*",
+      "nodes": [
+        "node_modules/@solana/wallet-adapter-react/node_modules/@solana-mobile/wallet-adapter-mobile"
+      ],
+      "fixAvailable": false
+    },
+    "@solana/wallet-adapter-base": {
+      "name": "@solana/wallet-adapter-base",
+      "severity": "moderate",
+      "isDirect": true,
+      "via": [
+        "@solana/web3.js"
+      ],
+      "effects": [
+        "@solana/wallet-standard-wallet-adapter-react"
+      ],
+      "range": "*",
+      "nodes": [
+        "node_modules/@solana/wallet-adapter-base"
+      ],
+      "fixAvailable": false
+    },
+    "@solana/wallet-adapter-phantom": {
+      "name": "@solana/wallet-adapter-phantom",
+      "severity": "moderate",
+      "isDirect": true,
+      "via": [
+        "@solana/wallet-adapter-base",
+        "@solana/web3.js"
+      ],
+      "effects": [],
+      "range": "*",
+      "nodes": [
+        "node_modules/@solana/wallet-adapter-phantom"
+      ],
+      "fixAvailable": false
+    },
+    "@solana/wallet-adapter-react": {
+      "name": "@solana/wallet-adapter-react",
+      "severity": "moderate",
+      "isDirect": true,
+      "via": [
+        "@solana-mobile/wallet-adapter-mobile",
+        "@solana/wallet-adapter-base",
+        "@solana/wallet-standard-wallet-adapter-react",
+        "@solana/web3.js"
+      ],
+      "effects": [],
+      "range": "*",
+      "nodes": [
+        "node_modules/@solana/wallet-adapter-react"
+      ],
+      "fixAvailable": false
+    },
+    "@solana/wallet-adapter-solflare": {
+      "name": "@solana/wallet-adapter-solflare",
+      "severity": "moderate",
+      "isDirect": true,
+      "via": [
+        "@solana/wallet-adapter-base",
+        "@solana/web3.js",
+        "@solflare-wallet/sdk"
+      ],
+      "effects": [],
+      "range": "*",
+      "nodes": [
+        "node_modules/@solana/wallet-adapter-solflare"
+      ],
+      "fixAvailable": {
+        "name": "@solana/wallet-adapter-solflare",
+        "version": "0.6.3",
+        "isSemVerMajor": true
+      }
+    },
+    "@solana/wallet-standard-wallet-adapter-base": {
+      "name": "@solana/wallet-standard-wallet-adapter-base",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "@solana/wallet-adapter-base",
+        "@solana/web3.js"
+      ],
+      "effects": [],
+      "range": "*",
+      "nodes": [
+        "node_modules/@solana/wallet-standard-wallet-adapter-base"
+      ],
+      "fixAvailable": true
+    },
+    "@solana/wallet-standard-wallet-adapter-react": {
+      "name": "@solana/wallet-standard-wallet-adapter-react",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "@solana/wallet-adapter-base",
+        "@solana/wallet-standard-wallet-adapter-base"
+      ],
+      "effects": [],
+      "range": "*",
+      "nodes": [
+        "node_modules/@solana/wallet-standard-wallet-adapter-react"
+      ],
+      "fixAvailable": true
+    },
+    "@solana/web3.js": {
+      "name": "@solana/web3.js",
+      "severity": "moderate",
+      "isDirect": true,
+      "via": [
+        "jayson"
+      ],
+      "effects": [
+        "@solana-mobile/mobile-wallet-adapter-protocol-web3js",
+        "@solana-mobile/wallet-adapter-mobile",
+        "@solana/wallet-adapter-base",
+        "@solana/wallet-adapter-phantom",
+        "@solana/wallet-adapter-react",
+        "@solana/wallet-adapter-solflare",
+        "@solana/wallet-standard-wallet-adapter-base"
+      ],
+      "range": "<=0.0.0-pr-29130 || 0.0.4 - 1.99.0",
+      "nodes": [
+        "node_modules/@solana/web3.js"
+      ],
+      "fixAvailable": false
+    },
+    "@solflare-wallet/sdk": {
+      "name": "@solflare-wallet/sdk",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "uuid"
+      ],
+      "effects": [
+        "@solana/wallet-adapter-solflare"
+      ],
+      "range": "*",
+      "nodes": [
+        "node_modules/@solflare-wallet/sdk"
+      ],
+      "fixAvailable": {
+        "name": "@solana/wallet-adapter-solflare",
+        "version": "0.6.3",
+        "isSemVerMajor": true
+      }
+    },
+    "@vercel/cli-config": {
+      "name": "@vercel/cli-config",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        "zod"
+      ],
+      "effects": [
+        "@vercel/oidc"
+      ],
+      "range": "*",
+      "nodes": [
+        "node_modules/@vercel/cli-config"
+      ],
+      "fixAvailable": {
+        "name": "@vercel/functions",
+        "version": "3.6.1",
+        "isSemVerMajor": true
+      }
+    },
+    "@vercel/functions": {
+      "name": "@vercel/functions",
+      "severity": "high",
+      "isDirect": true,
+      "via": [
+        "@vercel/oidc"
+      ],
+      "effects": [],
+      "range": ">=3.6.2",
+      "nodes": [
+        "node_modules/@vercel/functions"
+      ],
+      "fixAvailable": {
+        "name": "@vercel/functions",
+        "version": "3.6.1",
+        "isSemVerMajor": true
+      }
+    },
+    "@vercel/oidc": {
+      "name": "@vercel/oidc",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        "@vercel/cli-config"
+      ],
+      "effects": [
+        "@vercel/functions"
+      ],
+      "range": ">=3.6.0",
+      "nodes": [
+        "node_modules/@vercel/oidc"
+      ],
+      "fixAvailable": {
+        "name": "@vercel/functions",
+        "version": "3.6.1",
+        "isSemVerMajor": true
+      }
+    },
+    "@vitest/mocker": {
+      "name": "@vitest/mocker",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        {
+          "source": 1193684,
+          "name": "@vitest/mocker",
+          "dependency": "@vitest/mocker",
+          "title": "Vitest: Path Traversal / Arbitrary File Read via @vitest/mocker Redirect Mock",
+          "url": "https://github.com/advisories/GHSA-82fw-gwwq-j7x9",
+          "severity": "moderate",
+          "cwe": [
+            "CWE-22"
+          ],
+          "cvss": {
+            "score": 5.9,
+            "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N"
+          },
+          "range": ">=2.1.0 <4.1.11"
+        },
+        {
+          "source": 1242767,
+          "name": "@vitest/mocker",
+          "dependency": "@vitest/mocker",
+          "title": "Vitest: Code injection via unauthenticated manual mock registration",
+          "url": "https://github.com/advisories/GHSA-qxg6-89mg-rqv8",
+          "severity": "moderate",
+          "cwe": [
+            "CWE-94",
+            "CWE-116",
+            "CWE-306"
+          ],
+          "cvss": {
+            "score": 4.7,
+            "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:C/C:L/I:L/A:N"
+          },
+          "range": ">=2.1.0-beta.7 <4.1.12"
+        }
+      ],
+      "effects": [
+        "vitest"
+      ],
+      "range": "<=4.1.11",
+      "nodes": [
+        "node_modules/@vitest/mocker"
+      ],
+      "fixAvailable": true
+    },
+    "@wagmi/connectors": {
+      "name": "@wagmi/connectors",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        "@gemini-wallet/core",
+        "@metamask/sdk",
+        "@walletconnect/ethereum-provider"
+      ],
+      "effects": [
+        "wagmi"
+      ],
+      "range": "<=0.0.0-wc-links-20240926225814 || 4.0.0-alpha.0 - 4.0.0-rc.3 || >=4.0.1",
+      "nodes": [
+        "node_modules/@wagmi/connectors"
+      ],
+      "fixAvailable": {
+        "name": "wagmi",
+        "version": "3.7.9",
+        "isSemVerMajor": true
+      }
+    },
+    "@walletconnect/core": {
+      "name": "@walletconnect/core",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "@walletconnect/utils"
+      ],
+      "effects": [],
+      "range": "1.2.3-1.3.0-rc.0.0 - 2.17.5-rc-1 || 2.18.0-canary-tvf-1 - 2.21.8",
+      "nodes": [
+        "node_modules/@reown/appkit-controllers/node_modules/@walletconnect/core",
+        "node_modules/@reown/appkit-utils/node_modules/@walletconnect/core",
+        "node_modules/@reown/appkit/node_modules/@walletconnect/core",
+        "node_modules/@walletconnect/core"
+      ],
+      "fixAvailable": true
+    },
+    "@walletconnect/ethereum-provider": {
+      "name": "@walletconnect/ethereum-provider",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        "@reown/appkit",
+        "@walletconnect/sign-client",
+        "@walletconnect/universal-provider",
+        "@walletconnect/utils"
+      ],
+      "effects": [
+        "@wagmi/connectors"
+      ],
+      "range": "<=2.17.5-rc-1 || >=2.18.0-canary-ak-1",
+      "nodes": [
+        "node_modules/@walletconnect/ethereum-provider"
+      ],
+      "fixAvailable": {
+        "name": "wagmi",
+        "version": "3.7.9",
+        "isSemVerMajor": true
+      }
+    },
+    "@walletconnect/sign-client": {
+      "name": "@walletconnect/sign-client",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "@walletconnect/core",
+        "@walletconnect/utils"
+      ],
+      "effects": [
+        "@walletconnect/ethereum-provider"
+      ],
+      "range": "<=2.17.5-rc-1 || 2.18.0-canary-tvf-1 - 2.21.8",
+      "nodes": [
+        "node_modules/@reown/appkit-controllers/node_modules/@walletconnect/sign-client",
+        "node_modules/@reown/appkit-utils/node_modules/@walletconnect/sign-client",
+        "node_modules/@reown/appkit/node_modules/@walletconnect/sign-client",
+        "node_modules/@walletconnect/sign-client"
+      ],
+      "fixAvailable": {
+        "name": "wagmi",
+        "version": "3.7.9",
+        "isSemVerMajor": true
+      }
+    },
+    "@walletconnect/universal-provider": {
+      "name": "@walletconnect/universal-provider",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "@walletconnect/sign-client",
+        "@walletconnect/utils"
+      ],
+      "effects": [
+        "@reown/appkit",
+        "@reown/appkit-controllers",
+        "@reown/appkit-utils",
+        "@walletconnect/ethereum-provider"
+      ],
+      "range": "<=2.17.5-rc-1 || 2.18.0-canary-tvf-1 - 2.21.8",
+      "nodes": [
+        "node_modules/@reown/appkit-controllers/node_modules/@walletconnect/universal-provider",
+        "node_modules/@reown/appkit-utils/node_modules/@walletconnect/universal-provider",
+        "node_modules/@reown/appkit/node_modules/@walletconnect/universal-provider",
+        "node_modules/@walletconnect/universal-provider"
+      ],
+      "fixAvailable": {
+        "name": "wagmi",
+        "version": "3.7.9",
+        "isSemVerMajor": true
+      }
+    },
+    "@walletconnect/utils": {
+      "name": "@walletconnect/utils",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        "query-string",
+        "viem"
+      ],
+      "effects": [
+        "@walletconnect/core",
+        "@walletconnect/ethereum-provider",
+        "@walletconnect/sign-client",
+        "@walletconnect/universal-provider"
+      ],
+      "range": "1.2.3-1.3.0-rc.0.0 - 2.17.5-rc-1 || 2.18.0-canary-ell-1 - 2.21.9",
+      "nodes": [
+        "node_modules/@reown/appkit-controllers/node_modules/@walletconnect/utils",
+        "node_modules/@reown/appkit-utils/node_modules/@walletconnect/utils",
+        "node_modules/@reown/appkit/node_modules/@walletconnect/utils",
+        "node_modules/@walletconnect/utils"
+      ],
+      "fixAvailable": {
+        "name": "wagmi",
+        "version": "3.7.9",
+        "isSemVerMajor": true
+      }
+    },
+    "abitype": {
+      "name": "abitype",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        "zod"
+      ],
+      "effects": [
+        "@coinbase/cdp-sdk",
+        "viem"
+      ],
+      "range": "<=0.0.0-main-20230430000127 || 0.7.0-canary.20230307T162852 - 1.0.9",
+      "nodes": [
+        "node_modules/@coinbase/cdp-sdk/node_modules/abitype",
+        "node_modules/@reown/appkit-controllers/node_modules/abitype",
+        "node_modules/@reown/appkit-utils/node_modules/abitype",
+        "node_modules/@reown/appkit/node_modules/abitype",
+        "node_modules/@walletconnect/utils/node_modules/abitype"
+      ],
+      "fixAvailable": {
+        "name": "wagmi",
+        "version": "3.7.9",
+        "isSemVerMajor": true
+      }
+    },
+    "decode-uri-component": {
+      "name": "decode-uri-component",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        {
+          "source": 1147955,
+          "name": "decode-uri-component",
+          "dependency": "decode-uri-component",
+          "title": "decode-uri-component: Denial of service via exponential decoding of malformed percent-encoded input",
+          "url": "https://github.com/advisories/GHSA-vcc3-ghjq-m6fr",
+          "severity": "moderate",
+          "cwe": [
+            "CWE-400",
+            "CWE-405",
+            "CWE-407",
+            "CWE-1176"
+          ],
+          "cvss": {
+            "score": 0,
+            "vectorString": null
+          },
+          "range": "<=0.4.2"
+        }
+      ],
+      "effects": [
+        "query-string"
+      ],
+      "range": "<=0.4.2",
+      "nodes": [
+        "node_modules/decode-uri-component"
+      ],
+      "fixAvailable": {
+        "name": "wagmi",
+        "version": "3.7.9",
+        "isSemVerMajor": true
+      }
+    },
+    "hono": {
+      "name": "hono",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        {
+          "source": 1193729,
+          "name": "hono",
+          "dependency": "hono",
+          "title": "Hono: Incomplete fix for CVE-2026-39408: `toSSG()` still writes files outside the output directory",
+          "url": "https://github.com/advisories/GHSA-gqvv-2mrq-wpjv",
+          "severity": "moderate",
+          "cwe": [
+            "CWE-22"
+          ],
+          "cvss": {
+            "score": 6.5,
+            "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:H/A:N"
+          },
+          "range": "<4.13.5"
+        },
+        {
+          "source": 1193730,
+          "name": "hono",
+          "dependency": "hono",
+          "title": "Hono: Unbounded dot-notation nesting in `parseBody()` can cause memory exhaustion",
+          "url": "https://github.com/advisories/GHSA-g6gw-c38x-mqfc",
+          "severity": "moderate",
+          "cwe": [
+            "CWE-400"
+          ],
+          "cvss": {
+            "score": 5.3,
+            "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L"
+          },
+          "range": "<4.13.5"
+        },
+        {
+          "source": 1193731,
+          "name": "hono",
+          "dependency": "hono",
+          "title": "Hono: Query parser reads parameters after the URL fragment, causing cache-key and proxy interpretation differentials",
+          "url": "https://github.com/advisories/GHSA-crvj-82cr-hjcx",
+          "severity": "moderate",
+          "cwe": [
+            "CWE-444"
+          ],
+          "cvss": {
+            "score": 5.9,
+            "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:H/A:N"
+          },
+          "range": "<4.13.5"
+        },
+        {
+          "source": 1240640,
+          "name": "hono",
+          "dependency": "hono",
+          "title": "hono/jsx renders plain strings unescaped in boundary components, leading to XSS",
+          "url": "https://github.com/advisories/GHSA-hxh3-vqpv-xpqv",
+          "severity": "moderate",
+          "cwe": [
+            "CWE-79"
+          ],
+          "cvss": {
+            "score": 4.7,
+            "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:C/C:L/I:L/A:N"
+          },
+          "range": "<4.13.7"
+        },
+        {
+          "source": 1242595,
+          "name": "hono",
+          "dependency": "hono",
+          "title": "Hono: `serveStatic` decodes the request path a second time, leading to bypass of middleware on static paths",
+          "url": "https://github.com/advisories/GHSA-5r4p-p66f-jhc7",
+          "severity": "moderate",
+          "cwe": [
+            "CWE-174"
+          ],
+          "cvss": {
+            "score": 5.3,
+            "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
+          },
+          "range": ">=4.12.4 <4.13.11"
+        }
+      ],
+      "effects": [],
+      "range": "<=4.13.10",
+      "nodes": [
+        "node_modules/hono"
+      ],
+      "fixAvailable": true
+    },
+    "jayson": {
+      "name": "jayson",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "stream-json",
+        "uuid"
+      ],
+      "effects": [
+        "@solana/web3.js"
+      ],
+      "range": "2.0.6 - 4.3.0",
+      "nodes": [
+        "node_modules/jayson"
+      ],
+      "fixAvailable": false
+    },
+    "postcss-selector-parser": {
+      "name": "postcss-selector-parser",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        {
+          "source": 1153170,
+          "name": "postcss-selector-parser",
+          "dependency": "postcss-selector-parser",
+          "title": "postcss-selector-parser allows denial of service through uncontrolled AST recursion",
+          "url": "https://github.com/advisories/GHSA-w9m9-85wc-3x92",
+          "severity": "low",
+          "cwe": [
+            "CWE-404"
+          ],
+          "cvss": {
+            "score": 4.3,
+            "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:N/A:L"
+          },
+          "range": ">=6.1.0 <6.1.3"
+        },
+        {
+          "source": 1241232,
+          "name": "postcss-selector-parser",
+          "dependency": "postcss-selector-parser",
+          "title": "PostCSS: Quadratic complexity in flat selector parsing allows CPU exhaustion",
+          "url": "https://github.com/advisories/GHSA-rj75-hqrm-r3gf",
+          "severity": "moderate",
+          "cwe": [
+            "CWE-400",
+            "CWE-407"
+          ],
+          "cvss": {
+            "score": 5.9,
+            "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H"
+          },
+          "range": "<7.1.6"
+        }
+      ],
+      "effects": [],
+      "range": "<=7.1.5",
+      "nodes": [
+        "node_modules/postcss-selector-parser"
+      ],
+      "fixAvailable": true
+    },
+    "query-string": {
+      "name": "query-string",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "decode-uri-component"
+      ],
+      "effects": [
+        "@walletconnect/utils"
+      ],
+      "range": "5.0.0 - 9.4.1",
+      "nodes": [
+        "node_modules/query-string"
+      ],
+      "fixAvailable": {
+        "name": "wagmi",
+        "version": "3.7.9",
+        "isSemVerMajor": true
+      }
+    },
+    "stream-json": {
+      "name": "stream-json",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        {
+          "source": 1164823,
+          "name": "stream-json",
+          "dependency": "stream-json",
+          "title": "stream-json: pick/ignore/filter/replace filters are O(depth²) on nested input — small crafted JSON blocks the event loop for seconds→minutes (DoS)",
+          "url": "https://github.com/advisories/GHSA-528h-pc64-c93x",
+          "severity": "moderate",
+          "cwe": [
+            "CWE-407"
+          ],
+          "cvss": {
+            "score": 6.2,
+            "vectorString": "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+          },
+          "range": "<=3.4.0"
+        },
+        {
+          "source": 1241262,
+          "name": "stream-json",
+          "dependency": "stream-json",
+          "title": "stream-json: JSONC parser and verifier re-scan the whole accumulated comment on every input chunk",
+          "url": "https://github.com/advisories/GHSA-hqr4-qq8f-hg3x",
+          "severity": "moderate",
+          "cwe": [
+            "CWE-407"
+          ],
+          "cvss": {
+            "score": 6.2,
+            "vectorString": "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+          },
+          "range": "<=3.5.0"
+        },
+        {
+          "source": 1241263,
+          "name": "stream-json",
+          "dependency": "stream-json",
+          "title": "stream-json has a prototype pollution issue: Assembler writes this.current[this.key] on plain objects",
+          "url": "https://github.com/advisories/GHSA-mjw6-4jj6-33hc",
+          "severity": "moderate",
+          "cwe": [
+            "CWE-1321"
+          ],
+          "cvss": {
+            "score": 5.1,
+            "vectorString": "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:L"
+          },
+          "range": "<3.6.0"
+        }
+      ],
+      "effects": [
+        "jayson"
+      ],
+      "range": "<=3.5.0",
+      "nodes": [
+        "node_modules/stream-json"
+      ],
+      "fixAvailable": false
+    },
+    "uuid": {
+      "name": "uuid",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        {
+          "source": 1119441,
+          "name": "uuid",
+          "dependency": "uuid",
+          "title": "uuid: Missing buffer bounds check in v3/v5/v6 when buf is provided",
+          "url": "https://github.com/advisories/GHSA-w5hq-g745-h8pq",
+          "severity": "moderate",
+          "cwe": [
+            "CWE-787",
+            "CWE-1285"
+          ],
+          "cvss": {
+            "score": 7.5,
+            "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N"
+          },
+          "range": "<11.1.1"
+        }
+      ],
+      "effects": [
+        "@metamask/sdk",
+        "@metamask/sdk-communication-layer",
+        "@metamask/utils",
+        "@solflare-wallet/sdk",
+        "jayson"
+      ],
+      "range": "<11.1.1",
+      "nodes": [
+        "node_modules/@metamask/eth-json-rpc-provider/node_modules/uuid",
+        "node_modules/@metamask/json-rpc-engine/node_modules/uuid",
+        "node_modules/@metamask/json-rpc-middleware-stream/node_modules/uuid",
+        "node_modules/@metamask/providers/node_modules/uuid",
+        "node_modules/@metamask/utils/node_modules/uuid",
+        "node_modules/@solflare-wallet/sdk/node_modules/uuid",
+        "node_modules/uuid"
+      ],
+      "fixAvailable": {
+        "name": "wagmi",
+        "version": "3.7.9",
+        "isSemVerMajor": true
+      }
+    },
+    "viem": {
+      "name": "viem",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        "abitype"
+      ],
+      "effects": [
+        "@walletconnect/utils"
+      ],
+      "range": "<=0.0.0-wagmiv2-20230628182101 || 0.1.10 - 2.37.1",
+      "nodes": [
+        "node_modules/@reown/appkit-controllers/node_modules/@walletconnect/utils/node_modules/viem",
+        "node_modules/@reown/appkit-utils/node_modules/@walletconnect/utils/node_modules/viem",
+        "node_modules/@reown/appkit/node_modules/@walletconnect/utils/node_modules/viem",
+        "node_modules/@walletconnect/utils/node_modules/viem"
+      ],
+      "fixAvailable": {
+        "name": "wagmi",
+        "version": "3.7.9",
+        "isSemVerMajor": true
+      }
+    },
+    "vitest": {
+      "name": "vitest",
+      "severity": "moderate",
+      "isDirect": true,
+      "via": [
+        "@vitest/mocker",
+        {
+          "source": 1193683,
+          "name": "vitest",
+          "dependency": "vitest",
+          "title": "Vitest: Path Traversal / Arbitrary File Read via @vitest/mocker Redirect Mock",
+          "url": "https://github.com/advisories/GHSA-82fw-gwwq-j7x9",
+          "severity": "moderate",
+          "cwe": [
+            "CWE-22"
+          ],
+          "cvss": {
+            "score": 5.9,
+            "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N"
+          },
+          "range": ">=2.1.0 <4.1.11"
+        }
+      ],
+      "effects": [],
+      "range": "2.1.0-beta.1 - 4.1.10",
+      "nodes": [
+        "node_modules/vitest"
+      ],
+      "fixAvailable": true
+    },
+    "wagmi": {
+      "name": "wagmi",
+      "severity": "moderate",
+      "isDirect": true,
+      "via": [
+        "@wagmi/connectors"
+      ],
+      "effects": [],
+      "range": "<=0.0.0-wc-links-20240926225814 || 2.0.0-alpha.0 - 2.0.0-rc.3 || 2.0.1 - 3.5.0",
+      "nodes": [
+        "node_modules/wagmi"
+      ],
+      "fixAvailable": {
+        "name": "wagmi",
+        "version": "3.7.9",
+        "isSemVerMajor": true
+      }
+    },
+    "zod": {
+      "name": "zod",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        {
+          "source": 1243066,
+          "name": "zod",
+          "dependency": "zod",
+          "title": "Zod can exhaust memory while validating oversized constrained collections",
+          "url": "https://github.com/advisories/GHSA-mrhx-c7xc-m3w5",
+          "severity": "high",
+          "cwe": [
+            "CWE-770"
+          ],
+          "cvss": {
+            "score": 7.5,
+            "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+          },
+          "range": "<4.6.6"
+        }
+      ],
+      "effects": [
+        "@coinbase/cdp-sdk",
+        "@reown/appkit-wallet",
+        "@vercel/cli-config",
+        "abitype"
+      ],
+      "range": "<4.6.6",
+      "nodes": [
+        "node_modules/@reown/appkit-wallet/node_modules/zod",
+        "node_modules/@vercel/cli-config/node_modules/zod",
+        "node_modules/@wagmi/connectors/node_modules/zod",
+        "node_modules/zod"
+      ],
+      "fixAvailable": {
+        "name": "@vercel/functions",
+        "version": "3.6.1",
+        "isSemVerMajor": true
+      }
+    }
+  },
+  "metadata": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 28,
+      "high": 17,
+      "critical": 0,
+      "total": 45
+    },
+    "dependencies": {
+      "prod": 1014,
+      "dev": 359,
+      "optional": 94,
+      "peer": 326,
+      "peerOptional": 0,
+      "total": 1741
+    }
+  }
+}

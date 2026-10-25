@@ -1,6 +1,6 @@
 # PLANO — Phantom/Lighthouse v2: aceitar o formato REAL da Phantom (24/10/2026)
 
-Status: 🟡 AUDITADO (2 RODADAS) E CORRIGIDO, AGUARDANDO C1 + RECERT — plano escrito antes do código. Produção NÃO autorizada nesta etapa.
+Status: 🟡 RECERT(C1)=FAIL (dependências) — C1b EM ANDAMENTO — plano escrito antes do código. Produção NÃO autorizada nesta etapa.
 PHASE_BASE_SHA: `cc79fc7886c2918a3cba2a44960cc67727365bfe` (`main`, PR #449). Branch: `claude/swap-z-recovery-deploy-b7y2cw`.
 
 ## Incidente que continua
@@ -98,6 +98,20 @@ deixe passar transação maliciosa. Corrigidos:
 
 Não corrigido (registrado): teste de tela em DOM exige dependência nova (happy-dom/jsdom) — decisão do dono; o
 comportamento da Phantom com dois pedidos de assinatura simultâneos não foi verificado (a tela agora não os gera).
+
+### RECERT(C1 `17f7eb3`) = FAIL → C1b com dependências (decisão do dono, 25/10)
+
+A recert de C1 passou em tudo que é funcional e reprovou no portão `npm audit` por alertas NOVOS contra dependências
+que esta fase não tocou (ledger, entrada de 25/10). O dono escolheu "corrigir dependências antes" do deploy. Escopo do
+C1b (sobre `6258d7a`):
+
+16. `next` 16.3.8 → **16.4.3** (exato, como hoje), `eslint-config-next` e `@next/bundle-analyzer` → `^16.4.3`
+    (mesma linha). Corrige GHSA-2464-fhr4-w9xw e GHSA-673q-mjm6-r5xr (críticos) e GHSA-p3m5-59mp-jv5r (alto). Nada de
+    `npm audit fix` em massa: só esses três, e o lock medido depois.
+17. O que restar no `npm audit` (esperado: `zod` <4.6.6, transitivo, sem correção fora de major; e a cadeia da R-03
+    mudada) NÃO é decidido aqui: a exceção do portão é decisão do dono (`audit-exceptions.json`, R-03). Proponho o
+    texto exato da revisão e só aplico com o "sim" dele.
+18. Recert COMPLETA no SHA do C1b (inclui build, a suíte ×2 e o portão), C2 só de docs, e então o pedido de deploy.
 
 ## Riscos e limites declarados
 
