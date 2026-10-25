@@ -1486,3 +1486,12 @@ CI oficial no SHA: run 40207596026 success. Desvios: arneses SQL (sem SQL no del
 **RELEASE_CANDIDATE C1c (25/10/2026):** autorização escrita do dono nesta conversa — "Autorizo produção (Recomendado)" —
 para `CERTIFIED_FEATURE_SHA=cb8b9ac` (atestação `5749418`). Marcado em `docs/RELEASE-CHAIN.md` (seção C1c) por um commit
 só de docs. Deploy: CI verde no commit do RC → `main` por fast-forward → produção. Rollback `dpl_DTzQ9Xy56yZroT1N5XBR8WuW3cAJ`.
+
+## ADMIN-COMMAND-CENTER-2-20261025 — modernização corporativa do Admin (25/10/2026)
+CURRENT_DEVELOPMENT. PHASE_BASE_SHA=10ebd12721f7d20b83a366cdb87a9a0dc1a53f2e (tree f7c83c619acc6ae1c40c98d1779bae342670e3da,
+= `main` = produção `dpl_7KTQpQSh3BWYzrVJsb22TH5n7zdR`). Branch nova `claude/admin-command-center-2-20261025`.
+Pedido do dono (25/10): executar o plano R0–R5 do handoff `ZSWAP-ADMIN-COMMAND-CENTER-HANDOFF-2026-10-25.md` (íntegro em
+`docs/PLANO-ADMIN-COMMAND-CENTER-2-20261025.md`) numa missão contínua, com commits, testes e PR. Autorizado: leitura do
+estado real do GitHub, do Supabase (catálogo/agregados, só leitura) e da documentação; trabalho local; PR. NÃO autorizado:
+produção, migrations no banco hospedado, variáveis Vercel, desativar acesso admin existente, sistemas financeiros.
+Linha de base medida: 66 `src/app/admin/api/**/route.ts`, 57 `*Panel.tsx`, migrations até 0078.
