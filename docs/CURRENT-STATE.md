@@ -14,7 +14,8 @@
 
 ## Atualização C1c — blockhash do servidor (25/10/2026, tarde)
 
-Produção em `0430644` (código `31920d7`, Next 16.4.3). 1º swap real: o servidor ACEITOU a transação da Phantom e o nó
+**EM PRODUÇÃO desde 17:00 UTC: `main` `10ebd12`, código `cb8b9ac`, `dpl_7KTQpQSh3BWYzrVJsb22TH5n7zdR` (smoke PASS).**
+Antes, produção em `0430644` (código `31920d7`, Next 16.4.3). 1º swap real: o servidor ACEITOU a transação da Phantom e o nó
 recusou com `BlockhashNotFound` — o blockhash do `/build` da Jupiter vem de cache com ~35 s de vida (medido). Correção
 certificada: `CERTIFIED_FEATURE_SHA=cb8b9ac` (blockhash novo do RPC do servidor; cotação renovada com > 20 s), recert
 PASS e CI verde. **Pendente: autorização do dono para este SHA + deploy; e-mail do dono a review@phantom.com (a Phantom

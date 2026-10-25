@@ -1486,3 +1486,10 @@ CI oficial no SHA: run 40207596026 success. Desvios: arneses SQL (sem SQL no del
 **RELEASE_CANDIDATE C1c (25/10/2026):** autorização escrita do dono nesta conversa — "Autorizo produção (Recomendado)" —
 para `CERTIFIED_FEATURE_SHA=cb8b9ac` (atestação `5749418`). Marcado em `docs/RELEASE-CHAIN.md` (seção C1c) por um commit
 só de docs. Deploy: CI verde no commit do RC → `main` por fast-forward → produção. Rollback `dpl_DTzQ9Xy56yZroT1N5XBR8WuW3cAJ`.
+
+**PRODUÇÃO C1c (25/10/2026, autorizada pelo dono):** `main` `0430644` → `10ebd12` por fast-forward (CI 40213745711
+verde no commit do RC). Vercel `dpl_7KTQpQSh3BWYzrVJsb22TH5n7zdR` READY, código = `CERTIFIED_FEATURE_SHA` `cb8b9ac`.
+Smoke sem assinatura: cotação firme 17:00:37 → `lastValidBlockHeight` 439 363 051; altura confirmada 17:00:45 →
+439 362 938 (113 blocos restantes ⇒ ~53 s de vida a partir da cotação); log `origem: servidor` (`blocosAMais: -1` — o
+cache da Jupiter varia; o do servidor fica sempre perto do máximo); runtime errors nenhum. `PRODUCTION=10ebd12`.
+Pendente: swap real do dono; e-mail do dono a review@phantom.com.

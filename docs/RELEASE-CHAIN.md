@@ -466,3 +466,7 @@ migration no delta ✓; (5) nenhum `OPEN_BLOCKER` no escopo ✓; (6) gates de ex
 dono, 25/10, nesta conversa — "Autorizo produção (Recomendado)" para `cb8b9ac` ✓. Condição antes do merge: CI verde no
 SHA deste commit. Stop: build/deploy com erro, runtime errors novos, `/api/quote` Solana quebrada, log
 `[jupiter] {"tipo":"blockhash","origem":"jupiter"}` recorrente. Rollback: `dpl_DTzQ9Xy56yZroT1N5XBR8WuW3cAJ` (`0430644`).
+
+Resultado C1c (25/10): `main` → `10ebd12` (fast-forward), produção `dpl_7KTQpQSh3BWYzrVJsb22TH5n7zdR` READY; smoke
+só-cotação PASS (`/api/quote` firme 200, 100 bps, log `[jupiter] {"tipo":"blockhash","origem":"servidor"}`; validade
+medida ≈ 53 s a partir da cotação); runtime errors: nenhum. Rollback: `dpl_DTzQ9Xy56yZroT1N5XBR8WuW3cAJ`.
