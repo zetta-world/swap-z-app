@@ -1451,3 +1451,9 @@ Worktree limpo no SHA exato (`git status` vazio), Node 22.22.0 / npm 10.9.4, 25/
 por um commit só de docs, filho de `4110720`. Plano do deploy: CI verde no commit do RC → `main` por fast-forward →
 produção Vercel a partir do `main` → conferência do deploy e dos logs → swap pequeno do dono na Phantom. Rollback:
 `dpl_3YkUirQdfetu5cSCoUqZX2kYaAkR`.
+
+**PRODUÇÃO (25/10/2026, autorizada pelo dono):** `main` `cc79fc7` → `0430644` por fast-forward depois de CI verde no commit
+do RC (run 40185503840). Vercel `dpl_DTzQ9Xy56yZroT1N5XBR8WuW3cAJ` READY (target production, aliases
+`swap-z-app.vercel.app`), código = `CERTIFIED_FEATURE_SHA` `31920d7`. Smoke só-cotação: `/api/quote` Solana 200 (Jupiter,
+100 bps), home 200; runtime errors nenhum. `PRODUCTION=0430644`. Pendente: swap real do dono na Phantom (logs
+`[sol-tx]` / `[sol-tx-lighthouse]` dirão a forma aceita ou a regra recusada). Rollback: `dpl_3YkUirQdfetu5cSCoUqZX2kYaAkR`.

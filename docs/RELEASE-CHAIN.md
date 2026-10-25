@@ -447,3 +447,8 @@ Condição antes do merge: CI verde no SHA deste commit. Merge: `main` avança p
 Stop: build/deploy com erro, runtime errors novos, `/api/quote` Solana quebrada, recusa inesperada em
 `/api/solana/transmitir` (o `detalhe` diz a regra), regressão EVM/LI.FI. Rollback: `dpl_3YkUirQdfetu5cSCoUqZX2kYaAkR`
 (`cc79fc7`; ⚠️ volta o Next 16.3.8 com os alertas críticos).
+
+Resultado (25/10): `main` → `0430644` (fast-forward, `cc79fc7..0430644`), produção `dpl_DTzQ9Xy56yZroT1N5XBR8WuW3cAJ`
+READY, aliases `swap-z-app.vercel.app` no deploy novo; smoke só-cotação PASS (`/api/quote` Solana SOL→USDC 200, rota
+Jupiter, taxa 100 bps; home 200); runtime errors: nenhum nos 30 min seguintes. Pendente: primeiro swap real assinado
+pelo dono na Phantom. Rollback: `dpl_3YkUirQdfetu5cSCoUqZX2kYaAkR`.

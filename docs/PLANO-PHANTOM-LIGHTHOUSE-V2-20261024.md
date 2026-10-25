@@ -1,6 +1,6 @@
 # PLANO — Phantom/Lighthouse v2: aceitar o formato REAL da Phantom (24/10/2026)
 
-Status: 🟢 CERTIFICADO em C1b `31920d7` (RECERT PASS, CI verde) — aguardando autorização do dono para RELEASE_CANDIDATE e deploy — plano escrito antes do código. Produção NÃO autorizada nesta etapa.
+Status: 🟢 EM PRODUÇÃO desde 25/10 (`main` `0430644`, código certificado `31920d7`, `dpl_DTzQ9Xy56yZroT1N5XBR8WuW3cAJ`) — falta o primeiro swap real do dono — plano escrito antes do código. Produção NÃO autorizada nesta etapa.
 PHASE_BASE_SHA: `cc79fc7886c2918a3cba2a44960cc67727365bfe` (`main`, PR #449). Branch: `claude/swap-z-recovery-deploy-b7y2cw`.
 
 ## Incidente que continua
