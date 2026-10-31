@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { separarPorAtribuicao } from "@/lib/admin/atribuicao";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 
@@ -38,7 +38,7 @@ interface Troca {
 }
 
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("exec.mural.read");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "sem banco" }, { status: 503 });
 

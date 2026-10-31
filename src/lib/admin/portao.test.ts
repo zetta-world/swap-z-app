@@ -28,9 +28,14 @@ const mwCodigo = semComentarios(mw);
 // casasse com a prosa passaria com o código errado.
 const reqCodigo = semComentarios(readFileSync("src/lib/admin/require.ts", "utf8"));
 
-/** F-09: CHAMADA de `requireAdmin(` em código sem comentários — import ou menção não contam. */
+/**
+ * F-09: CHAMADA de `requireAdmin(` — ou do ponto único `autorizarAdmin(` (R2), que
+ * chama `requireAdmin` por dentro — em código sem comentários. Import ou menção
+ * não contam. A completude POR HANDLER (ADM-011) está em `autorizacao.test.ts`;
+ * esta varredura por arquivo continua valendo para páginas e layouts.
+ */
 function chamaRequireAdmin(codigo: string): boolean {
-  return /\brequireAdmin\s*\(/.test(semComentarios(codigo));
+  return /\b(?:requireAdmin|autorizarAdmin)\s*\(/.test(semComentarios(codigo));
 }
 
 describe("o middleware NÃO decide quem é admin", () => {

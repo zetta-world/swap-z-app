@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 /** Live autopilot operations for the admin panel: open positions (the bag the
  *  bot holds right now) + the most recent fired/rejected runs. */
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("trading.positions.read");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 

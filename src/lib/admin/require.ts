@@ -38,7 +38,10 @@ async function negar(kind: string, meta: Record<string, unknown>, severity: "low
  * comentário nenhum: o próximo a ler daqui vai procurar o defeito no lugar
  * errado — foi o que aconteceu hoje.
  */
-export async function requireAdmin(): Promise<{ wallet: string }> {
+/** Qual das três origens legadas admitiu (observação R5; não muda a decisão). */
+export type FonteLegada = "env" | "panel" | "tier";
+
+export async function requireAdmin(): Promise<{ wallet: string; fonte: FonteLegada }> {
   const session = await getSession();
   /**
    * ⚠️⚠️ ESTE 404 ERA MUDO, E FOI ELE QUE CUSTOU A INVESTIGAÇÃO DE 13/09.
@@ -64,7 +67,7 @@ export async function requireAdmin(): Promise<{ wallet: string }> {
 
   const wallet = session.sub;
 
-  if (isEnvAdmin(wallet)) return { wallet };
+  if (isEnvAdmin(wallet)) return { wallet, fonte: "env" };
 
   const db = getSupabaseAdmin();
   /**
@@ -81,7 +84,7 @@ export async function requireAdmin(): Promise<{ wallet: string }> {
     .select("wallet_address")
     .eq("wallet_address", wallet)
     .maybeSingle();
-  if (pa) return { wallet };
+  if (pa) return { wallet, fonte: "panel" };
 
   // Legacy fallback: tier_cache.source = 'admin' (pre-platform_admins grants).
   const { data, error: erroLegado } = await db
@@ -107,7 +110,7 @@ export async function requireAdmin(): Promise<{ wallet: string }> {
     // A signed-in wallet probing an admin surface — high-signal intrusion attempt.
     return negar("admin_access_denied", { wallet: `${wallet.slice(0, 10)}…` }, "high");
   }
-  return { wallet };
+  return { wallet, fonte: "tier" };
 }
 
 /** Returns true if the wallet is in the ADMIN_WALLETS env var. */

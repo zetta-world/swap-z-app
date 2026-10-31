@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { readLab, syncRegistry, lerLivro } from "@/lib/lab/store";
 import { FAMILIES, LAB_STRATEGIES } from "@/lib/lab/registry";
@@ -28,7 +28,7 @@ export const dynamic = "force-dynamic";
  */
 
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.registry.read");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "sem banco" }, { status: 503 });
 
@@ -98,7 +98,7 @@ export async function GET(): Promise<NextResponse> {
 }
 
 export async function POST(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.registry.sync");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "sem banco" }, { status: 503 });
   try {

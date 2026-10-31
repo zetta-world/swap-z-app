@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 /** The operations ledger for the admin OPERATIONS panel: every client action
  *  with wallet, type, pair, volume and realized P&L. */
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("finance.ledger.read");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 

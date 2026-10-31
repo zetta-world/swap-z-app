@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { logSecurity } from "@/lib/admin/track";
 import { comandoAuditado, avisoDeAuditoria, PORQUE_AUDITORIA_INDISPONIVEL } from "@/lib/admin/auditoria-duravel";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -12,7 +12,7 @@ const VALID_TIERS: Tier[] = ["free", "pro", "trader", "pilot"];
 
 /** GET /admin/api/tier?wallet=0x... — inspect tier for a wallet */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const { wallet: actor } = await requireAdmin();
+  const { wallet: actor } = await autorizarAdmin("users.tier.read");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 
@@ -36,7 +36,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
 /** POST /admin/api/tier — grant or revoke a tier */
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const { wallet: actor } = await requireAdmin();
+  const { wallet: actor } = await autorizarAdmin("users.tier.write");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 

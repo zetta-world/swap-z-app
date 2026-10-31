@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import {
@@ -38,7 +38,7 @@ const EVENTOS_DE_TRABALHO = [
 interface EventoRow { event_type: string; metadata: Record<string, unknown> | null; created_at: string }
 
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("agents.mailbox.read");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 
@@ -94,7 +94,7 @@ export async function GET(): Promise<NextResponse> {
 export async function POST(req: Request): Promise<NextResponse> {
   // `de: "dono"` é o PAPEL no protocolo do mural; quem escreveu de fato vai no
   // evento (`ator`) — com mais de um admin, "dono" sozinho não diz quem foi.
-  const { wallet: ator } = await requireAdmin();
+  const { wallet: ator } = await autorizarAdmin("agents.mailbox.write");
   const body = await req.json().catch(() => ({})) as Record<string, unknown>;
 
   const para = String(body.para ?? "");

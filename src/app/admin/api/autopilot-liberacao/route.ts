@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { comandoAuditado, avisoDeAuditoria, PORQUE_AUDITORIA_INDISPONIVEL } from "@/lib/admin/auditoria-duravel";
 import { broadcastAdminRefresh } from "@/lib/admin/realtime";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -24,7 +24,7 @@ export const dynamic = "force-dynamic";
  * estar no banco.
  */
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("trading.automation.read");
   // Leitura falha NÃO vira "nenhum piloto": a tela mostra que não sabe.
   const p = await lerPilotosConferido();
   return NextResponse.json({
@@ -68,7 +68,7 @@ async function verdesDoLaboratorio(): Promise<Array<{
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const { wallet: actor } = await requireAdmin();
+  const { wallet: actor } = await autorizarAdmin("trading.automation.write");
 
   const body = await req.json().catch(() => null) as
     { liberar?: unknown; motivo?: unknown; piloto?: unknown; remover?: unknown } | null;

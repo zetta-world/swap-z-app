@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import {
   reconcileWallets, planRepair, planRealizedRepair, repairWallets, lastRepair, realizedDrifts,
 } from "@/lib/paper/reconcile";
@@ -24,7 +24,7 @@ export const dynamic = "force-dynamic";
  * passaria a esconder exatamente o que foi construído para revelar.
  */
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("paper.repair.plan");
   const all = await reconcileWallets();
   return NextResponse.json({
     plan: planRepair(all),
@@ -60,7 +60,7 @@ export async function GET(): Promise<NextResponse> {
 }
 
 export async function POST(): Promise<NextResponse> {
-  const { wallet: ator } = await requireAdmin();
+  const { wallet: ator } = await autorizarAdmin("paper.repair.execute");
   // ⚠️ REESCREVE CAIXA E CONTADOR DAS MESAS: sem intenção gravada, não roda.
   type Reparo = Awaited<ReturnType<typeof repairWallets>>;
   const r = await comandoAuditado<Reparo>({

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { recordEvent } from "@/lib/admin/track";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchOrderbookDetalhado } from "@/lib/api/cex-orderbook";
@@ -48,7 +48,7 @@ interface LinhaVeredito extends RotaDescartada {
 }
 
 export async function GET(req: Request): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.discarded.read");
   const t0 = Date.now();
 
   const horas = Math.min(168, Math.max(1, Number(new URL(req.url).searchParams.get("horas") ?? 24)));

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { lerBatimentos, pingAiProviders, pingBanco } from "@/lib/admin/health";
 import { checkExternalDeps, summarizeDeps } from "@/lib/admin/deps";
 
@@ -13,7 +13,7 @@ type Ping = { name: string; ok: boolean; latencyMs: number | null; note?: string
 type EstadoCron = "ok" | "parado" | "nunca_visto" | "desconhecido";
 
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("ops.health.read");
   const [leitura, external, aiProviders, banco] = await Promise.all([
     lerBatimentos(),
     // CAMINHO DO DINHEIRO (29/07). Antes aqui só havia pings genéricos — um

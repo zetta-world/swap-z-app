@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { recordEvent } from "@/lib/admin/track";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { startRun, finishRun, failRun } from "@/lib/lab/store";
@@ -37,7 +37,7 @@ const HISTORICO_DIAS = Number(process.env.VRP_HISTORICO_DIAS ?? 900);
 
 
 export async function POST(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.study.variancia");
   const t0 = Date.now();
   const db = getSupabaseAdmin();
 

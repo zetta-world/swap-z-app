@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { measureLaunchGate } from "@/lib/admin/launch-gate";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +12,6 @@ export const dynamic = "force-dynamic";
  * esta rota não tenha nada a decidir: ela apenas confere e reporta.
  */
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("ops.launch_gate.read");
   return NextResponse.json(await measureLaunchGate());
 }

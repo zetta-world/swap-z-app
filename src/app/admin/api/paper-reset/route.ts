@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { planReset, resetLedgers, lastReset } from "@/lib/paper/reset";
 import { comandoAuditado, avisoDeAuditoria, PORQUE_AUDITORIA_INDISPONIVEL } from "@/lib/admin/auditoria-duravel";
 
@@ -21,7 +21,7 @@ export const dynamic = "force-dynamic";
  * chamando a função por outro caminho.
  */
 export async function GET(req: Request): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("paper.reset.plan");
   const sources = (new URL(req.url).searchParams.get("sources") ?? "")
     .split(",").map((s) => s.trim()).filter(Boolean);
   return NextResponse.json({
@@ -31,7 +31,7 @@ export async function GET(req: Request): Promise<NextResponse> {
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
-  const { wallet: ator } = await requireAdmin();
+  const { wallet: ator } = await autorizarAdmin("paper.reset.execute");
   let body: { sources?: unknown; reason?: unknown };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "bad_json" }, { status: 400 }); }
 

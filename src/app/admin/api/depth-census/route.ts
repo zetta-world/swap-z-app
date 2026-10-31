@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { fetchOrderbook } from "@/lib/api/cex-orderbook";
 import type { CexSpotSource } from "@/lib/api/cex-spot";
 import { censusSymbol, censusVerdict, type BookRead, type SymbolCensus } from "@/lib/zion/depth-census";
@@ -65,7 +65,7 @@ const VENUES: CexSpotSource[] = (["binance", "okx", "gateio", "bybit", "mexc", "
   .filter((v) => !EXCLUDE_VENUES.includes(v));
 
 export async function POST(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.census.depth");
   const t0 = Date.now();
 
   const falhou = async (motivo: string, detalhe?: string) => {

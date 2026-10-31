@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { planRecap, recapitalize, lastRecap } from "@/lib/paper/recapitalize";
 import { comandoAuditado, avisoDeAuditoria, PORQUE_AUDITORIA_INDISPONIVEL } from "@/lib/admin/auditoria-duravel";
 
@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
  * POST executa, exige MOTIVO escrito, e deixa marco.
  */
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("paper.recap.plan");
   return NextResponse.json({
     plan: await planRecap(),
     last: await lastRecap(),
@@ -27,7 +27,7 @@ export async function GET(): Promise<NextResponse> {
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
-  const { wallet: ator } = await requireAdmin();
+  const { wallet: ator } = await autorizarAdmin("paper.recap.execute");
   let body: { sources?: string[]; reason?: string };
   try { body = await req.json(); } catch { body = {}; }
 

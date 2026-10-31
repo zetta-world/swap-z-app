@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { recordEvent } from "@/lib/admin/track";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { startRun, finishRun, failRun } from "@/lib/lab/store";
@@ -79,7 +79,7 @@ function saida(q: LfQuote): number {
 }
 
 export async function POST(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.study.dexcex");
   const t0 = Date.now();
   const deadline = t0 + (maxDuration - 12) * 1000;
   const db = getSupabaseAdmin();

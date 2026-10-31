@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { recordEvent } from "@/lib/admin/track";
 import {
   fetchLivroGateio, impactoNoLivro, vereditoPorTamanho, leituraDaDerrapagem,
@@ -41,7 +41,7 @@ export const maxDuration = 60;
 const SIMBOLOS = ["BTC", "ETH", "SOL", "BNB", "AVAX", "LINK", "ARB", "OP", "ADA", "DOGE"];
 
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.slippage.read");
   const t0 = Date.now();
 
   // Livros e taxa em paralelo: são a mesma corretora e o mesmo instante.

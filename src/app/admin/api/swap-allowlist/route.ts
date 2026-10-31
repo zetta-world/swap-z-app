@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import { checkSwapTarget, checkSwapSpender, cadeiasVigiadas } from "@/lib/swap/trusted-targets";
@@ -64,7 +64,7 @@ interface Obs {
 }
 
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("security.swap_targets.read");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 
@@ -159,7 +159,7 @@ const BURNER = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
 const PROBE_CHAINS: ChainId[] = ["ethereum", "bsc", "polygon", "base", "arbitrum", "optimism", "avalanche"];
 
 export async function POST(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("security.swap_targets.probe");
   const zeroXKey = process.env.ZEROX_API_KEY;
   const lifiKey  = process.env.LIFI_API_KEY;
   const probed: string[] = [];

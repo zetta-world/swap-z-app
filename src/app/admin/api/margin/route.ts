@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { comandoAuditado, avisoDeAuditoria, PORQUE_AUDITORIA_INDISPONIVEL } from "@/lib/admin/auditoria-duravel";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { readInfraCosts, buildMargin, runwayMonths, INFRA_KEYS, type InfraKey } from "@/lib/admin/margin";
@@ -14,7 +14,7 @@ const TIER_SOL: Record<string, number> = { pro: 1.5, trader: 4, pilot: 30, free:
 
 /** GET — receita, custo e a subtração entre os dois. */
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("finance.margin.read");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 
@@ -63,7 +63,7 @@ export async function GET(): Promise<NextResponse> {
 
 /** POST — grava um custo mensal de infra (entrada manual). */
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const { wallet } = await requireAdmin();
+  const { wallet } = await autorizarAdmin("finance.margin.set");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 

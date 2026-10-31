@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { lerBatimentos } from "@/lib/admin/health";
 import { lerTodasAsPaginas } from "@/lib/supabase/paginar";
@@ -12,7 +12,7 @@ const CRON_STALE_MIN: Record<string, number> = { autopilot: 12, backtest: 75 };
 /** Consolidated top-line KPIs for the COMMAND overview — one screen pulling
  *  from every workspace. */
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("exec.summary.read");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ state: "unavailable", errorCode: "db_indisponivel", error: "db_unavailable" }, { status: 503 });
 

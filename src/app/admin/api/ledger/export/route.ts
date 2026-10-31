@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { comandoAuditado, PORQUE_AUDITORIA_INDISPONIVEL } from "@/lib/admin/auditoria-duravel";
 /**
@@ -32,7 +32,7 @@ type Leitura = { linhas: Record<string, unknown>[]; truncado: boolean };
  * export do early access).
  */
 export async function GET(): Promise<NextResponse> {
-  const { wallet: ator } = await requireAdmin();
+  const { wallet: ator } = await autorizarAdmin("finance.ledger.export");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 

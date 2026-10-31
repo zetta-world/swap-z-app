@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { broadcastAdminRefresh } from "@/lib/admin/realtime";
 import { logSecurity } from "@/lib/admin/track";
@@ -34,7 +34,7 @@ const VALID_KEYS: string[] = CHAVES_DE_INTERRUPTOR;
  * ou passa de 3 s → 503 `unavailable`, e nenhum mapa de estados é devolvido.
  */
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("security.killswitch.read");
   const leitura = await lerInterruptores(VALID_KEYS);
   if (!leitura.lido) {
     logSecurity("killswitch_painel_ilegivel", { errorCode: leitura.errorCode }, "med");
@@ -64,7 +64,7 @@ type Gravacao = { key: string; enabled: boolean; antes: string | null };
  *   · `idem` = chave de idempotência do clique (repetir não grava duas vezes).
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const { wallet: actor } = await requireAdmin();
+  const { wallet: actor } = await autorizarAdmin("security.killswitch.set");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 

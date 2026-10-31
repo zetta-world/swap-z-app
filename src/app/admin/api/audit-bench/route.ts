@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { runAudit } from "@/lib/admin/audit";
 import { recordEvent } from "@/lib/admin/track";
 
@@ -22,7 +22,7 @@ export const maxDuration = 60;
  * Só lê. Não escreve nada de negócio, não gasta token, não move fundo.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const { wallet } = await requireAdmin();
+  const { wallet } = await autorizarAdmin("security.bench.run");
 
   // A origem tem que ser a URL PÚBLICA: as checagens de rota precisam bater no
   // servidor de fora, como um atacante faria. Preferir o header da requisição

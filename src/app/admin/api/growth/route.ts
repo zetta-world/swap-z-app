@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { lerTodasPorChave } from "@/lib/supabase/paginar";
 import { montarGrowth } from "@/lib/admin/growth";
@@ -7,7 +7,7 @@ import { montarGrowth } from "@/lib/admin/growth";
 export const dynamic = "force-dynamic";
 
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("analytics.growth.read");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 

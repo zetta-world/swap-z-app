@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { recordEvent } from "@/lib/admin/track";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { startRun, finishRun, failRun } from "@/lib/lab/store";
@@ -42,7 +42,7 @@ const CAPITAL_ROTACAO_USD = 2_000;
 const CAPITAL_GRADE_USD   = 1_000;
 
 export async function POST(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.study.rotacao");
   const t0 = Date.now();
   const db = getSupabaseAdmin();
 

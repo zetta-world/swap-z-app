@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { recordEvent } from "@/lib/admin/track";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { PRO_PAIRS, type ProPair } from "@/lib/pro-pairs";
@@ -250,7 +250,7 @@ function ladoDo(par: ProPair, meta: { baseTokenSymbol: string } | null): PriceTo
 }
 
 export async function POST(req: Request) {
-  await requireAdmin();
+  await autorizarAdmin("lab.pools.measure");
   const t0 = Date.now();
 
   const body = await req.json().catch(() => ({})) as { pares?: string[] };

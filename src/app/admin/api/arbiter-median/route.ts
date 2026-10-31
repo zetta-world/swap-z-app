@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getMultiExchangeSpot, CEX_TRACKED_SYMBOLS, type CexSpotSource } from "@/lib/api/cex-spot";
 import { findArbs, dropOutliers, upperMiddle, trueMedian, EXCLUDE_VENUES } from "@/lib/zion/arbiter";
 import { recordEvent } from "@/lib/admin/track";
@@ -46,7 +46,7 @@ const OUTLIER_PCT = Number(process.env.ARB_OUTLIER_PCT ?? 2);
 const MIN_VENUES = Number(process.env.ARB_MIN_VENUES ?? 3);
 
 export async function POST(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.arbiter.median");
   const t0 = Date.now();
 
   const falhou = async (motivo: string, detalhe?: string) => {

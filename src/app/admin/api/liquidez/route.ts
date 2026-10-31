@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { recordEvent } from "@/lib/admin/track";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { startRun, finishRun, failRun } from "@/lib/lab/store";
@@ -119,7 +119,7 @@ function acharPiscina(pools: LlamaPool[], alvo: (typeof ALVOS)[number]): LlamaPo
 }
 
 export async function POST(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.study.liquidez");
   const t0 = Date.now();
   const db = getSupabaseAdmin();
 

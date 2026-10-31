@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { fetchTimedCandles } from "@/lib/api/market-indicators";
 import { backtestPlaybooks, mergeResults, WARMUP_BARS } from "@/lib/zion/playbook-backtest";
 import { PLAYBOOKS, PLAYBOOK_GAPS } from "@/lib/zion/playbooks";
@@ -56,7 +56,7 @@ const SYMBOLS = ["BTC", "ETH", "SOL", "BNB", "AVAX", "LINK", "ARB", "OP", "ADA",
 const BARS_1H = Number(process.env.PLAYBOOK_BT_BARS ?? 4400);
 
 export async function POST(req: Request): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.playbook.run");
   const t0 = Date.now();
 
   /**

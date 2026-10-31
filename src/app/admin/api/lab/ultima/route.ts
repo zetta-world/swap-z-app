@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 
@@ -30,7 +30,7 @@ export const dynamic = "force-dynamic";
  * aberta o dia inteiro isso repetiria para sempre.
  */
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.runs.last");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ ultima: {} });
 

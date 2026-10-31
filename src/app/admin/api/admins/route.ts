@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin, envAdminWallets } from "@/lib/admin/require";
+import { envAdminWallets } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { broadcastAdminRefresh } from "@/lib/admin/realtime";
 import { logSecurity } from "@/lib/admin/track";
@@ -17,7 +18,7 @@ export const dynamic = "force-dynamic";
  * (`comandoAuditado`: no intent row → no change), and every guard refusal too.
  */
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("identity.admins.list");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 
@@ -63,7 +64,7 @@ async function auditarNegacao(actor: string, target: string, codigo: string): Pr
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const { wallet: actor } = await requireAdmin();
+  const { wallet: actor } = await autorizarAdmin("identity.admins.write");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 

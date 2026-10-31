@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin, logAdminAction } from "@/lib/admin/require";
+import { logAdminAction } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { broadcastAdminRefresh } from "@/lib/admin/realtime";
 import { logSecurity } from "@/lib/admin/track";
 import { transicionar } from "@/lib/early-access/store";
@@ -43,7 +44,7 @@ const STATUS_DO_ERRO: Record<string, number> = {
 };
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const { wallet: actor } = await requireAdmin();
+  const { wallet: actor } = await autorizarAdmin("users.early_access.transition");
 
   const body = await req.json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "corpo_invalido" }, { status: 400 });

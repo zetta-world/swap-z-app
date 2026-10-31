@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import { deskFor } from "@/lib/zion/desks";
@@ -52,7 +52,7 @@ function summarize(b: Bucket) {
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.ragnarok.read");
   const rawDays = Number(req.nextUrl.searchParams.get("days") ?? "");
   const days = Number.isFinite(rawDays) && rawDays > 0 && rawDays <= 3650 ? rawDays : null;
   const since = days ? new Date(Date.now() - days * 86_400_000).toISOString() : null;

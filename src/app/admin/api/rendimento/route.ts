@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { recordEvent } from "@/lib/admin/track";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { startRun, finishRun, failRun } from "@/lib/lab/store";
@@ -245,7 +245,7 @@ interface LinhaEstrategia {
 }
 
 export async function POST(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.study.rendimento");
   const t0 = Date.now();
   // Margem de 12s para montar o resultado e gravar quatro rodadas depois.
   const deadline = t0 + (maxDuration - 12) * 1000;

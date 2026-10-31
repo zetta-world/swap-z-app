@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { agregarUsoDeIa, type AgregadoIa, type LinhaDeUsoIa } from "@/lib/admin/ai-cost";
 import { lerTodasAsPaginas, type LeituraPaginada } from "@/lib/supabase/paginar";
@@ -46,7 +46,7 @@ async function lerFonte<T>(montar: (de: number, ate: number) => Pagina<T>): Prom
  * correspondente (`ai`/`volume`/`revenue`) vai `null` quando a fonte caiu.
  */
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("finance.summary.read");
   const db = getSupabaseAdmin();
   if (!db) {
     return NextResponse.json({ state: "unavailable", estado: "indisponivel", errorCode: "db_indisponivel", error: "db_unavailable" }, { status: 503 });
