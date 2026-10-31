@@ -92,7 +92,9 @@ export async function GET(): Promise<NextResponse> {
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
-  await requireAdmin();
+  // `de: "dono"` é o PAPEL no protocolo do mural; quem escreveu de fato vai no
+  // evento (`ator`) — com mais de um admin, "dono" sozinho não diz quem foi.
+  const { wallet: ator } = await requireAdmin();
   const body = await req.json().catch(() => ({})) as Record<string, unknown>;
 
   const para = String(body.para ?? "");
@@ -113,6 +115,6 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
   // ⚠️ AGUARDADO: na Vercel a função congela depois da resposta e o insert se
   // perde. A trava `event-durability` pegou isto — a mesma classe do dia.
-  await recordEvent("ulfhednar_pergunta", { meta: { para, assunto } });
+  await recordEvent("ulfhednar_pergunta", { meta: { para, assunto, ator } });
   return NextResponse.json({ ok: true });
 }

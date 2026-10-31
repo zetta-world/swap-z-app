@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require";
 import { planRecap, recapitalize, lastRecap } from "@/lib/paper/recapitalize";
+import { comandoAuditado, avisoDeAuditoria, PORQUE_AUDITORIA_INDISPONIVEL } from "@/lib/admin/auditoria-duravel";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ export async function GET(): Promise<NextResponse> {
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
-  await requireAdmin();
+  const { wallet: ator } = await requireAdmin();
   let body: { sources?: string[]; reason?: string };
   try { body = await req.json(); } catch { body = {}; }
 
@@ -44,10 +45,21 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  try {
-    const entries = await recapitalize(sources, reason);
-    return NextResponse.json({ ok: true, entries, last: await lastRecap() });
-  } catch (e) {
-    return NextResponse.json({ error: String(e).slice(0, 300) }, { status: 500 });
+  // ⚠️ RESETA CAPITAL DAS MESAS: sem intenção gravada (quem/quais/por quê), não roda.
+  type Entradas = Awaited<ReturnType<typeof recapitalize>>;
+  const r = await comandoAuditado<Entradas>({
+    acao: "paper.recap", ator, alvo: sources.map(String).join(",").slice(0, 200),
+    dados: { sources: sources.map(String), reason: reason.slice(0, 500) },
+    executar: async () => ({ ok: true, valor: await recapitalize(sources, reason) }),
+  });
+  if (r.estado === "recusado" || r.estado === "repetido") {
+    return NextResponse.json({ error: "auditoria_indisponivel", porque: PORQUE_AUDITORIA_INDISPONIVEL }, { status: 503 });
   }
+  if (r.estado === "falhou") {
+    return NextResponse.json({
+      error: r.codigo, detalhe: r.detalhe, ...avisoDeAuditoria(r.auditoria),
+      porque: "a recapitalização falhou no meio — releia o plano (GET) antes de repetir",
+    }, { status: 500 });
+  }
+  return NextResponse.json({ ok: true, entries: r.valor, last: await lastRecap(), ...avisoDeAuditoria(r.auditoria) });
 }

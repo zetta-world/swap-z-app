@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin, logAdminAction } from "@/lib/admin/require";
+import { requireAdmin } from "@/lib/admin/require";
+import { comandoAuditado, avisoDeAuditoria, PORQUE_AUDITORIA_INDISPONIVEL } from "@/lib/admin/auditoria-duravel";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { readInfraCosts, buildMargin, runwayMonths, INFRA_KEYS, type InfraKey } from "@/lib/admin/margin";
 import { estimateCost } from "@/lib/admin/ai-cost";
@@ -76,10 +77,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "invalid_amount" }, { status: 400 });
   }
 
-  await db.from("admin_kv").upsert(
-    { key: body.key as InfraKey, value: String(usd), updated_at: new Date().toISOString() },
-    { onConflict: "key" },
-  );
-  await logAdminAction(wallet, `margin.set.${body.key}`, undefined, { usd });
-  return NextResponse.json({ ok: true, key: body.key, usd });
+  // ⚠️ O upsert não lança: `{ error }` é lido. Antes a rota dizia `ok` com a
+  // gravação recusada e a margem seguia calculada com o custo velho.
+  const key = body.key as InfraKey;
+  const r = await comandoAuditado({
+    acao: `margin.set.${key}`, ator: wallet, alvo: key, depois: String(usd), dados: { usd },
+    executar: async () => {
+      const { error } = await db.from("admin_kv").upsert(
+        { key, value: String(usd), updated_at: new Date().toISOString() },
+        { onConflict: "key" },
+      );
+      return error ? { ok: false, codigo: "nao_gravou", detalhe: String(error.message ?? "").slice(0, 160) } : { ok: true, valor: usd };
+    },
+  });
+  if (r.estado === "recusado" || r.estado === "repetido") {
+    return NextResponse.json({ error: "auditoria_indisponivel", porque: PORQUE_AUDITORIA_INDISPONIVEL }, { status: 503 });
+  }
+  if (r.estado === "falhou") {
+    return NextResponse.json({ error: r.codigo, key, ...avisoDeAuditoria(r.auditoria), porque: "o valor NÃO foi gravado" }, { status: 503 });
+  }
+  return NextResponse.json({ ok: true, key, usd, ...avisoDeAuditoria(r.auditoria) });
 }
