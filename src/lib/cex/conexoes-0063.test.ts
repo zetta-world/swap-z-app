@@ -230,6 +230,10 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
      * por último no search_path de 14 funções (M4) e 0082 faz objeto novo nascer fechado
      * (M2). Teste 26. NÃO aplicadas no hospedado (exige backup validado + autorização).
      *
+     * E a 0083 (R1/R2): ADITIVA — schema `admin_private` (identidade corporativa, papéis,
+     * sessões, trilha append-only), fechado para anon/authenticated e que NENHUM código lê
+     * enquanto ADMIN_AUTH_MODE estiver ausente. Teste 27. Também não aplicada no hospedado.
+     *
      * ⚠️ ESTADO MEDIDO (21/10, `list_migrations` no Supabase de produção): 0059–0076 FORAM
      * aplicadas em 14/10. A frase antiga "nenhuma foi aplicada" ficou desatualizada.
      */
@@ -257,6 +261,7 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
       "0080_acl_funcoes_invoker_e_sequencia.sql",
       "0081_search_path_com_pg_temp.sql",
       "0082_default_privileges_fechados.sql",
+      "0083_admin_private_identidade_rbac.sql",
     ]);
   });
 });

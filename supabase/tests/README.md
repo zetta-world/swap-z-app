@@ -46,6 +46,12 @@ nascendo fechado (inclusive função fora de `public` — forma global). Com a
 cadeia só até 0078 ele FALHA no T26.1; aplicando 0079→0082 uma a uma, cada
 migration vira o teste dela.
 
+`27_admin_private.sql` (0083) prova o schema `admin_private`: sem USAGE para
+`anon`/`authenticated`/PUBLIC, RLS sem policy, ninguém concede papel a si,
+`superadmin`/`security_admin` só com segunda pessoa, sessão corp ativa só com
+`aal2`, e `admin_audit` append-only (UPDATE/DELETE/TRUNCATE recusados até para
+`postgres`).
+
 ## O que cada um prova
 
 | arquivo | prova |
