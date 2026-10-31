@@ -192,6 +192,7 @@ async function buscarExecutado(acao: string, idem: string): Promise<Busca> {
     try {
       const db = getSupabaseAdmin();
       if (!db) return { falhou: "db_indisponivel" };
+      // leitura-limitada: só a EXISTÊNCIA de um `executado` com esta chave importa — 1 linha basta.
       const { data, error } = await db.from("admin_audit_log")
         .select("id")
         .eq("action", acao)

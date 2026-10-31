@@ -3,9 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
+import AvisoDeFonte from "../AvisoDeFonte";
+import { mensagemDeFalha, type OperationalMetric } from "@/lib/admin/metrica";
 
+/** Bloco `null` = a fonte NÃO foi lida (o porquê está em `fontes`). */
 type Finance = {
-  ai: {
+  ai: null | {
     today: number; week: number; month: number; year: number; all: number;
     calls: { today: number; week: number; month: number; year: number; all: number };
     byModel: Record<string, number>;
@@ -15,8 +18,9 @@ type Finance = {
     daily: Array<{ date: string; cost: number }>;
     monthProjection: number;
   };
-  volume: { v24h: number; v7d: number; vAll: number; count: number };
-  revenue:{ sol: number; usd: number | null; solUsd: number | null; tierCounts: Record<string, number> };
+  volume: null | { v24h: number; v7d: number; vAll: number; count: number };
+  revenue: null | { sol: number; usd: number | null; solUsd: number | null; tierCounts: Record<string, number> };
+  fontes?: Record<"ai" | "volume" | "revenue" | "solUsd", OperationalMetric<unknown> | undefined>;
 };
 
 const usd  = (n: number) => `$${n >= 1000 ? Math.round(n).toLocaleString() : n.toFixed(2)}`;
@@ -34,8 +38,8 @@ export default function FinancePanel() {
   const load = useCallback(async () => {
     try {
       const res = await fetch("/admin/api/finance");
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? res.status);
+      const json = await res.json().catch(() => null);
+      if (!res.ok) { setData(null); setError(mensagemDeFalha(res.status, json)); return; }
       setData(json); setError(null);
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   }, []);
@@ -63,7 +67,8 @@ export default function FinancePanel() {
           Ele vivia como um terço deste card — mas é o que matou o assento
           Anthropic, é o que os kill-switches controlam e é o que o watchdog
           vigia. Merece ficar ao lado dos disjuntores, não dentro do financeiro. */}
-      {data && tab === "volume" && (
+      {data && tab === "volume" && <AvisoDeFonte m={data.fontes?.volume} rotulo="volume" />}
+      {data?.volume && tab === "volume" && (
         <div style={{ display: "flex", gap: 8 }}>
           <Stat label="VOLUME 24H" value={usd0(data.volume.v24h)} color="var(--adm-green)" />
           <Stat label="VOLUME 7D" value={usd0(data.volume.v7d)} color="var(--adm-ink)" />
@@ -71,7 +76,8 @@ export default function FinancePanel() {
         </div>
       )}
 
-      {data && tab === "revenue" && (
+      {data && tab === "revenue" && <AvisoDeFonte m={data.fontes?.revenue} rotulo="receita atribuída" />}
+      {data?.revenue && tab === "revenue" && (
         <div>
           <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
             <Stat label="ATTRIBUTED REVENUE" value={`${data.revenue.sol.toLocaleString()} SOL`} color="var(--adm-green)" />

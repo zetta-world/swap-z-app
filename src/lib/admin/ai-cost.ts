@@ -95,3 +95,123 @@ export function estimateCost(u: UsageTokens): number {
     (u.cacheWriteTokens ?? 0) * p.cacheWrite5m
   ) / 1_000_000;
 }
+
+/** O modelo tem linha própria na tabela? `false` = foi precificado pelo padrão (Sonnet). */
+export function temPrecoProprio(model?: string | null): boolean {
+  return !!model && PRICES.some(([re]) => re.test(model));
+}
+
+// ── Agregação do uso (painel CUSTO DE IA, FINANCE, COMMAND) ──────────────────
+
+export interface LinhaDeUsoIa { metadata: unknown; created_at: string }
+
+export interface ModeloAgregado {
+  model: string; today: number; week: number; month: number; all: number; calls: number;
+  /** ⚠️ Sem modelo ou modelo fora da tabela: o custo é o do padrão (Sonnet), não o dele. */
+  precoPadrao: boolean;
+}
+
+export interface AgregadoIa {
+  today: number; week: number; month: number; year: number; all: number;
+  /** Chamadas que FORAM ao provedor. Resposta servida do cache não entra (ver `respostasDoCache`). */
+  calls: { today: number; week: number; month: number; year: number; all: number };
+  byModel: Record<string, number>;
+  bySource: Record<string, number>;
+  models: ModeloAgregado[];
+  /** `input` = entrada NÃO cacheada; leitura e escrita de cache à parte — somadas uma vez só. */
+  tokens: { input: number; output: number; cacheRead: number; cacheWrite: number };
+  /** 14 dias UTC. Dia sem chamada = `calls: 0` (medido: nenhuma), não um zero inventado. */
+  daily: Array<{ date: string; cost: number; calls: number }>;
+  monthProjection: number;
+  /** Eventos `cacheHit: true` — servidos da memória, sem chamada nem token. */
+  respostasDoCache: number;
+  /** Chamadas precificadas pelo padrão por falta de modelo conhecido. */
+  semPrecoProprio: number;
+  /** Eventos com token ilegível (texto, NaN, negativo): o token entra como 0 e o evento é contado aqui. */
+  tokensIlegiveis: number;
+  /** Eventos com `created_at` ilegível: entram no total, fora das janelas. */
+  datasIlegiveis: number;
+}
+
+/** Token legível: número finito ≥ 0 (ou texto numérico, que é como `numeric` às vezes chega). */
+function token(v: unknown): number | null {
+  if (v == null) return 0;
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/**
+ * ⚠️ ADM-007 — UMA conta por chamada, pelo modelo DELA.
+ *
+ *   · `inTokens` é a entrada NÃO cacheada (`provider.ts` normaliza; `entradaOpenAICompat`
+ *     tira a leitura e a escrita de cache de dentro dela). Leitura e escrita de cache são
+ *     somadas cada uma UMA vez, a preço próprio — nunca de novo como entrada.
+ *   · Resposta servida pelo cache de resposta (`cacheHit: true`, `zion/route.ts`) não foi ao
+ *     provedor: não entra em custo, token nem chamada, mesmo que algum dia venha com tokens
+ *     copiados da chamada original — contar seria cobrar a mesma resposta duas vezes.
+ *   · Modelo ausente/desconhecido cai no preço padrão e é CONTADO (`semPrecoProprio`), em vez
+ *     de sumir dentro do total como se fosse Sonnet de verdade.
+ *   · Token ilegível vira 0 e é contado — um `NaN` derrubava o total inteiro para "NaN".
+ *
+ * ⚠️ ESTIMATIVA: tarifa pública × tokens medidos, recalculada com a tabela de HOJE. Não é fatura.
+ */
+export function agregarUsoDeIa(linhas: readonly LinhaDeUsoIa[], agoraMs: number): AgregadoIa {
+  const d0 = new Date(agoraMs);
+  const Y = d0.getUTCFullYear(), Mo = d0.getUTCMonth(), Da = d0.getUTCDate();
+  const inicioDia = Date.UTC(Y, Mo, Da);
+  const inicioMes = Date.UTC(Y, Mo, 1);
+  const inicioAno = Date.UTC(Y, 0, 1);
+  const semanaAtras = agoraMs - 7 * 86_400_000;
+  const chaveDia = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+
+  const dias = new Map<string, { cost: number; calls: number }>();
+  for (let i = 13; i >= 0; i--) dias.set(chaveDia(agoraMs - i * 86_400_000), { cost: 0, calls: 0 });
+
+  const ai: AgregadoIa = {
+    today: 0, week: 0, month: 0, year: 0, all: 0,
+    calls: { today: 0, week: 0, month: 0, year: 0, all: 0 },
+    byModel: {}, bySource: {}, models: [],
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    daily: [], monthProjection: 0,
+    respostasDoCache: 0, semPrecoProprio: 0, tokensIlegiveis: 0, datasIlegiveis: 0,
+  };
+  const porModelo = new Map<string, ModeloAgregado>();
+
+  for (const r of linhas) {
+    const m = (r.metadata && typeof r.metadata === "object" ? r.metadata : {}) as Record<string, unknown>;
+    if (m.cacheHit === true) { ai.respostasDoCache++; continue; }
+
+    const modelo = typeof m.model === "string" && m.model.trim() ? m.model.trim() : null;
+    const fonte = typeof m.source === "string" && m.source ? m.source : "user";
+    const brutos = [token(m.inTokens), token(m.outTokens), token(m.cachedTokens), token(m.cacheWriteTokens)];
+    if (brutos.some((t) => t === null)) ai.tokensIlegiveis++;
+    const [inT, outT, lidoT, escritoT] = brutos.map((t) => t ?? 0);
+    const c = estimateCost({ model: modelo, inTokens: inT, outTokens: outT, cachedTokens: lidoT, cacheWriteTokens: escritoT });
+    const proprio = temPrecoProprio(modelo);
+    if (!proprio) ai.semPrecoProprio++;
+
+    ai.all += c; ai.calls.all++;
+    ai.tokens.input += inT; ai.tokens.output += outT; ai.tokens.cacheRead += lidoT; ai.tokens.cacheWrite += escritoT;
+    const chave = modelo ?? "unknown";
+    ai.byModel[chave] = (ai.byModel[chave] ?? 0) + c;
+    ai.bySource[fonte] = (ai.bySource[fonte] ?? 0) + c;
+    const agg = porModelo.get(chave) ?? { model: chave, today: 0, week: 0, month: 0, all: 0, calls: 0, precoPadrao: !proprio };
+    agg.all += c; agg.calls++;
+
+    const ts = Date.parse(r.created_at);
+    if (!Number.isFinite(ts)) { ai.datasIlegiveis++; porModelo.set(chave, agg); continue; }
+    if (ts >= inicioAno)   { ai.year  += c; ai.calls.year++; }
+    if (ts >= inicioMes)   { ai.month += c; ai.calls.month++; agg.month += c; }
+    if (ts >= semanaAtras) { ai.week  += c; ai.calls.week++;  agg.week  += c; }
+    if (ts >= inicioDia)   { ai.today += c; ai.calls.today++; agg.today += c; }
+    porModelo.set(chave, agg);
+    const dia = dias.get(chaveDia(ts));
+    if (dia) { dia.cost += c; dia.calls++; }
+  }
+
+  ai.daily = [...dias.entries()].map(([date, v]) => ({ date, cost: v.cost, calls: v.calls }));
+  ai.models = [...porModelo.values()].sort((a, b) => b.all - a.all);
+  const diasNoMes = new Date(Date.UTC(Y, Mo + 1, 0)).getUTCDate();
+  ai.monthProjection = (ai.month / Da) * diasNoMes;
+  return ai;
+}

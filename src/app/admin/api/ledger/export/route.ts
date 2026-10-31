@@ -7,6 +7,7 @@ import { comandoAuditado, PORQUE_AUDITORIA_INDISPONIVEL } from "@/lib/admin/audi
  * escapava só para o PARSER — planilha não apenas lê, ela AVALIA.
  */
 import { csvCell } from "@/lib/admin/csv";
+import { lerTodasAsPaginas } from "@/lib/supabase/paginar";
 
 export const dynamic = "force-dynamic";
 
@@ -14,8 +15,6 @@ const COLS = ["created_at", "wallet_address", "kind", "chain", "pair", "side", "
 
 /** Teto do arquivo. Passou disso, o arquivo diz que foi cortado. */
 const TETO_EXPORT = 10_000;
-/** `db-max-rows` do PostgREST: um `.limit(10_000)` devolvia em silêncio só 1.000. */
-const PAGINA = 1_000;
 
 type Leitura = { linhas: Record<string, unknown>[]; truncado: boolean };
 
@@ -27,7 +26,7 @@ type Leitura = { linhas: Record<string, unknown>[]; truncado: boolean };
  *   2. `.limit(10_000)` batia no `db-max-rows` e entregava 1.000 linhas como
  *      se fossem todas;
  *   3. o arquivo (carteiras + volumes) saía sem registro de quem baixou.
- * Agora: pagina de 1.000 em 1.000; qualquer página falha → 503 sem arquivo;
+ * Agora: `lerTodasAsPaginas` (db-max-rows); qualquer página falha → 503 sem arquivo;
  * corte no teto vai no cabeçalho `X-Export-Truncado` e no nome; e a intenção
  * de exportar é gravada ANTES — sem trilha, sem arquivo (mesma regra do
  * export do early access).
@@ -40,19 +39,16 @@ export async function GET(): Promise<NextResponse> {
   const cmd = await comandoAuditado<Leitura>({
     acao: "ledger.export", ator, dados: { teto: TETO_EXPORT },
     executar: async () => {
-      const linhas: Record<string, unknown>[] = [];
-      for (let de = 0; de < TETO_EXPORT; de += PAGINA) {
-        const { data, error } = await db.from("operations")
-          .select(COLS.join(","))
-          .order("created_at", { ascending: false })
-          .order("id", { ascending: false })
-          .range(de, Math.min(de + PAGINA, TETO_EXPORT) - 1);
-        if (error) return { ok: false, codigo: "leitura_falhou", detalhe: String(error.message ?? "").slice(0, 160) };
-        const pagina = (data ?? []) as unknown as Record<string, unknown>[];
-        linhas.push(...pagina);
-        if (pagina.length < PAGINA) return { ok: true, valor: { linhas, truncado: false } };
-      }
-      return { ok: true, valor: { linhas, truncado: true } };
+      // Ordem TOTAL (created_at + id): página por offset sobre empate pula/repete linha.
+      const l = await lerTodasAsPaginas<Record<string, unknown>>((de, ate) => db.from("operations")
+        .select(COLS.join(","))
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(de, ate) as unknown as PromiseLike<{ data: Record<string, unknown>[] | null; error: { message: string } | null }>,
+      { teto: TETO_EXPORT });
+      return l.erro
+        ? { ok: false, codigo: "leitura_falhou", detalhe: l.erro.slice(0, 160) }
+        : { ok: true, valor: { linhas: l.linhas, truncado: l.truncado } };
     },
   });
 

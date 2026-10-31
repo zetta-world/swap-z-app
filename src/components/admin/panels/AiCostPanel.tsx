@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import AvisoDeFonte from "../AvisoDeFonte";
+import { mensagemDeFalha, type OperationalMetric } from "@/lib/admin/metrica";
 
 /**
  * CUSTO DE IA — extraído do painel de finanças em 30/07.
@@ -14,15 +16,18 @@ import TerminalPanel from "../TerminalPanel";
 
 type Model = { model: string; today: number; week: number; month: number; all: number; calls: number };
 type Fin = {
-  ai: {
+  /** null = a fonte NÃO foi lida (ver `fontes.ai`). Nunca um quadro de zeros. */
+  ai: null | {
     today: number; week: number; month: number; year: number; all: number;
     calls: { today: number; week: number; month: number; year: number; all: number };
     bySource: Record<string, number>;
     models: Model[];
     tokens: { input: number; output: number; cacheRead: number; cacheWrite: number };
-    daily: Array<{ date: string; cost: number }>;
+    daily: Array<{ date: string; cost: number; calls?: number }>;
     monthProjection: number;
+    respostasDoCache?: number; semPrecoProprio?: number; tokensIlegiveis?: number; datasIlegiveis?: number;
   };
+  fontes?: { ai?: OperationalMetric<unknown> };
 };
 
 const usd  = (n: number) => `$${n >= 1000 ? Math.round(n).toLocaleString() : n.toFixed(2)}`;
@@ -62,8 +67,9 @@ export default function AiCostPanel() {
   const load = useCallback(async () => {
     try {
       const res = await fetch("/admin/api/finance");
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? res.status);
+      const json = await res.json().catch(() => null);
+      // 503 = nenhuma fonte lida. A tela diz INDISPONÍVEL — e some o número velho.
+      if (!res.ok) { setD(null); setErr(mensagemDeFalha(res.status, json)); return; }
       setD(json); setErr(null);
     } catch (e) { setErr(String(e)); } finally { setLoading(false); }
   }, []);
@@ -75,7 +81,8 @@ export default function AiCostPanel() {
       {loading && <div className="adm-shimmer" style={{ height: 80 }} />}
       {err && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{err}</div>}
 
-      {d && (
+      {d && <AvisoDeFonte m={d.fontes?.ai} rotulo="custo de IA" />}
+      {d?.ai && (
         <div>
           <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
             <Stat label="HOJE"    value={usd4(d.ai.today)} color="var(--adm-gold)" />
@@ -86,6 +93,30 @@ export default function AiCostPanel() {
 
           <div className="adm-category">Gasto diário · 14 dias</div>
           <Bars daily={d.ai.daily} />
+
+          {(d.ai.semPrecoProprio || d.ai.tokensIlegiveis || d.ai.respostasDoCache) ? (
+            <div style={{ fontSize: 11, color: "var(--adm-amber)", marginTop: 6, lineHeight: 1.5 }}>
+              {d.ai.semPrecoProprio ? <div>⚠ {d.ai.semPrecoProprio} chamada(s) sem modelo na tabela de preço — precificadas pelo padrão, não pelo modelo real.</div> : null}
+              {d.ai.tokensIlegiveis ? <div>⚠ {d.ai.tokensIlegiveis} evento(s) com token ilegível — contados como 0.</div> : null}
+              {d.ai.respostasDoCache ? <div style={{ color: "var(--adm-ink-4)" }}>{d.ai.respostasDoCache} resposta(s) servidas do cache — sem chamada ao provedor, fora do custo.</div> : null}
+            </div>
+          ) : null}
+
+          {Object.keys(d.ai.bySource ?? {}).length > 0 && (
+            <>
+              <div className="adm-category" style={{ marginTop: 12 }}>Por consumidor</div>
+              <table className="adm-table" style={{ fontSize: 12 }}>
+                <tbody>
+                  {Object.entries(d.ai.bySource).sort((a, b) => b[1] - a[1]).map(([fonte, custo]) => (
+                    <tr key={fonte}>
+                      <td style={{ fontFamily: "monospace" }}>{fonte}</td>
+                      <td style={{ textAlign: "right" }}>{usd(custo)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
 
           <div className="adm-category" style={{ marginTop: 12 }}>Por modelo</div>
           {/* Esta ressalva não é rodapé — é o que impede a leitura errada. Já
