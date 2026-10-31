@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 import { useAdminConfirm } from "../useAdminConfirm";
 import {
-  conhecido, gravarInterruptor, lerInterruptoresCliente, rotuloDoEstado, type EstadoTri,
+  conhecido, gravavel, gravarInterruptor, lerInterruptoresCliente, rotuloDoEstado, type EstadoTri,
 } from "../interruptores-cliente";
 
 // A lista de gates NÃO é redigitada aqui (auditoria 01/08). Ela vem de
@@ -51,6 +51,8 @@ const UNLISTED_GATES = FLYWHEEL_GATE_KEYS.filter((k) => !GATES.some((g) => g.key
 export default function AiControlsPanel() {
   // ⚠️ Nasce DESCONHECIDO: antes um `false` default + leitura falha = "19 gates ON" na tela (ADM-004).
   const [gates, setGates] = useState<Record<string, EstadoTri>>({});
+  /** Valor gravado de cada gate — o compare-and-set do estado `invalido` precisa dele. */
+  const [brutos, setBrutos] = useState<Record<string, string | null>>({});
   const [loading, setLoading]   = useState(true);
   const [mutating, setMutating] = useState<GateKey | null>(null);
   const [err, setErr]           = useState<string | null>(null);
@@ -64,9 +66,10 @@ export default function AiControlsPanel() {
     const l = await lerInterruptoresCliente();
     if (l.ok) {
       setGates(Object.fromEntries(Object.entries(l.estados).map(([k, v]) => [k, v.estado])));
+      setBrutos(Object.fromEntries(Object.entries(l.estados).map(([k, v]) => [k, v.persistido])));
       setIlegivel(null);
     } else {
-      setGates({});
+      setGates({}); setBrutos({});
       setIlegivel(l.porque);
     }
     setLoading(false);
@@ -100,11 +103,20 @@ export default function AiControlsPanel() {
 
   async function toggle(key: GateKey) {
     const atual = gates[key];
-    if (!conhecido(atual)) return;
-    const next = atual === "off";             // on = pausado
+    if (!gravavel(atual)) return;
+    // Valor INVÁLIDO gravado = consumidor lê como "não pausado". A correção oferecida
+    // é a direção PROTETORA (pausar), com confirmação e CAS sobre o valor bruto.
+    const next = atual !== "on";             // on = pausado
     const m = MAPA_INTERRUPTORES[key];
-    // Dinheiro/receita de cliente confirma nos DOIS sentidos.
-    if (m.dinheiro) {
+    // Dinheiro/receita de cliente confirma nos DOIS sentidos; inválido confirma sempre.
+    if (atual === "invalido") {
+      const ok = await confirm(
+        `${key} tem valor INVÁLIDO gravado (${JSON.stringify(brutos[key] ?? null)}) — para os consumidores isso é "rodando". `
+        + `Gravar "true" (PAUSAR)? Bloqueia: ${m.bloqueia}.`,
+        true,
+      );
+      if (!ok) return;
+    } else if (m.dinheiro) {
       const ok = await confirm(
         `${next ? "PAUSAR" : "RELIGAR"} ${key} — mexe em dinheiro ou receita de cliente. Bloqueia: ${m.bloqueia}. `
         + "Fica registrado no log de auditoria; sem trilha, o comando é recusado.",
@@ -113,7 +125,7 @@ export default function AiControlsPanel() {
       if (!ok) return;
     }
     setMutating(key); setErr(null);
-    const r = await gravarInterruptor(key, next, atual === "on");
+    const r = await gravarInterruptor(key, next, atual === "invalido" ? { bruto: brutos[key] ?? null } : atual === "on");
     if (!r.ok) setErr(r.conflito ? "Outro admin mudou este gate — recarreguei o estado real." : r.porque);
     await load();
     setMutating(null);
@@ -159,10 +171,10 @@ export default function AiControlsPanel() {
               aria-checked={conhecido(estado) ? !paused : "mixed"}
               aria-label={`${label}: ${conhecido(estado) ? (paused ? "pausado" : "rodando") : rotuloDoEstado(estado)}`}
               onClick={() => toggle(key)}
-              disabled={mutating === key || !conhecido(estado)}
+              disabled={mutating === key || !gravavel(estado)}
               title={paused ? "Clique para LIGAR" : "Clique para DESLIGAR"}
             >
-              {mutating === key ? "…" : !conhecido(estado) ? rotuloDoEstado(estado) : paused ? "OFF — LIGAR?" : "ON"}
+              {mutating === key ? "…" : estado === "invalido" ? "INVÁLIDO — PAUSAR?" : !conhecido(estado) ? rotuloDoEstado(estado) : paused ? "OFF — LIGAR?" : "ON"}
             </button>
           </div>
         );

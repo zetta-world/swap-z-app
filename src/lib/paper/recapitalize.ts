@@ -115,7 +115,17 @@ export interface RecapOutcome {
   source: string;
   fromUsd: number;
   toUsd: number;
-  archivedPositions: number;
+  /** null = a contagem falhou (o arquivamento ainda pode ter dado certo). */
+  archivedPositions: number | null;
+  /** false = esta mesa NÃO foi recapitalizada (ou ficou no meio — ver `erro`). */
+  ok: boolean;
+  erro?: "conta_ilegivel" | "conta_ausente" | "arquivar_falhou" | "capital_falhou";
+}
+
+export interface RecapResultado {
+  entries: RecapOutcome[];
+  /** O marco em `admin_kv` foi gravado? Sem ele o degrau na curva fica sem explicação. */
+  marcoGravado: boolean;
 }
 
 /**
@@ -128,21 +138,30 @@ export interface RecapOutcome {
  */
 export async function recapitalize(
   sources: string[], reason: string,
-): Promise<RecapOutcome[]> {
+): Promise<RecapResultado> {
   if (reason.trim().length < 15) {
     throw new Error("recapitalização exige motivo escrito com pelo menos 15 caracteres");
   }
   const db = getSupabaseAdmin();
-  if (!db) return [];
+  if (!db) return { entries: [], marcoGravado: false };
 
+  /**
+   * ⚠️ CADA ESCRITA É CONFERIDA (revisão adversarial do Admin CC 2.0). Antes,
+   * nenhum `{ error }` era lido: arquivamento ou reset recusados respondiam
+   * `ok:true` e a trilha dizia `executado`. E a ORDEM importa: se o arquivamento
+   * falha, o capital NÃO é trocado — posições velhas sob capital novo misturariam
+   * duas rodadas no mesmo retorno.
+   */
   const plans = (await planRecap()).filter((p) => sources.includes(p.source));
   const at = new Date().toISOString();
   const out: RecapOutcome[] = [];
 
   for (const p of plans) {
-    const { data: acc } = await db
+    const base = { source: p.source, fromUsd: p.fromUsd, toUsd: p.toUsd };
+    const { data: acc, error: erroConta } = await db
       .from("paper_accounts").select("id").eq("source", p.source).maybeSingle();
-    if (!acc?.id) continue;
+    if (erroConta) { out.push({ ...base, archivedPositions: null, ok: false, erro: "conta_ilegivel" }); continue; }
+    if (!acc?.id) { out.push({ ...base, archivedPositions: null, ok: false, erro: "conta_ausente" }); continue; }
     const id = String(acc.id);
 
     // 1. ARQUIVA a rodada anterior. Nunca apaga — o histórico continua
@@ -150,19 +169,23 @@ export async function recapitalize(
     //
     // Conta ANTES de arquivar: depois do update a condição `archived_at is
     // null` não casa mais nada, e o número voltaria zero para tudo.
-    const { count } = await db
+    const { count, error: erroContagem } = await db
       .from("paper_positions")
       .select("id", { count: "exact", head: true })
       .eq("account_id", id).is("archived_at", null);
-    await db
+    const { error: erroArquivo } = await db
       .from("paper_positions")
       .update({ archived_at: at })
       .eq("account_id", id).is("archived_at", null);
+    if (erroArquivo) {
+      out.push({ ...base, archivedPositions: null, ok: false, erro: "arquivar_falhou" });
+      continue;
+    }
 
     // 2. Recomeça com o capital declarado. `realized_pnl_usd` volta a zero
     //    junto — é o contador da rodada, e deixá-lo para trás é exatamente o
     //    defeito que o `radar` tinha.
-    await db.from("paper_accounts").update({
+    const { error: erroCapital } = await db.from("paper_accounts").update({
       starting_usd: p.toUsd,
       cash_usd: p.toUsd,
       realized_pnl_usd: 0,
@@ -171,20 +194,23 @@ export async function recapitalize(
     }).eq("id", id);
 
     out.push({
-      source: p.source, fromUsd: p.fromUsd, toUsd: p.toUsd,
-      archivedPositions: count ?? 0,
+      ...base,
+      archivedPositions: erroContagem ? null : (count ?? 0),
+      // ⚠️ arquivou e NÃO trocou o capital: a mesa ficou no meio — dito, não escondido.
+      ok: !erroCapital,
+      ...(erroCapital ? { erro: "capital_falhou" as const } : {}),
     });
   }
 
   // 3. Deixa registro em `admin_kv`, no mesmo padrão do reset e do reparo:
   //    sem marco, um degrau que aparecer amanhã fica indistinguível do de hoje.
-  await db.from("admin_kv").upsert({
+  const { error: erroMarco } = await db.from("admin_kv").upsert({
     key: "paper_recap:last",
     value: JSON.stringify({ at, reason, entries: out }),
     updated_at: at,
   });
 
-  return out;
+  return { entries: out, marcoGravado: !erroMarco };
 }
 
 /** O último marco de recapitalização, para a tela mostrar contra o que comparar. */

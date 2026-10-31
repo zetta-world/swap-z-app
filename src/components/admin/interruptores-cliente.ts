@@ -39,17 +39,32 @@ export async function lerInterruptoresCliente(): Promise<LeituraCliente> {
 /** Botão só com estado CONHECIDO. */
 export const conhecido = (e: EstadoTri | undefined): e is "on" | "off" => e === "on" || e === "off";
 
+/**
+ * Pode gravar a partir deste estado? Conhecido, OU inválido-mas-LIDO (o valor
+ * bruto está em mãos para o compare-and-set). Desconhecido (leitura falhou)
+ * continua travado.
+ */
+export const gravavel = (e: EstadoTri | undefined): e is "on" | "off" | "invalido" =>
+  conhecido(e) || e === "invalido";
+
 export type GravacaoCliente =
   | { ok: true }
   | { ok: false; conflito: boolean; porque: string };
 
-/** Grava com compare-and-set: `esperado` é o que a tela mostrava. 409 = alguém mudou antes. */
-export async function gravarInterruptor(chave: string, enabled: boolean, esperado: boolean): Promise<GravacaoCliente> {
+/**
+ * Grava com compare-and-set: `esperado` é o que a tela mostrava (boolean) — ou,
+ * quando o valor gravado é INVÁLIDO, `{ bruto }` com o texto exato lido. 409 =
+ * alguém mudou antes.
+ */
+export async function gravarInterruptor(
+  chave: string, enabled: boolean, esperado: boolean | { bruto: string | null },
+): Promise<GravacaoCliente> {
   try {
+    const cas = typeof esperado === "boolean" ? { esperado } : { esperadoBruto: esperado.bruto };
     const res = await fetch("/admin/api/killswitch", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ key: chave, enabled, esperado, idem: globalThis.crypto.randomUUID() }),
+      body: JSON.stringify({ key: chave, enabled, ...cas, idem: globalThis.crypto.randomUUID() }),
     });
     const json = await res.json().catch(() => null) as { error?: string; porque?: string; auditoriaPorque?: string } | null;
     if (res.ok) return { ok: true };

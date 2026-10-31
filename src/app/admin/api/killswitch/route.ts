@@ -8,7 +8,7 @@ import {
   lerInterruptores, observarInterruptores, estadoDoValor, type LinhaKv,
 } from "@/lib/admin/kill-switches";
 import {
-  comandoAuditado, avisoDeAuditoria, PORQUE_AUDITORIA_INDISPONIVEL,
+  comandoAuditado, avisoDeAuditoria, buscarExecutado, PORQUE_AUDITORIA_INDISPONIVEL,
 } from "@/lib/admin/auditoria-duravel";
 
 export const dynamic = "force-dynamic";
@@ -61,7 +61,12 @@ type Gravacao = { key: string; enabled: boolean; antes: string | null };
  *     admins clicando juntos não desfazem mais um ao outro em silêncio;
  *   · a escrita é condicional ao valor lido (UPDATE … WHERE value = lido), então
  *     uma mudança entre a leitura e a gravação também vira 409, nunca sobrescrita;
- *   · `idem` = chave de idempotência do clique (repetir não grava duas vezes).
+ *   · `idem` = chave de idempotência do clique (repetir não grava duas vezes);
+ *   · `esperadoBruto` = o VALOR GRAVADO que a tela mostrava (string ou null), para
+ *     o caso `invalido` (ex.: "TRUE"): os consumidores comparam `=== "true"`, então o
+ *     interruptor está DESLIGADO de fato e a tela precisa poder corrigi-lo. Sem isto
+ *     o botão travava exatamente quando o interruptor não funcionava (revisão
+ *     adversarial). Mesmo compare-and-set, sobre o valor bruto.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const { wallet: actor } = await autorizarAdmin("security.killswitch.set");
@@ -69,7 +74,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 
   const body = await req.json().catch(() => null) as
-    { key?: unknown; enabled?: unknown; esperado?: unknown; idem?: unknown } | null;
+    { key?: unknown; enabled?: unknown; esperado?: unknown; esperadoBruto?: unknown; idem?: unknown } | null;
   if (!body) return NextResponse.json({ error: "invalid json" }, { status: 400 });
 
   const key = typeof body.key === "string" ? body.key : "";
@@ -83,7 +88,30 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (body.esperado !== undefined && typeof body.esperado !== "boolean")
     return NextResponse.json({ error: "esperado deve ser booleano" }, { status: 400 });
   const esperado = body.esperado as boolean | undefined;
-  const idem = typeof body.idem === "string" && body.idem.length > 0 && body.idem.length <= 100 ? body.idem : null;
+  const temBruto = Object.prototype.hasOwnProperty.call(body, "esperadoBruto");
+  if (temBruto && body.esperadoBruto !== null && typeof body.esperadoBruto !== "string")
+    return NextResponse.json({ error: "esperadoBruto deve ser texto ou null" }, { status: 400 });
+  if (temBruto && esperado !== undefined)
+    return NextResponse.json({ error: "use esperado OU esperadoBruto, não os dois" }, { status: 400 });
+  const esperadoBruto = temBruto ? (body.esperadoBruto as string | null) : undefined;
+  /**
+   * ⚠️ A CHAVE DE IDEMPOTÊNCIA CARREGA O PEDIDO (revisão adversarial). Reusar a
+   * mesma `idem` com `enabled` invertido era respondido `repetido / ok` sem gravar
+   * nada. Com o valor pedido dentro da chave, pedido diferente = chave diferente.
+   */
+  const idemBruta = typeof body.idem === "string" && body.idem.length > 0 && body.idem.length <= 100 ? body.idem : null;
+  const idem = idemBruta ? `${idemBruta}|${enabled}` : null;
+
+  // Reenvio de um clique que JÁ executou responde `repetido` ANTES do compare-and-set:
+  // depois da 1ª gravação o `esperado` não casa mais, e o reenvio legítimo virava
+  // 409 "outro admin mudou".
+  if (idem) {
+    const b = await buscarExecutado(`killswitch.${key}`, idem);
+    if ("falhou" in b) {
+      return NextResponse.json({ error: "auditoria_indisponivel", key, porque: PORQUE_AUDITORIA_INDISPONIVEL }, { status: 503 });
+    }
+    if (b.achou) return NextResponse.json({ ok: true, repetido: true, key, enabled });
+  }
 
   const atual = await lerInterruptores([key]);
   if (!atual.lido) {
@@ -95,7 +123,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const linha: LinhaKv | null = atual.linhas.get(key) ?? null;
   const antes = linha ? linha.value : null;
   const estadoAntes = estadoDoValor(antes);
-  if (esperado !== undefined && estadoAntes !== (esperado ? "on" : "off")) {
+  const divergiu = esperadoBruto !== undefined
+    ? antes !== esperadoBruto
+    : esperado !== undefined && estadoAntes !== (esperado ? "on" : "off");
+  if (divergiu) {
     return NextResponse.json({
       error: "conflito", key, atual: estadoAntes, persistido: antes,
       porque: "o interruptor NÃO foi alterado: o estado no banco já não é o que a tela mostrava — releia",

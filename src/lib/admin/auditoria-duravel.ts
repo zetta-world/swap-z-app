@@ -184,10 +184,14 @@ export type ResultadoComando<T> =
   | { estado: "executado"; valor: T; auditoria: AuditoriaDoDesfecho; req: string }
   | { estado: "falhou"; codigo: string; valor?: T; detalhe?: string; auditoria: AuditoriaDoDesfecho; req: string };
 
-type Busca = { achou: string | null } | { falhou: string };
+export type Busca = { achou: string | null } | { falhou: string };
 
-/** Já existe um `executado` com esta chave? Falha de leitura NÃO vira "não existe". */
-async function buscarExecutado(acao: string, idem: string): Promise<Busca> {
+/**
+ * Já existe um `executado` com esta chave? Falha de leitura NÃO vira "não existe".
+ * Exportada para rotas que precisam responder `repetido` ANTES de uma pré-condição
+ * (ex.: o compare-and-set do kill switch, que num reenvio legítimo já não casa).
+ */
+export async function buscarExecutado(acao: string, idem: string): Promise<Busca> {
   const tentativa = (async (): Promise<Busca> => {
     try {
       const db = getSupabaseAdmin();

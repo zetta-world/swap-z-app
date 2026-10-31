@@ -46,20 +46,34 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   // ⚠️ RESETA CAPITAL DAS MESAS: sem intenção gravada (quem/quais/por quê), não roda.
-  type Entradas = Awaited<ReturnType<typeof recapitalize>>;
-  const r = await comandoAuditado<Entradas>({
+  type Resultado = Awaited<ReturnType<typeof recapitalize>>;
+  const r = await comandoAuditado<Resultado>({
     acao: "paper.recap", ator, alvo: sources.map(String).join(",").slice(0, 200),
     dados: { sources: sources.map(String), reason: reason.slice(0, 500) },
-    executar: async () => ({ ok: true, valor: await recapitalize(sources, reason) }),
+    executar: async () => {
+      const x = await recapitalize(sources, reason);
+      // `executado` só se TODAS as mesas pedidas foram recapitalizadas E o marco gravou.
+      const falhas = x.entries.filter((e) => !e.ok);
+      if (x.entries.length === 0) return { ok: false, codigo: "nada_recapitalizado", valor: x };
+      if (falhas.length > 0 || !x.marcoGravado) {
+        return {
+          ok: false, codigo: "parcial", valor: x,
+          detalhe: [...falhas.map((e) => `${e.source}:${e.erro}`), ...(x.marcoGravado ? [] : ["marco_nao_gravado"])].join(",").slice(0, 200),
+        };
+      }
+      return { ok: true, valor: x };
+    },
   });
   if (r.estado === "recusado" || r.estado === "repetido") {
     return NextResponse.json({ error: "auditoria_indisponivel", porque: PORQUE_AUDITORIA_INDISPONIVEL }, { status: 503 });
   }
   if (r.estado === "falhou") {
     return NextResponse.json({
-      error: r.codigo, detalhe: r.detalhe, ...avisoDeAuditoria(r.auditoria),
-      porque: "a recapitalização falhou no meio — releia o plano (GET) antes de repetir",
-    }, { status: 500 });
+      error: r.codigo, detalhe: r.detalhe, entries: r.valor?.entries ?? [], ...avisoDeAuditoria(r.auditoria),
+      porque: r.codigo === "nada_recapitalizado"
+        ? "NADA foi recapitalizado: nenhuma das mesas pedidas está no plano"
+        : "a recapitalização NÃO terminou em todas as mesas — veja `entries` e releia o plano (GET) antes de repetir",
+    }, { status: r.codigo === "nada_recapitalizado" ? 400 : 500 });
   }
-  return NextResponse.json({ ok: true, entries: r.valor, last: await lastRecap(), ...avisoDeAuditoria(r.auditoria) });
+  return NextResponse.json({ ok: true, entries: r.valor.entries, last: await lastRecap(), ...avisoDeAuditoria(r.auditoria) });
 }

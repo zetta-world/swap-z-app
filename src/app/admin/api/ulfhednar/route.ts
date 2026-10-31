@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { comandoAuditado, PORQUE_AUDITORIA_INDISPONIVEL } from "@/lib/admin/auditoria-duravel";
 import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
@@ -107,7 +108,22 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "assunto_ou_corpo_vazio" }, { status: 400 });
   }
 
-  const r = await escreverMensagem({ de: "dono", para, assunto, corpo });
+  /**
+   * ⚠️ A matriz marca isto como `duravel_fail_closed` e a rota só tinha
+   * `recordEvent` (que engole erro) — revisão adversarial. Instrução a um agente
+   * é comando: quem mandou, para quem e o quê ficam na trilha ANTES de gravar.
+   */
+  const cmd = await comandoAuditado<true>({
+    acao: "agents.mailbox.write", ator, alvo: para, dados: { assunto },
+    executar: async () => {
+      const w = await escreverMensagem({ de: "dono", para, assunto, corpo });
+      return w.ok ? { ok: true, valor: true } : { ok: false, codigo: "nao_gravou", detalhe: String(w.erro ?? "").slice(0, 160) };
+    },
+  });
+  if (cmd.estado === "recusado" || cmd.estado === "repetido") {
+    return NextResponse.json({ error: "auditoria_indisponivel", porque: PORQUE_AUDITORIA_INDISPONIVEL }, { status: 503 });
+  }
+  const r = cmd.estado === "executado" ? { ok: true as const } : { ok: false as const, erro: cmd.detalhe ?? cmd.codigo };
   if (!r.ok) {
     // ⚠️ Pergunta que o dono acha que fez e não existe é pior que erro na cara
     // dele. Mesma lição do autopilot: o cliente resolve com `{ error }`.

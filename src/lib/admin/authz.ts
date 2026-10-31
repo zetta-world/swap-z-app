@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { requireAdmin, type FonteLegada } from "@/lib/admin/require";
 import { logSecurityAguardado } from "@/lib/admin/auditoria-duravel";
 import { ACOES, type AcaoId } from "@/lib/admin/acoes";
-import { PERMISSOES_SO_CORPORATIVAS } from "@/lib/admin/rbac";
+import { PERMISSOES_SO_CORPORATIVAS, type Permissao } from "@/lib/admin/rbac";
 
 /**
  * PONTO ÚNICO DE DECISÃO DO ADMIN (R2, Admin CC 2.0) — `autorizarAdmin(ação)`.
@@ -63,6 +63,14 @@ export interface Autorizado {
   modo: ModoAuth;
 }
 
+/** Decisão de PÁGINA (layout, mural): mesmo caminho, rótulo `pagina:<nome>`. */
+export interface PaginaAutorizada {
+  wallet: string;
+  fonte: FonteLegada;
+  pagina: string;
+  modo: ModoAuth;
+}
+
 async function negar(kind: string, meta: Record<string, unknown>, severity: "low" | "med" | "high"): Promise<never> {
   await logSecurityAguardado(kind, meta, severity);
   notFound();
@@ -82,7 +90,9 @@ const vistos = new Map<string, number>();
  * requisito de segurança. Deduplicado por instância (fonte+ator+ação a cada
  * 10 min) para não virar uma escrita por clique.
  */
-export async function observarAdmissaoLegada(a: Autorizado, agora = Date.now()): Promise<void> {
+export async function observarAdmissaoLegada(
+  a: { wallet: string; fonte: FonteLegada; modo: ModoAuth; acao: string }, agora = Date.now(),
+): Promise<void> {
   try {
     const chave = `${a.fonte}|${a.wallet}|${a.acao}`;
     const ultimo = vistos.get(chave);
@@ -113,7 +123,24 @@ export async function autorizarAdmin(acao: AcaoId): Promise<Autorizado> {
     // Id fora do registro não compila; isto cobre `as never`/JS.
     return negar("admin_acao_desconhecida", { acao: String(acao).slice(0, 80) }, "high");
   }
+  const r = await decidir(acao, def.permissoes);
+  return { wallet: r.wallet, fonte: r.fonte, acao, modo: r.modo };
+}
 
+/**
+ * Páginas (layout do Admin, mural) — o MESMO ponto de decisão (revisão adversarial):
+ * antes chamavam `requireAdmin()` direto, então em `dual` restrito, `corp` ou modo
+ * inválido um principal recusado nas APIs ainda recebia o shell, a chave anon do
+ * realtime e o mural. Permissão: `admin.view`.
+ */
+export async function autorizarPaginaAdmin(pagina: "shell" | "mural"): Promise<PaginaAutorizada> {
+  const r = await decidir(`pagina:${pagina}`, ["admin.view"]);
+  return { wallet: r.wallet, fonte: r.fonte, pagina, modo: r.modo };
+}
+
+async function decidir(
+  acao: string, permissoes: readonly Permissao[],
+): Promise<{ wallet: string; fonte: FonteLegada; modo: ModoAuth }> {
   const modo = lerModoAuth();
   if (!modo.ok) {
     return negar("admin_modo_invalido", { bruto: modo.bruto, porque: "ADMIN_AUTH_MODE inválido — Admin fechado" }, "high");
@@ -128,14 +155,14 @@ export async function autorizarAdmin(acao: AcaoId): Promise<Autorizado> {
 
   // legacy e dual: a decisão de QUEM é admin continua em `requireAdmin()`.
   const r = await requireAdmin();
-  const autorizado: Autorizado = { wallet: r.wallet, fonte: r.fonte, acao, modo: modo.modo };
+  const autorizado = { wallet: r.wallet, fonte: r.fonte, acao, modo: modo.modo };
 
   if (modo.modo === "dual") {
     if (!fontesLegadasPermitidas().has(r.fonte)) {
       return negar("admin_fonte_legada_recusada", { fonte: r.fonte, acao, wallet: `${r.wallet.slice(0, 10)}…` }, "high");
     }
-    const soCorporativa = def.permissoes.length > 0
-      && def.permissoes.every((p) => PERMISSOES_SO_CORPORATIVAS.has(p));
+    const soCorporativa = permissoes.length > 0
+      && permissoes.every((p) => PERMISSOES_SO_CORPORATIVAS.has(p));
     if (soCorporativa && r.fonte !== "env") {
       return negar("admin_permissao_so_corporativa", { fonte: r.fonte, acao }, "med");
     }

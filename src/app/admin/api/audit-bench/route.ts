@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { autorizarAdmin } from "@/lib/admin/authz";
 import { runAudit } from "@/lib/admin/audit";
 import { recordEvent } from "@/lib/admin/track";
+import { comandoAuditado, avisoDeAuditoria, PORQUE_AUDITORIA_INDISPONIVEL } from "@/lib/admin/auditoria-duravel";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,7 +46,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const body = await req.json().catch(() => null) as { browserEnv?: Record<string, string | null> } | null;
   const browserEnv = body?.browserEnv && typeof body.browserEnv === "object" ? body.browserEnv : undefined;
 
-  const report = await runAudit(origin, browserEnv);
+  /**
+   * ⚠️ A matriz marca a bancada como `duravel_fail_closed` e ela só gravava por
+   * `recordEvent` (que engole erro) — revisão adversarial. A bancada dispara
+   * sondas contra a própria superfície pública: quem rodou e quando fica na
+   * trilha ANTES, e sem trilha ela não roda.
+   */
+  type Relatorio = Awaited<ReturnType<typeof runAudit>>;
+  const cmd = await comandoAuditado<Relatorio>({
+    acao: "security.bench.run", ator: wallet, alvo: origin,
+    executar: async () => ({ ok: true, valor: await runAudit(origin, browserEnv) }),
+  });
+  if (cmd.estado === "recusado" || cmd.estado === "repetido") {
+    return NextResponse.json({ error: "auditoria_indisponivel", porque: PORQUE_AUDITORIA_INDISPONIVEL }, { status: 503 });
+  }
+  if (cmd.estado === "falhou") {
+    return NextResponse.json({ error: cmd.codigo, detalhe: cmd.detalhe, ...avisoDeAuditoria(cmd.auditoria) }, { status: 500 });
+  }
+  const report = cmd.valor;
 
   // Fica no ledger de eventos: a série histórica mostra se a nota melhora ou
   // apodrece, e um relatório que só existe na tela não serve de prova.
@@ -61,5 +79,5 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     },
   });
 
-  return NextResponse.json(report);
+  return NextResponse.json({ ...report, ...avisoDeAuditoria(cmd.auditoria) });
 }

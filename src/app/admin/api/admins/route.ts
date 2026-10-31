@@ -86,7 +86,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const action = body?.action;
   const note   = typeof body?.note === "string" ? body.note.slice(0, 120) : null;
 
-  if (!target || target.length < 20 || target.length > 80)
+  /**
+   * ⚠️⚠️ FORMATO DE CARTEIRA, NÃO SÓ TAMANHO (revisão adversarial do Admin CC 2.0).
+   * A revogação apaga com `ilike` (caixa) — e `ilike` trata `%` e `_` como CURINGA.
+   * Com só o teto de tamanho, `"%".repeat(20)` passava pelas guardas de "não revogue
+   * a si" e "não revogue o último" (comparação literal) e o DELETE casava TODAS as
+   * linhas de `platform_admins` e todo admin legado. Agora só endereço EVM ou base58
+   * Solana entra — nenhum dos dois alfabetos tem `%`, `_` ou `\`.
+   */
+  if (!/^(0x[0-9a-fA-F]{40}|[1-9A-HJ-NP-Za-km-z]{32,44})$/.test(target))
     return NextResponse.json({ error: "wallet inválida" }, { status: 400 });
   if (action !== "grant" && action !== "revoke")
     return NextResponse.json({ error: "action deve ser grant ou revoke" }, { status: 400 });

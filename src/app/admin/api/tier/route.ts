@@ -56,6 +56,30 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (action !== "grant" && action !== "revoke")
     return NextResponse.json({ error: "action must be grant or revoke" }, { status: 400 });
 
+  /**
+   * ⚠️ CONCEDER PLANO POR CIMA DE ADMIN LEGADO APAGAVA O ADMIN (revisão adversarial,
+   * Admin CC 2.0). O upsert troca `source` de `'admin'` para `'concessao'` na MESMA
+   * linha que `requireAdmin` lê — o admin sumia sem decisão e sem trilha (o log
+   * AUTH-04 só cobria a revogação). Agora: lida conferida; linha `'admin'` → 409,
+   * nada gravado. O caminho é migrar o acesso para `platform_admins` antes.
+   */
+  if (action === "grant") {
+    const { data: atual, error: erroAtual } = await db.from("tier_cache")
+      .select("source").eq("wallet_address", target).maybeSingle();
+    if (erroAtual) {
+      return NextResponse.json({
+        error: "leitura_falhou", porque: "NADA foi concedido: não consegui ler o registro atual desta carteira",
+      }, { status: 503 });
+    }
+    if (atual?.source === "admin") {
+      return NextResponse.json({
+        error: "admin_legado", target,
+        porque: "NADA foi concedido: esta carteira é admin pela fonte legada (tier_cache.source='admin'); "
+          + "conceder plano aqui apagaria o acesso admin. Conceda admin em ADMIN ACCESS (platform_admins) antes.",
+      }, { status: 409 });
+    }
+  }
+
   type Efeito = { removidas: Array<{ tier: string | null; source: string | null }> };
   const r = await comandoAuditado<Efeito>({
     acao: `tier.${action}`, ator: actor, alvo: target, dados: { tier },

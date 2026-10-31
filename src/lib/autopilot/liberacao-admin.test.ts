@@ -10,8 +10,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const s = vi.hoisted(() => ({
-  leitura: { ok: true, lista: [] as unknown[], bruto: null as string | null } as
-    { ok: true; lista: unknown[]; bruto: string | null } | { ok: false; erro: string },
+  leitura: { ok: true, lista: [] as unknown[], bruto: null as string | null, versao: { existe: false, updatedAt: null as string | null } } as
+    { ok: true; lista: unknown[]; bruto: string | null; versao: { existe: boolean; updatedAt: string | null } } | { ok: false; erro: string },
   gravar: vi.fn(async (..._a: unknown[]) => ({ ok: true }) as { ok: true } | { ok: false; erro: string }),
   comando: vi.fn(),
 }));
@@ -43,7 +43,7 @@ const req = (body: unknown) =>
 const NOTA = "carteira de teste do dono, valor pequeno";
 
 beforeEach(() => {
-  s.leitura = { ok: true, lista: [{ wallet: "0xaaaaaaaaaa", nota: "n", at: "t" }], bruto: "[raw]" };
+  s.leitura = { ok: true, lista: [{ wallet: "0xaaaaaaaaaa", nota: "n", at: "t" }], bruto: "[raw]", versao: { existe: true, updatedAt: "2026-10-25T12:00:00.000Z" } };
   s.gravar.mockReset().mockResolvedValue({ ok: true });
   s.comando.mockReset();
 });
@@ -69,9 +69,10 @@ describe("pilotos — leitura falha NÃO apaga ninguém", () => {
   it("autorizar com lista lida → grava a lista ANTIGA + a nova, condicionada ao valor lido", async () => {
     const r = await POST(req({ piloto: "0xBBBBBBBBBB", motivo: NOTA }) as never);
     expect(r.status).toBe(200);
-    const [lista, anterior] = s.gravar.mock.calls[0] as [Array<{ wallet: string }>, string];
+    const [lista, anterior] = s.gravar.mock.calls[0] as [Array<{ wallet: string }>, { existe: boolean; updatedAt: string }];
     expect(lista.map((p) => p.wallet)).toEqual(["0xaaaaaaaaaa", "0xbbbbbbbbbb"]);
-    expect(anterior).toBe("[raw]");
+    // CAS pela VERSÃO lida (updated_at), nunca pela lista inteira na URL
+    expect(anterior).toEqual({ existe: true, updatedAt: "2026-10-25T12:00:00.000Z" });
   });
 
   it("outro admin mudou a lista entre leitura e gravação → 409", async () => {

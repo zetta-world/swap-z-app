@@ -162,7 +162,7 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
-const { autorizarAdmin, lerModoAuth, fontesLegadasPermitidas, _esquecerObservacoes } = await import("./authz");
+const { autorizarAdmin, autorizarPaginaAdmin, lerModoAuth, fontesLegadasPermitidas, _esquecerObservacoes } = await import("./authz");
 
 beforeEach(() => {
   s.sessao = null; s.painel = []; s.tier = []; s.eventos = []; s.admitidos = [];
@@ -236,5 +236,27 @@ describe("dual / corp / inválido", () => {
     expect(s.eventos.map((e) => e.kind)).toContain("admin_fonte_legada_recusada");
     s.sessao = { sub: "0xenv" };
     await expect(autorizarAdmin("security.killswitch.read")).resolves.toMatchObject({ modo: "dual", fonte: "env" });
+  });
+});
+
+describe("páginas no mesmo ponto único (revisão adversarial)", () => {
+  it("layout e mural chamam autorizarPaginaAdmin, não requireAdmin direto", () => {
+    for (const [arq, pagina] of [["src/app/admin/layout.tsx", "shell"], ["src/app/admin/mural/page.tsx", "mural"]]) {
+      const c = semComentarios(readFileSync(arq, "utf8"));
+      expect(c, arq).toContain(`autorizarPaginaAdmin("${pagina}")`);
+      expect(/\brequireAdmin\s*\(/.test(c), arq).toBe(false);
+    }
+  });
+
+  it("corp sem R1 / dual com fonte recusada → a PÁGINA também é 404", async () => {
+    s.sessao = { sub: "0xtier" }; s.tier = ["0xtier"];
+    vi.stubEnv("ADMIN_AUTH_MODE", "dual");
+    vi.stubEnv("ADMIN_LEGACY_SOURCES", "env");
+    await expect(autorizarPaginaAdmin("shell")).rejects.toThrow("NEXT_NOT_FOUND");
+    vi.stubEnv("ADMIN_AUTH_MODE", "corp");
+    s.sessao = { sub: "0xenv" };
+    await expect(autorizarPaginaAdmin("mural")).rejects.toThrow("NEXT_NOT_FOUND");
+    vi.stubEnv("ADMIN_AUTH_MODE", "");
+    await expect(autorizarPaginaAdmin("mural")).resolves.toMatchObject({ wallet: "0xenv", pagina: "mural", modo: "legacy" });
   });
 });

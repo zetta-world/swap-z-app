@@ -132,6 +132,7 @@ export default function PaperPanel() {
   const [recapMotivo, setRecapMotivo] = useState("");
   const [recapando, setRecapando] = useState(false);
   const [recapErro, setRecapErro] = useState<string | null>(null);
+  const [repairErro, setRepairErro] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -166,11 +167,16 @@ export default function PaperPanel() {
   }, [load, loadRepair, loadRecap, realtime?.status]);
 
   async function runRepair() {
-    setRepairing(true);
+    setRepairing(true); setRepairErro(null);
     try {
+      // ⚠️ Antes a falha sumia (`if (res.ok)` sem `else`): o operador apertava,
+      // nada mudava, e nada dizia por quê. Agora o porquê aparece ao lado do botão.
       const res = await fetch("/admin/api/paper-repair", { method: "POST" });
-      if (res.ok) { await load(); await loadRepair(); }
-    } catch { /* estado antigo permanece */ } finally { setRepairing(false); }
+      const json = await res.json().catch(() => ({})) as { porque?: string; error?: string; failed?: string[] };
+      if (!res.ok) setRepairErro(json.porque ?? json.error ?? `HTTP ${res.status}`);
+      else if ((json.failed ?? []).length > 0) setRepairErro(`parcial — falharam: ${(json.failed ?? []).join(", ")}`);
+      await load(); await loadRepair();
+    } catch (e) { setRepairErro(String(e).slice(0, 160)); } finally { setRepairing(false); }
   }
 
   async function runRecap() {
@@ -183,8 +189,8 @@ export default function PaperPanel() {
           reason: recapMotivo,
         }),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? res.status);
+      const json = await res.json().catch(() => ({})) as { porque?: string; error?: string };
+      if (!res.ok) { await load(); await loadRecap(); throw new Error(json.porque ?? json.error ?? String(res.status)); }
       setRecapMotivo("");
       await load(); await loadRepair(); await loadRecap();
     } catch (e) { setRecapErro(String(e)); } finally { setRecapando(false); }
@@ -229,6 +235,7 @@ export default function PaperPanel() {
           <button className="adm-btn" style={{ marginTop: 6 }} onClick={runRepair} disabled={repairing}>
             {repairing ? "devolvendo…" : "↺ devolver o capital às carteiras vivas"}
           </button>
+          {repairErro && <div role="alert" style={{ color: "var(--adm-red)", fontSize: 11, marginTop: 4 }}>{repairErro}</div>}
         </div>
       )}
       {/**

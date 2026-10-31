@@ -228,45 +228,60 @@ export async function lerPilotos(produto: "autopilot" | "dca" = "autopilot"): Pr
  * "sem linha" (lista vazia de verdade) e "não consegui ler" são coisas diferentes,
  * e o valor bruto volta para a gravação condicional.
  */
+/** Versão da linha lida: o compare-and-set é por `updated_at`, não pelo valor. */
+export interface VersaoPilotos { existe: boolean; updatedAt: string | null }
+
 export type LeituraPilotos =
-  | { ok: true; lista: Piloto[]; bruto: string | null }
+  | { ok: true; lista: Piloto[]; bruto: string | null; versao: VersaoPilotos }
   | { ok: false; erro: "db_indisponivel" | "leitura_falhou" | "valor_ilegivel" };
 
 export async function lerPilotosConferido(): Promise<LeituraPilotos> {
   const db = getSupabaseAdmin();
   if (!db) return { ok: false, erro: "db_indisponivel" };
   try {
-    const { data, error } = await db.from("admin_kv").select("value").eq("key", CHAVE_PILOTOS).maybeSingle();
+    const { data, error } = await db.from("admin_kv").select("value, updated_at").eq("key", CHAVE_PILOTOS).maybeSingle();
     if (error) return { ok: false, erro: "leitura_falhou" };
-    if (!data?.value) return { ok: true, lista: [], bruto: null };
+    const versao: VersaoPilotos = { existe: !!data, updatedAt: data?.updated_at ?? null };
+    if (!data?.value) return { ok: true, lista: [], bruto: null, versao };
     const bruto = JSON.parse(data.value) as unknown;
     if (!Array.isArray(bruto)) return { ok: false, erro: "valor_ilegivel" };
     const lista = bruto
       .filter((p): p is Piloto => !!p && typeof (p as Piloto).wallet === "string" && (p as Piloto).wallet.length > 0)
       .map((p) => ({ wallet: p.wallet.toLowerCase(), nota: String(p.nota ?? ""), at: String(p.at ?? "") }));
-    return { ok: true, lista, bruto: data.value };
+    return { ok: true, lista, bruto: data.value, versao };
   } catch {
     return { ok: false, erro: "valor_ilegivel" };
   }
 }
 
 /**
- * Grava a lista CONFERINDO a escrita e com compare-and-set: só grava se o valor
- * no banco ainda for `anterior` (o que foi lido). `conflito` = outro admin mudou
- * a lista entre a leitura e a gravação — nada é sobrescrito.
+ * Grava a lista CONFERINDO a escrita e com compare-and-set: só grava se a linha
+ * ainda estiver na VERSÃO lida (`updated_at`), ou ainda não existir se não
+ * existia. `conflito` = outro admin mudou a lista entre a leitura e a gravação —
+ * nada é sobrescrito.
+ *
+ * ⚠️ POR `updated_at`, NÃO POR `value` (revisão adversarial): `.eq("value", …)`
+ * punha a lista inteira (até 50 × nota de 300) na URL do PostgREST; passando do
+ * limite do gateway, autorizar e REMOVER piloto falhavam sempre — e remover quem
+ * opera dinheiro real ficava impossível pelo painel.
  */
 export async function gravarPilotos(
-  lista: Piloto[], anterior?: string | null,
+  lista: Piloto[], anterior?: VersaoPilotos,
 ): Promise<{ ok: true } | { ok: false; erro: "db_indisponivel" | "escrita_falhou" | "conflito" }> {
   const db = getSupabaseAdmin();
   if (!db) return { ok: false, erro: "db_indisponivel" };
   const value = JSON.stringify(lista.slice(0, 50));
-  const updated_at = new Date().toISOString();
+  // updated_at NOVO e diferente do lido (mesmo milissegundo → +1 ms): a versão sempre avança.
+  let t = Date.now();
+  if (anterior?.updatedAt && Date.parse(anterior.updatedAt) >= t) t = Date.parse(anterior.updatedAt) + 1;
+  const updated_at = new Date(t).toISOString();
   const escrita = anterior === undefined
     ? db.from("admin_kv").upsert({ key: CHAVE_PILOTOS, value, updated_at }, { onConflict: "key" }).select("key")
-    : anterior === null
+    : !anterior.existe
       ? db.from("admin_kv").upsert({ key: CHAVE_PILOTOS, value, updated_at }, { onConflict: "key", ignoreDuplicates: true }).select("key")
-      : db.from("admin_kv").update({ value, updated_at }).eq("key", CHAVE_PILOTOS).eq("value", anterior).select("key");
+      : anterior.updatedAt == null
+        ? db.from("admin_kv").update({ value, updated_at }).eq("key", CHAVE_PILOTOS).is("updated_at", null).select("key")
+        : db.from("admin_kv").update({ value, updated_at }).eq("key", CHAVE_PILOTOS).eq("updated_at", anterior.updatedAt).select("key");
   const { data, error } = await escrita;
   if (error) return { ok: false, erro: "escrita_falhou" };
   if (anterior !== undefined && (data ?? []).length === 0) return { ok: false, erro: "conflito" };

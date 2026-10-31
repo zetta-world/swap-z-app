@@ -5,7 +5,7 @@ import TerminalPanel from "../TerminalPanel";
 import { useAdminConfirm } from "../useAdminConfirm";
 import { MAPA_INTERRUPTORES, PLATFORM_KILL_KEYS, type PlatformKillKey } from "@/lib/admin/gate-keys";
 import {
-  conhecido, gravarInterruptor, lerInterruptoresCliente, rotuloDoEstado, type EstadoTri,
+  conhecido, gravavel, gravarInterruptor, lerInterruptoresCliente, rotuloDoEstado, type EstadoTri,
 } from "../interruptores-cliente";
 
 const ROTULO: Record<PlatformKillKey, string> = {
@@ -19,6 +19,8 @@ const ROTULO: Record<PlatformKillKey, string> = {
  */
 export default function KillSwitchesPanel() {
   const [estados, setEstados] = useState<Record<string, EstadoTri>>({});
+  /** Valor gravado — o compare-and-set do estado `invalido` precisa dele. */
+  const [brutos, setBrutos] = useState<Record<string, string | null>>({});
   const [loading,  setLoading]  = useState(true);
   const [mutating, setMutating] = useState<PlatformKillKey | null>(null);
   const [err,      setErr]      = useState<string | null>(null);
@@ -29,9 +31,10 @@ export default function KillSwitchesPanel() {
     const l = await lerInterruptoresCliente();
     if (l.ok) {
       setEstados(Object.fromEntries(Object.entries(l.estados).map(([k, v]) => [k, v.estado])));
+      setBrutos(Object.fromEntries(Object.entries(l.estados).map(([k, v]) => [k, v.persistido])));
       setIlegivel(null);
     } else {
-      setEstados({});            // nada lido = nada sabido: botões travados
+      setEstados({}); setBrutos({});  // nada lido = nada sabido: botões travados
       setIlegivel(l.porque);
     }
     setLoading(false);
@@ -41,18 +44,23 @@ export default function KillSwitchesPanel() {
 
   async function toggle(key: PlatformKillKey) {
     const atual = estados[key];
-    if (!conhecido(atual)) return;
-    const next = atual === "off";
+    if (!gravavel(atual)) return;
+    // ⚠️ Valor INVÁLIDO gravado (ex.: "TRUE"): os consumidores comparam `=== "true"`,
+    // então o kill switch NÃO está bloqueando. A correção oferecida é LIGAR (proteger).
+    const next = atual !== "on";
     const m = MAPA_INTERRUPTORES[key];
     const ok = await confirm(
-      `${next ? "LIGAR" : "DESLIGAR"} ${ROTULO[key]} — bloqueia: ${m.bloqueia}. Não bloqueia: ${m.naoBloqueia}. `
+      (atual === "invalido"
+        ? `${ROTULO[key]} tem valor INVÁLIDO gravado (${JSON.stringify(brutos[key] ?? null)}) — hoje ele NÃO bloqueia nada. Gravar "true" (LIGAR)? `
+        : `${next ? "LIGAR" : "DESLIGAR"} ${ROTULO[key]} — `)
+      + `bloqueia: ${m.bloqueia}. Não bloqueia: ${m.naoBloqueia}. `
       + "Fica registrado no log de auditoria; sem trilha, o comando é recusado.",
       true,
     );
     if (!ok) return;
     setMutating(key);
     setErr(null);
-    const r = await gravarInterruptor(key, next, atual === "on");
+    const r = await gravarInterruptor(key, next, atual === "invalido" ? { bruto: brutos[key] ?? null } : atual === "on");
     if (!r.ok) setErr(r.conflito ? "Outro admin mudou este interruptor — recarreguei o estado real." : r.porque);
     await load();                // a tela mostra o que o banco tem, não o que o clique supôs
     setMutating(null);
@@ -100,9 +108,9 @@ export default function KillSwitchesPanel() {
               aria-checked={conhecido(estado) ? isOn : "mixed"}
               aria-label={`${ROTULO[key]}: ${rotuloDoEstado(estado)}`}
               onClick={() => toggle(key)}
-              disabled={mutating === key || !conhecido(estado)}
+              disabled={mutating === key || !gravavel(estado)}
             >
-              {mutating === key ? "…" : isOn ? "ON — DESLIGAR?" : rotuloDoEstado(estado)}
+              {mutating === key ? "…" : isOn ? "ON — DESLIGAR?" : estado === "invalido" ? "INVÁLIDO — LIGAR?" : rotuloDoEstado(estado)}
             </button>
           </div>
         );

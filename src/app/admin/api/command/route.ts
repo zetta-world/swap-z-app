@@ -3,7 +3,7 @@ import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { lerBatimentos } from "@/lib/admin/health";
 import { lerTodasAsPaginas } from "@/lib/supabase/paginar";
-import { estimateCost } from "@/lib/admin/ai-cost";
+import { agregarUsoDeIa, type LinhaDeUsoIa } from "@/lib/admin/ai-cost";
 
 export const dynamic = "force-dynamic";
 
@@ -49,9 +49,13 @@ export async function GET(): Promise<NextResponse> {
       db.from("operations").select("volume_usd, pnl_usd, created_at")
         .order("created_at", { ascending: false }).order("id", { ascending: false })
         .range(de, ate) as unknown as Pagina<{ volume_usd: unknown; pnl_usd: unknown; created_at: string }>),
-    // leitura-limitada: janela de 24h do custo de IA no painel de pulso; o teto
-    // de gasto real é aplicado em `tier/enforce.ts`, não daqui.
-    db.from("platform_events").select("metadata").eq("event_type", "zion_analysis").gte("created_at", ago24h),
+    // Custo de IA 24h PAGINADO (o recorte de 1.000 subestimava em silêncio) e
+    // agregado pela MESMA conta do /finance (`agregarUsoDeIa`: cache fora, token
+    // ilegível não vira NaN).
+    paginado<LinhaDeUsoIa>("zion_analysis_24h", (de, ate) =>
+      db.from("platform_events").select("metadata, created_at").eq("event_type", "zion_analysis").gte("created_at", ago24h)
+        .order("created_at", { ascending: false }).order("id", { ascending: false })
+        .range(de, ate) as unknown as Pagina<LinhaDeUsoIa>),
     db.from("autopilot_sessions").select("*", { count: "exact", head: true }).eq("is_active", true),
     // leitura-limitada: sessões do autopilot — dezenas, não milhares.
     db.from("autopilot_sessions").select("pnl_today"),
@@ -60,14 +64,20 @@ export async function GET(): Promise<NextResponse> {
     // leitura-limitada: contadores do painel de comando. São indicadores de
     // pulso, não a base de nenhuma decisão automática.
     db.from("zion_suggestions").select("status").is("archived_at", null),
-    // leitura-limitada: eventos de segurança em 24h; passar de 1.000 já é o alarme.
-    db.from("platform_events").select("metadata").eq("event_type", "security").gte("created_at", ago24h),
+    /**
+     * ⚠️ CONTAGEM NO BANCO, NÃO NA AMOSTRA (revisão adversarial). A leitura antiga
+     * trazia 1.000 eventos ARBITRÁRIOS: um flood de eventos `low` (ex.: spam no
+     * early access) empurrava os `high` para fora da amostra → "0 high-sev · ALL
+     * CLEAR". `count: exact` com o filtro de severidade não tem recorte.
+     */
+    db.from("platform_events").select("*", { count: "exact", head: true })
+      .eq("event_type", "security").eq("metadata->>severity", "high").gte("created_at", ago24h),
     lerBatimentos(),
   ]);
 
   const users = conferir("users", usersR);
   const active24h = conferir("users_24h", active24hR);
-  const ai = conferir("zion_analysis_24h", aiR);
+  const ai = aiR;
   const apActive = conferir("autopilot_sessions_ativas", apActiveR);
   const apSess = conferir("autopilot_sessions", apSessR);
   const positions = conferir("autopilot_positions", positionsR);
@@ -81,13 +91,8 @@ export async function GET(): Promise<NextResponse> {
     for (const o of ops) { pnlAll += Number(o.pnl_usd) || 0; if (o.created_at >= ago24h) vol24h += Number(o.volume_usd) || 0; }
   }
 
-  let aiCost24h: number | null = null;
-  if (ai) {
-    aiCost24h = 0;
-    for (const r of (ai.data ?? []) as Array<{ metadata: unknown }>) {
-      aiCost24h += estimateCost((r.metadata ?? {}) as Parameters<typeof estimateCost>[0]);
-    }
-  }
+  // Todas as linhas já são das últimas 24h: o total (`all`) do agregado É o custo de 24h.
+  const aiCost24h: number | null = ai ? agregarUsoDeIa(ai, now).all : null;
 
   let apPnlToday: number | null = null;
   if (apSess) { apPnlToday = 0; for (const x of (apSess.data ?? []) as Array<{ pnl_today: unknown }>) apPnlToday += Number(x.pnl_today) || 0; }
@@ -102,17 +107,16 @@ export async function GET(): Promise<NextResponse> {
   }
   const winRate = suggestions && wins + losses > 0 ? wins / (wins + losses) : null;
 
-  let highSec24h: number | null = null;
-  if (security) {
-    highSec24h = 0;
-    for (const r of (security.data ?? []) as Array<{ metadata: unknown }>) if ((r.metadata as { severity?: string } | null)?.severity === "high") highSec24h++;
-  }
+  const highSec24h: number | null = security ? (security.count ?? null) : null;
+  if (security && security.count == null) falhas.push("security_24h:sem_contagem");
 
   // Batimento ilegível: NÃO declaro cron nenhum "parado" (seria inventar) — vai em `falhas`.
   const staleCrons = !batimentos.lido ? [] : Object.entries(CRON_STALE_MIN).filter(([name, mins]) => {
     const last = batimentos.batimentos[name];
     if (!last) return true;
-    return (now - Date.parse(last)) / 60_000 > mins;
+    const t = Date.parse(last);
+    // Batimento ilegível NÃO é "fresco" (`NaN > mins` dava false): conta como parado.
+    return !Number.isFinite(t) || (now - t) / 60_000 > mins;
   }).map(([name]) => name);
 
   return NextResponse.json({

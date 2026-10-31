@@ -121,7 +121,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const r = await comandoAuditado({
       acao, ator: actor, alvo, antes: lista.map((p) => p.wallet), depois: nova.map((p) => p.wallet), dados,
       executar: async () => {
-        const g = await gravarPilotos(nova, leitura.bruto);
+        const g = await gravarPilotos(nova, leitura.versao);
         return g.ok ? { ok: true, valor: nova } : { ok: false, codigo: g.erro };
       },
     });

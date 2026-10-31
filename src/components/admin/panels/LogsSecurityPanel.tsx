@@ -67,7 +67,7 @@ export default function LogsSecurityPanel() {
           </div>
           {data.truncado24h && (
             <div role="status" style={{ color: "var(--adm-amber)", fontSize: 12, marginBottom: 6 }}>
-              PARCIAL — mais de 1.000 eventos em 24h; as contagens acima são PISO, não total.
+              AMOSTRA — mais de 1.000 eventos em 24h: as contagens acima são exatas; o top de tipos abaixo é de uma amostra.
             </div>
           )}
           {data.topKinds.length === 0 ? (

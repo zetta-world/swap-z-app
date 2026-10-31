@@ -32,7 +32,11 @@ export async function GET(): Promise<NextResponse> {
    * que esta auditoria mais encontrou, agora no painel que existe para ver
    * abuso e tentativa de invasão.
    */
-  const [{ data: recent, error: erroRecentes }, { data: rows24h, error: erro24h }] = await Promise.all([
+  const conta = (q: PromiseLike<{ count: number | null; error: unknown }>) => q;
+  const [
+    { data: recent, error: erroRecentes }, { data: rows24h, error: erro24h },
+    cErros, cSeguranca, cAltos,
+  ] = await Promise.all([
     // leitura-limitada: os 60 eventos mais recentes, que é o que a tela mostra.
     // A CONTAGEM de 24h vem da consulta seguinte, que não depende deste recorte.
     db.from("platform_events")
@@ -47,6 +51,18 @@ export async function GET(): Promise<NextResponse> {
       .in("event_type", ["error", "security"])
       .gte("created_at", ago24h)
       .limit(1000),
+    /**
+     * ⚠️ OS NÚMEROS DO CABEÇALHO SÃO CONTADOS NO BANCO (revisão adversarial). Do
+     * recorte de 1.000 acima, um flood de eventos `low` tirava os `high` da
+     * amostra e HIGH SEV mostrava 0. `count: exact` não tem recorte; a amostra
+     * fica só para o "top tipos" (rotulado como amostra quando cortada).
+     */
+    conta(db.from("platform_events").select("*", { count: "exact", head: true })
+      .eq("event_type", "error").gte("created_at", ago24h)),
+    conta(db.from("platform_events").select("*", { count: "exact", head: true })
+      .eq("event_type", "security").gte("created_at", ago24h)),
+    conta(db.from("platform_events").select("*", { count: "exact", head: true })
+      .in("event_type", ["error", "security"]).eq("metadata->>severity", "high").gte("created_at", ago24h)),
   ]);
 
   /**
@@ -54,21 +70,19 @@ export async function GET(): Promise<NextResponse> {
    * "No errors or security events in 24h. ✓" com o banco fora — no painel que
    * existe para ver tentativa de invasão. Falhou → 503, sem contagem.
    */
-  if (erroRecentes || erro24h) {
+  if (erroRecentes || erro24h || cErros.error || cSeguranca.error || cAltos.error
+      || cErros.count == null || cSeguranca.count == null || cAltos.count == null) {
     return NextResponse.json({
       state: "unavailable", errorCode: "leitura_falhou", error: "logs_ilegiveis",
-      falhou: [erroRecentes ? "recentes" : "", erro24h ? "24h" : ""].filter(Boolean),
+      falhou: [erroRecentes ? "recentes" : "", erro24h ? "24h" : "", cErros.error || cSeguranca.error || cAltos.error ? "contagens" : ""].filter(Boolean),
     }, { status: 503 });
   }
   const truncado24h = (rows24h ?? []).length >= 1000;
 
-  let errors24h = 0, security24h = 0, high24h = 0;
+  const errors24h = cErros.count!, security24h = cSeguranca.count!, high24h = cAltos.count!;
   const byKind: Record<string, number> = {};
   for (const r of (rows24h ?? []) as Row[]) {
-    if (r.event_type === "error") errors24h++;
-    else security24h++;
     const m = r.metadata ?? {};
-    if (m.severity === "high") high24h++;
     const kind = String(m.kind ?? m.where ?? r.event_type);
     byKind[kind] = (byKind[kind] ?? 0) + 1;
   }
@@ -77,7 +91,7 @@ export async function GET(): Promise<NextResponse> {
 
   return NextResponse.json({
     errors24h, security24h, high24h, topKinds,
-    // Bateu no recorte de 1.000: as contagens são PISO, não total.
+    // Bateu no recorte de 1.000: o TOP TIPOS é de uma amostra (as contagens acima não).
     truncado24h,
     recent: (recent ?? []) as Row[],
     fetchedAt: new Date().toISOString(),

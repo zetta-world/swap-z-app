@@ -35,7 +35,7 @@ const reqCodigo = semComentarios(readFileSync("src/lib/admin/require.ts", "utf8"
  * esta varredura por arquivo continua valendo para páginas e layouts.
  */
 function chamaRequireAdmin(codigo: string): boolean {
-  return /\b(?:requireAdmin|autorizarAdmin)\s*\(/.test(semComentarios(codigo));
+  return /\b(?:requireAdmin|autorizarAdmin|autorizarPaginaAdmin)\s*\(/.test(semComentarios(codigo));
 }
 
 describe("o middleware NÃO decide quem é admin", () => {

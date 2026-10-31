@@ -46,16 +46,24 @@ function corpoDoPromiseAll(): string {
 }
 
 describe("① uma consulta por propósito, sem duplicata", () => {
-  it("⚠️⚠️ o `Promise.all` tem exatamente DUAS consultas", () => {
+  /**
+   * ⚠️ Revisão adversarial do Admin CC 2.0: os NÚMEROS do cabeçalho passaram a
+   * ser contados no banco (`count: exact`, sem recorte) — numa amostra de 1.000,
+   * um flood de eventos `low` escondia os `high`. Ficam DUAS consultas de LINHAS
+   * (60 recentes + amostra de 24h para o top de tipos) e TRÊS de CONTAGEM.
+   */
+  it("⚠️⚠️ o `Promise.all` tem DUAS consultas de linhas e TRÊS contagens exatas", () => {
     const corpo = corpoDoPromiseAll();
-    const consultas = [...corpo.matchAll(/db\.from\("platform_events"\)/g)].length;
-    expect(consultas, "quatro consultas para duas variáveis era o defeito").toBe(2);
+    const todas = [...corpo.matchAll(/db\.from\("platform_events"\)/g)].length;
+    const contagens = [...corpo.matchAll(/db\.from\("platform_events"\)\.select\("\*", \{ count: "exact", head: true \}\)/g)].length;
+    expect(contagens, "errors/security/high contados no banco").toBe(3);
+    expect(todas - contagens, "quatro consultas de linhas para duas variáveis era o defeito").toBe(2);
   });
 
-  it("⚠️⚠️ uma `limit(60)` e uma `gte(ago24h)` — não duas de cada", () => {
+  it("⚠️⚠️ uma `limit(60)` e uma amostra de 24h com teto — não duas de cada", () => {
     const corpo = corpoDoPromiseAll();
     expect([...corpo.matchAll(/\.limit\(60\)/g)]).toHaveLength(1);
-    expect([...corpo.matchAll(/\.gte\("created_at", ago24h\)/g)]).toHaveLength(1);
+    expect([...corpo.matchAll(/\.gte\("created_at", ago24h\)\s*\.limit\(1000\)/g)]).toHaveLength(1);
   });
 
   it("⚠️⚠️ e a de 24h vem DEPOIS da de 60 — é ela que alimenta `rows24h`", () => {
@@ -64,16 +72,16 @@ describe("① uma consulta por propósito, sem duplicata", () => {
     const corpo = corpoDoPromiseAll();
     expect(corpo.indexOf(".limit(60)")).toBeLessThan(corpo.indexOf('gte("created_at", ago24h)'));
     // R3: as duas leituras agora também trazem `error` (falha → 503); a ORDEM é o que este teste guarda.
-    expect(semComentarios).toMatch(/const \[\{ data: recent(?:, error: \w+)? \}, \{ data: rows24h(?:, error: \w+)? \}\]/);
+    expect(semComentarios).toMatch(/const \[\s*\{ data: recent(?:, error: \w+)? \}, \{ data: rows24h(?:, error: \w+)? \},\s*cErros, cSeguranca, cAltos,\s*\]/);
   });
 });
 
 describe("② os contadores leem a janela de 24h", () => {
-  it("⚠️ `errors24h`, `security24h` e `high24h` iteram `rows24h`", () => {
+  it("⚠️ `errors24h`, `security24h` e `high24h` vêm das CONTAGENS de 24h; o top de tipos itera `rows24h`", () => {
+    expect(semComentarios).toMatch(/const errors24h = cErros\.count!, security24h = cSeguranca\.count!, high24h = cAltos\.count!/);
     expect(semComentarios).toMatch(/for \(const r of \(rows24h \?\? \[\]\) as Row\[\]\)/);
-    for (const c of ["errors24h", "security24h", "high24h"]) {
-      expect(semComentarios, c).toContain(c);
-    }
+    // contagem que falha ou volta sem número → 503, nunca 0
+    expect(semComentarios).toMatch(/cErros\.count == null \|\| cSeguranca\.count == null \|\| cAltos\.count == null/);
   });
 
   it("⚠️ e a tela recebe os 60 recentes por `recent`, separado", () => {
