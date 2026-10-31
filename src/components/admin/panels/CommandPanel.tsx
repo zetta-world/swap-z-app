@@ -4,15 +4,21 @@ import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
 import { corDoPnl } from "@/lib/admin/cor-resultado";
+import { mensagemDeFalha } from "@/lib/admin/metrica";
 
+/** `null` = a fonte daquele número NÃO foi lida (ver `falhas`). Tela: "—", nunca 0. */
+type N = number | null;
 type Command = {
-  users: number; active24h: number; volume24h: number; pnlAll: number; aiCost24h: number;
-  autopilot: { activeSessions: number; pnlToday: number; openPositions: number; exposure: number };
-  backtest: { winRate: number | null; decided: number };
-  alerts: { highSecurity24h: number; staleCrons: string[] };
+  falhas?: string[];
+  users: N; active24h: N; volume24h: N; pnlAll: N; aiCost24h: N;
+  autopilot: { activeSessions: N; pnlToday: N; openPositions: N; exposure: N };
+  backtest: { winRate: number | null; decided: N };
+  alerts: { highSecurity24h: N; staleCrons: string[] };
 };
 
-const usd = (n: number) => `$${Math.round(n).toLocaleString()}`;
+const usd = (n: N) => n == null ? "—" : `$${Math.round(n).toLocaleString()}`;
+const num = (n: N) => n == null ? "—" : String(n);
+const sinal = (n: N) => n == null ? "—" : `${n >= 0 ? "+" : ""}${usd(n)}`;
 /** ⚠️ Zero e nulo eram VERDES aqui. Ver `corDoPnl`. */
 const pnlColor = (n: number | null | undefined) => corDoPnl(n);
 
@@ -25,8 +31,8 @@ export default function CommandPanel() {
   const load = useCallback(async () => {
     try {
       const res = await fetch("/admin/api/command");
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? res.status);
+      const json = await res.json().catch(() => null);
+      if (!res.ok) { setD(null); setError(mensagemDeFalha(res.status, json)); return; }
       setD(json); setError(null);
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   }, []);
@@ -37,7 +43,10 @@ export default function CommandPanel() {
     return () => clearInterval(t);
   }, [load, realtime?.status]);
 
-  const hasAlerts = !!d && (d.alerts.highSecurity24h > 0 || d.alerts.staleCrons.length > 0);
+  const hasAlerts = !!d && ((d.alerts.highSecurity24h ?? 0) > 0 || d.alerts.staleCrons.length > 0);
+  // ⚠️ Sem ler tudo, NADA é declarado limpo: "ALL CLEAR" exige `falhas` vazio.
+  const incompleto = !!d && (d.falhas?.length ?? 0) > 0;
+  const corFaixa = hasAlerts ? "var(--adm-red)" : incompleto ? "var(--adm-amber)" : "var(--adm-green)";
 
   return (
     <TerminalPanel id="command" title="COMMAND" subtitle="the whole company at a glance" icon="◆" source="all workspaces">
@@ -47,24 +56,26 @@ export default function CommandPanel() {
       {d && (
         <div>
           {/* Status strip */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, padding: "6px 10px", borderRadius: 6, background: hasAlerts ? "var(--adm-glow-red)" : "var(--adm-bg-raise)", border: `1px solid ${hasAlerts ? "var(--adm-red)" : "var(--adm-border)"}` }}>
-            <span style={{ width: 9, height: 9, borderRadius: "50%", background: hasAlerts ? "var(--adm-red)" : "var(--adm-green)" }} />
-            <span style={{ fontSize: 13, color: hasAlerts ? "var(--adm-red)" : "var(--adm-green)", letterSpacing: "0.08em", flex: 1 }}>
-              {hasAlerts
-                ? [d.alerts.highSecurity24h > 0 ? `${d.alerts.highSecurity24h} high-sev security` : "", d.alerts.staleCrons.length > 0 ? `stale cron: ${d.alerts.staleCrons.join(", ")}` : ""].filter(Boolean).join(" · ")
-                : "ALL CLEAR"}
+          <div role={hasAlerts || incompleto ? "alert" : undefined} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, padding: "6px 10px", borderRadius: 6, background: hasAlerts ? "var(--adm-glow-red)" : "var(--adm-bg-raise)", border: `1px solid ${hasAlerts || incompleto ? corFaixa : "var(--adm-border)"}` }}>
+            <span style={{ width: 9, height: 9, borderRadius: "50%", background: corFaixa }} />
+            <span style={{ fontSize: 13, color: corFaixa, letterSpacing: "0.08em", flex: 1 }}>
+              {[
+                (d.alerts.highSecurity24h ?? 0) > 0 ? `${d.alerts.highSecurity24h} high-sev security` : "",
+                d.alerts.staleCrons.length > 0 ? `stale cron: ${d.alerts.staleCrons.join(", ")}` : "",
+                incompleto ? `DADOS INCOMPLETOS — não li: ${d.falhas!.join(", ")}` : "",
+              ].filter(Boolean).join(" · ") || "ALL CLEAR"}
             </span>
           </div>
 
           {/* KPI grid */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <Kpi label="USERS" value={String(d.users)} sub={`${d.active24h} active 24h`} color="var(--adm-cyan)" />
+            <Kpi label="USERS" value={num(d.users)} sub={`${num(d.active24h)} active 24h`} color="var(--adm-cyan)" />
             <Kpi label="VOLUME 24H" value={usd(d.volume24h)} sub="all operations" color="var(--adm-ink)" />
-            <Kpi label="AUTOPILOT P&L TODAY" value={`${d.autopilot.pnlToday >= 0 ? "+" : ""}${usd(d.autopilot.pnlToday)}`} sub={`${d.autopilot.activeSessions} active sessions`} color={pnlColor(d.autopilot.pnlToday)} />
-            <Kpi label="REALIZED P&L (ALL)" value={`${d.pnlAll >= 0 ? "+" : ""}${usd(d.pnlAll)}`} sub="every operation" color={pnlColor(d.pnlAll)} />
-            <Kpi label="OPEN EXPOSURE" value={usd(d.autopilot.exposure)} sub={`${d.autopilot.openPositions} positions`} color="var(--adm-gold)" />
-            <Kpi label="ZION WIN-RATE" value={d.backtest.winRate == null ? "—" : `${(d.backtest.winRate * 100).toFixed(0)}%`} sub={`${d.backtest.decided} decided`} color="var(--adm-violet)" />
-            <Kpi label="AI COST 24H" value={`$${d.aiCost24h.toFixed(2)}`} sub="Claude usage" color="var(--adm-amber)" />
+            <Kpi label="AUTOPILOT P&L TODAY" value={sinal(d.autopilot.pnlToday)} sub={`${num(d.autopilot.activeSessions)} active sessions`} color={pnlColor(d.autopilot.pnlToday)} />
+            <Kpi label="REALIZED P&L (ALL)" value={sinal(d.pnlAll)} sub="every operation" color={pnlColor(d.pnlAll)} />
+            <Kpi label="OPEN EXPOSURE" value={usd(d.autopilot.exposure)} sub={`${num(d.autopilot.openPositions)} positions`} color="var(--adm-gold)" />
+            <Kpi label="ZION WIN-RATE" value={d.backtest.winRate == null ? "—" : `${(d.backtest.winRate * 100).toFixed(0)}%`} sub={`${num(d.backtest.decided)} decided`} color="var(--adm-violet)" />
+            <Kpi label="AI COST 24H" value={d.aiCost24h == null ? "—" : `$${d.aiCost24h.toFixed(2)}`} sub="Claude usage" color="var(--adm-amber)" />
           </div>
         </div>
       )}

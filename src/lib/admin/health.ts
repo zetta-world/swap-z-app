@@ -107,16 +107,62 @@ export async function pingAiProviders(): Promise<DepPing[]> {
 }
 
 /** Read the last-seen timestamps for the known crons. */
-export async function getCronHeartbeats(): Promise<Record<string, string | null>> {
-  const out: Record<string, string | null> = { autopilot: null, backtest: null, radar: null };
+export interface LeituraBatimentos {
+  /** false = NÃO li. Batimento "ausente" só significa "nunca rodou" quando `lido`. */
+  lido: boolean;
+  batimentos: Record<string, string | null>;
+  erro?: string;
+}
+
+/**
+ * ⚠️ Leitura que distingue "o cron nunca bateu" de "não consegui ler o banco"
+ * (Admin CC 2.0, R0-verdade). `getCronHeartbeats` engolia o `{ error }` e o
+ * catch, e o painel mostrava "never" — desconhecido como fato.
+ */
+export async function lerBatimentos(): Promise<LeituraBatimentos> {
+  const batimentos: Record<string, string | null> = { autopilot: null, backtest: null, radar: null };
   const db = getSupabaseAdmin();
-  if (!db) return out;
+  if (!db) return { lido: false, batimentos, erro: "db_indisponivel" };
   try {
-    const { data } = await db.from("admin_kv").select("key, value").like("key", "cron:%");
+    const { data, error } = await db.from("admin_kv").select("key, value").like("key", "cron:%");
+    if (error) return { lido: false, batimentos, erro: "leitura_falhou" };
     for (const r of data ?? []) {
       const m = /^cron:(.+):last$/.exec(r.key);
-      if (m) out[m[1]] = r.value;
+      if (m) batimentos[m[1]] = r.value;
     }
-  } catch { /* ignore */ }
-  return out;
+    return { lido: true, batimentos };
+  } catch {
+    return { lido: false, batimentos, erro: "excecao" };
+  }
+}
+
+/** Compatível com quem já consumia (watchdog): ilegível = tudo null = "parado" (alarma, não cala). */
+export async function getCronHeartbeats(): Promise<Record<string, string | null>> {
+  return (await lerBatimentos()).batimentos;
+}
+
+/**
+ * Ping REAL do banco: uma leitura mínima com teto. Antes o health dizia
+ * "Supabase ok" se o CLIENTE existia (`!!db`) — variável de ambiente presente,
+ * banco possivelmente fora.
+ */
+export async function pingBanco(tetoMs = 3_000): Promise<{ ok: boolean; latencyMs: number | null; note?: string }> {
+  const db = getSupabaseAdmin();
+  if (!db) return { ok: false, latencyMs: null, note: "cliente não configurado" };
+  const t0 = Date.now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const leitura = (async () => {
+      const { error } = await db.from("admin_kv").select("key", { count: "exact", head: true }).limit(1);
+      return error ? { ok: false, latencyMs: Date.now() - t0, note: "leitura recusada" } : { ok: true, latencyMs: Date.now() - t0 };
+    })();
+    const estouro = new Promise<{ ok: boolean; latencyMs: number | null; note?: string }>((res) => {
+      timer = setTimeout(() => res({ ok: false, latencyMs: null, note: `sem resposta em ${tetoMs} ms` }), tetoMs);
+    });
+    return await Promise.race([leitura, estouro]);
+  } catch {
+    return { ok: false, latencyMs: Date.now() - t0, note: "exceção" };
+  } finally {
+    clearTimeout(timer);
+  }
 }

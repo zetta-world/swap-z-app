@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
 
-type Cron = { name: string; last: string | null; ageMin: number | null; stale: boolean };
+type Cron = { name: string; last: string | null; ageMin: number | null; stale: boolean; estado?: "ok" | "parado" | "nunca_visto" | "desconhecido" };
 type Dep  = { name: string; ok: boolean; latencyMs: number | null; note?: string };
 type Ext = {
   id: string; name: string; purpose: string; breaks: string;
@@ -20,6 +20,8 @@ const IMPACT_LABEL: Record<string, string> = {
 function dot(ok: boolean): string { return ok ? "var(--adm-green)" : "var(--adm-red)"; }
 
 function ageLabel(c: Cron): string {
+  // ⚠️ "never" só quando o banco foi LIDO e não há batimento. Ilegível = desconhecido.
+  if (c.estado === "desconhecido") return "DESCONHECIDO";
   if (c.ageMin == null) return "never";
   if (c.ageMin < 1) return "just now";
   if (c.ageMin < 90) return `${c.ageMin}m ago`;
