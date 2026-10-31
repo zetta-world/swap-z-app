@@ -40,9 +40,9 @@ export default function AdminAccessPanel() {
     try {
       const res = await fetch("/admin/api/admins");
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? res.status);
+      if (!res.ok) { setAdmins([]); throw new Error(json.porque ?? json.error ?? res.status); }
       setAdmins(json.admins ?? []); setErr(null);
-    } catch (e) { setErr(String(e)); }
+    } catch (e) { setAdmins([]); setErr(String(e)); }
   }, []);
 
   useEffect(() => { load(); }, [load]);

@@ -63,7 +63,8 @@ describe("① uma consulta por propósito, sem duplicata", () => {
     // defeito sem mudar mais nada.
     const corpo = corpoDoPromiseAll();
     expect(corpo.indexOf(".limit(60)")).toBeLessThan(corpo.indexOf('gte("created_at", ago24h)'));
-    expect(semComentarios).toMatch(/const \[\{ data: recent \}, \{ data: rows24h \}\]/);
+    // R3: as duas leituras agora também trazem `error` (falha → 503); a ORDEM é o que este teste guarda.
+    expect(semComentarios).toMatch(/const \[\{ data: recent(?:, error: \w+)? \}, \{ data: rows24h(?:, error: \w+)? \}\]/);
   });
 });
 

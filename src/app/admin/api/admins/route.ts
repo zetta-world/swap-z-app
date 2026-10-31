@@ -22,7 +22,7 @@ export async function GET(): Promise<NextResponse> {
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 
-  const [{ data: panel }, { data: legacy }] = await Promise.all([
+  const [{ data: panel, error: erroPainel }, { data: legacy, error: erroLegado }] = await Promise.all([
     db.from("platform_admins").select("wallet_address, granted_by, note, granted_at").order("granted_at", { ascending: true }),
     db.from("tier_cache").select("wallet_address, tier").eq("source", "admin"),
   ]);
@@ -41,6 +41,19 @@ export async function GET(): Promise<NextResponse> {
    * continuava valendo. Duas consequências de um botão que parecia limpar
    * repetição.
    */
+  /**
+   * ⚠️ R3/P1-7: leitura que falhava mostrava SÓ os admins de ENV — quem tinha
+   * acesso pelo painel sumia da lista e não podia ser revogado daqui. Lista
+   * de quem tem acesso é segurança: incompleta = 503, nunca "é só isso".
+   */
+  if (erroPainel || erroLegado) {
+    return NextResponse.json({
+      state: "unavailable", errorCode: "leitura_falhou", error: "admins_ilegiveis",
+      falhou: [erroPainel ? "platform_admins" : "", erroLegado ? "tier_cache" : ""].filter(Boolean),
+      porque: "não consegui ler quem tem acesso — a lista NÃO é só o ENV",
+    }, { status: 503 });
+  }
+
   const chave = (w: string) => w.trim().toLowerCase();
   const byWallet = new Map<string, { wallet: string; source: "env" | "panel" | "legacy"; revocable: boolean; grantedBy?: string | null; grantedAt?: string | null; note?: string | null }>();
   for (const w of envAdminWallets()) byWallet.set(chave(w), { wallet: w, source: "env", revocable: false });

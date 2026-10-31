@@ -111,6 +111,7 @@ describe("③ zero linhas não é erro — e também não é 'revoguei'", () => 
 
   it("⚠️ o painel mostra o PORQUÊ, não o código do erro", () => {
     // "nao_revogou" não diz a ninguém o que fazer; a frase do `porque` diz.
-    expect([...PAINEL.matchAll(/json\.porque \?\? json\.error/g)]).toHaveLength(2);
+    // 3 = conceder, revogar e (R3) a LEITURA da lista, que agora também diz o porquê.
+    expect([...PAINEL.matchAll(/json\.porque \?\? json\.error/g)]).toHaveLength(3);
   });
 });

@@ -974,3 +974,14 @@
 .hub-ativacoes .t { color: var(--adm-cyan); text-transform: uppercase; font-size: 9px; }
 .hub-ativacoes .o { color: var(--adm-amber); font-size: 9px; text-align: right; }
 .hub-ativacoes .o.vendeu { color: var(--adm-green); font-weight: 700; }
+
+/* R3 (Admin CC 2.0): quem pediu menos movimento ao sistema não recebe cometa,
+   pulso nem shimmer infinitos. O estado continua legível — só não anima. */
+@media (prefers-reduced-motion: reduce) {
+  .admin-shell *, .admin-shell *::before, .admin-shell *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

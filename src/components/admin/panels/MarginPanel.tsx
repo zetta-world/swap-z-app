@@ -37,11 +37,24 @@ export default function MarginPanel() {
   const save = async (key: string) => {
     const n = Number(draft.replace(",", "."));
     if (!Number.isFinite(n) || n < 0) return;
-    await fetch("/admin/api/margin", {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ key, usd: n }),
-    }).catch(() => {});
-    setEdit(null); setDraft(""); await load();
+    // ⚠️ Antes: `.catch(() => {})` sem `res.ok` — gravação recusada sumia e o
+    // valor velho voltava na tela sem aviso (R3, P1-14). Agora a falha é dita.
+    try {
+      const res = await fetch("/admin/api/margin", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key, usd: n }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({})) as { porque?: string; error?: string };
+        setErr(`NÃO gravou ${key}: ${j.porque ?? j.error ?? `HTTP ${res.status}`}`);
+        return;
+      }
+      setEdit(null); setDraft("");
+    } catch (e) {
+      setErr(`NÃO gravou ${key}: ${String(e).slice(0, 120)}`);
+      return;
+    }
+    await load();
   };
 
   const row = (key: string, label: string, value: number, meta?: string, stale?: boolean) => (

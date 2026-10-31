@@ -32,7 +32,7 @@ export async function GET(): Promise<NextResponse> {
    * que esta auditoria mais encontrou, agora no painel que existe para ver
    * abuso e tentativa de invasão.
    */
-  const [{ data: recent }, { data: rows24h }] = await Promise.all([
+  const [{ data: recent, error: erroRecentes }, { data: rows24h, error: erro24h }] = await Promise.all([
     // leitura-limitada: os 60 eventos mais recentes, que é o que a tela mostra.
     // A CONTAGEM de 24h vem da consulta seguinte, que não depende deste recorte.
     db.from("platform_events")
@@ -49,6 +49,19 @@ export async function GET(): Promise<NextResponse> {
       .limit(1000),
   ]);
 
+  /**
+   * ⚠️ R3/P1-6: as duas leituras descartavam `{ error }` e o painel dizia
+   * "No errors or security events in 24h. ✓" com o banco fora — no painel que
+   * existe para ver tentativa de invasão. Falhou → 503, sem contagem.
+   */
+  if (erroRecentes || erro24h) {
+    return NextResponse.json({
+      state: "unavailable", errorCode: "leitura_falhou", error: "logs_ilegiveis",
+      falhou: [erroRecentes ? "recentes" : "", erro24h ? "24h" : ""].filter(Boolean),
+    }, { status: 503 });
+  }
+  const truncado24h = (rows24h ?? []).length >= 1000;
+
   let errors24h = 0, security24h = 0, high24h = 0;
   const byKind: Record<string, number> = {};
   for (const r of (rows24h ?? []) as Row[]) {
@@ -64,6 +77,8 @@ export async function GET(): Promise<NextResponse> {
 
   return NextResponse.json({
     errors24h, security24h, high24h, topKinds,
+    // Bateu no recorte de 1.000: as contagens são PISO, não total.
+    truncado24h,
     recent: (recent ?? []) as Row[],
     fetchedAt: new Date().toISOString(),
   });

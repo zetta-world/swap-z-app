@@ -1,5 +1,6 @@
 "use client";
 
+import FronteiraDePainel from "./FronteiraDePainel";
 import { useState } from "react";
 import { useAdminLayout } from "@/lib/store/admin-layout";
 import { MODULE_BY_ID, MODULE_REGISTRY, type ModuleId, type ModuleCategory } from "@/lib/admin/modules";
@@ -97,12 +98,13 @@ export default function ModuleGrid({ panels, only }: { panels: PanelMap; only?: 
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(400px, 1fr))",
+            // `min(400px, 100%)`: em 360 px a coluna de 400 estourava a tela (scroll lateral).
+            gridTemplateColumns: "repeat(auto-fill, minmax(min(400px, 100%), 1fr))",
             gap: 12,
           }}
         >
           {visible.map((id) => (
-            <div key={id}>{panels[id]}</div>
+            <div key={id}><FronteiraDePainel id={id}>{panels[id]}</FronteiraDePainel></div>
           ))}
         </div>
       )}

@@ -41,7 +41,8 @@ export default function TerminalPanel({
         </div>
 
         <span className="adm-panel-icon" aria-hidden>{icon}</span>
-        <span className="adm-panel-title">{title}</span>
+        {/* h2 (R3): leitor de tela navega pelos painéis por cabeçalho; o visual é o mesmo. */}
+        <h2 className="adm-panel-title" style={{ margin: 0 }}>{title}</h2>
         <span className="adm-panel-subtitle">{subtitle}</span>
 
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>

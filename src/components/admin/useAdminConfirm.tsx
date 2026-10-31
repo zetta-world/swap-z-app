@@ -77,13 +77,14 @@ export function useAdminConfirm() {
             {state.message}
           </p>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
-            <button className="adm-toggle" onClick={() => close(false)}>
+            {/* ⚠️ Foco no CANCELAR (R3): com o foco no destrutivo, um Enter
+                distraído confirmava o comando. Confirmar exige mirar. */}
+            <button className="adm-toggle" onClick={() => close(false)} autoFocus>
               CANCEL
             </button>
             <button
               className={`adm-toggle ${state.danger ? "danger" : "active"}`}
               onClick={() => close(true)}
-              autoFocus
             >
               CONFIRM
             </button>
