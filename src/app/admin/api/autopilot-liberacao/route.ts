@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin, logAdminAction } from "@/lib/admin/require";
+import { requireAdmin } from "@/lib/admin/require";
+import { comandoAuditado, avisoDeAuditoria, PORQUE_AUDITORIA_INDISPONIVEL } from "@/lib/admin/auditoria-duravel";
 import { broadcastAdminRefresh } from "@/lib/admin/realtime";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   lerLiberacao, registrarLiberacao, MIN_MOTIVO,
-  lerPilotos, gravarPilotos, type Piloto,
+  lerPilotosConferido, gravarPilotos, type Piloto,
 } from "@/lib/autopilot/liberacao";
 
 export const dynamic = "force-dynamic";
@@ -24,11 +25,15 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(): Promise<NextResponse> {
   await requireAdmin();
+  // Leitura falha NÃO vira "nenhum piloto": a tela mostra que não sabe.
+  const p = await lerPilotosConferido();
   return NextResponse.json({
     ...(await lerLiberacao()),
     minMotivo: MIN_MOTIVO,
     verdes: await verdesDoLaboratorio(),
-    pilotos: await lerPilotos(),
+    pilotos: p.ok ? p.lista : [],
+    pilotosLidos: p.ok,
+    ...(p.ok ? {} : { pilotosErro: p.erro }),
   });
 }
 
@@ -75,57 +80,97 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
    * nota escrita, igual a abrir a trava — e sai no log de auditoria com a nota.
    */
   if (typeof body.piloto === "string" || typeof body.remover === "string") {
-    const lista = await lerPilotos();
+    /**
+     * ⚠️⚠️ LEITURA CONFERIDA ANTES DE REGRAVAR (Admin CC 2.0, P0 de 25/10). Com
+     * `lerPilotos` (que devolve [] na falha, certo para a trava), uma leitura que
+     * falhava fazia este POST gravar a lista só com a carteira nova — APAGANDO os
+     * outros pilotos. Agora: falhou → 503 e nada é gravado; gravação condicional
+     * ao valor lido (outro admin mudou → 409).
+     */
+    const leitura = await lerPilotosConferido();
+    if (!leitura.ok) {
+      return NextResponse.json({
+        error: "pilotos_ilegiveis", detalhe: leitura.erro,
+        porque: "NADA foi alterado: não consegui ler a lista atual de pilotos para conferir",
+      }, { status: 503 });
+    }
+    const lista = leitura.lista;
+    let acao: string, alvo: string, nova: Piloto[], dados: Record<string, unknown>;
     if (typeof body.remover === "string") {
-      const alvo = body.remover.toLowerCase();
-      const nova = lista.filter((p) => p.wallet !== alvo);
-      if (!await gravarPilotos(nova)) {
-        return NextResponse.json({ error: "db_indisponivel" }, { status: 503 });
+      alvo = body.remover.toLowerCase();
+      nova = lista.filter((p) => p.wallet !== alvo);
+      acao = "autopilot.piloto.remover";
+      dados = {};
+    } else {
+      alvo = (body.piloto as string).trim().toLowerCase();
+      const nota = typeof body.motivo === "string" ? body.motivo.trim() : "";
+      if (alvo.length < 8) return NextResponse.json({ error: "carteira_invalida" }, { status: 400 });
+      if (nota.length < MIN_MOTIVO) {
+        return NextResponse.json({ error: "motivo_curto", minMotivo: MIN_MOTIVO }, { status: 400 });
       }
-      await logAdminAction(actor, "autopilot.piloto.remover", alvo, {});
-      broadcastAdminRefresh("audit");
-      return NextResponse.json({ ok: true, pilotos: nova });
+      // Reautorizar a mesma carteira ATUALIZA a nota em vez de duplicar a linha:
+      // duas entradas para a mesma carteira com notas diferentes seriam dois
+      // registros contando histórias diferentes sobre o mesmo poder.
+      nova = [
+        ...lista.filter((p) => p.wallet !== alvo),
+        { wallet: alvo, nota: nota.slice(0, 300), at: new Date().toISOString() },
+      ];
+      acao = "autopilot.piloto.autorizar";
+      dados = { nota: nota.slice(0, 300) };
     }
-    const wallet = (body.piloto as string).trim().toLowerCase();
-    const nota   = typeof body.motivo === "string" ? body.motivo.trim() : "";
-    if (wallet.length < 8) return NextResponse.json({ error: "carteira_invalida" }, { status: 400 });
-    if (nota.length < MIN_MOTIVO) {
-      return NextResponse.json({ error: "motivo_curto", minMotivo: MIN_MOTIVO }, { status: 400 });
+    const r = await comandoAuditado({
+      acao, ator: actor, alvo, antes: lista.map((p) => p.wallet), depois: nova.map((p) => p.wallet), dados,
+      executar: async () => {
+        const g = await gravarPilotos(nova, leitura.bruto);
+        return g.ok ? { ok: true, valor: nova } : { ok: false, codigo: g.erro };
+      },
+    });
+    if (r.estado === "recusado") {
+      return NextResponse.json({ error: "auditoria_indisponivel", porque: PORQUE_AUDITORIA_INDISPONIVEL }, { status: 503 });
     }
-    // Reautorizar a mesma carteira ATUALIZA a nota em vez de duplicar a linha:
-    // duas entradas para a mesma carteira com notas diferentes seriam dois
-    // registros contando histórias diferentes sobre o mesmo poder.
-    const nova: Piloto[] = [
-      ...lista.filter((p) => p.wallet !== wallet),
-      { wallet, nota: nota.slice(0, 300), at: new Date().toISOString() },
-    ];
-    if (!await gravarPilotos(nova)) {
-      return NextResponse.json({ error: "db_indisponivel" }, { status: 503 });
+    if (r.estado === "falhou") {
+      return NextResponse.json({
+        error: r.codigo, ...avisoDeAuditoria(r.auditoria),
+        porque: r.codigo === "conflito"
+          ? "NADA foi alterado: outro admin mudou a lista de pilotos — releia"
+          : r.codigo === "excecao"
+            ? "a gravação lançou exceção — a lista pode ter mudado; releia antes de repetir"
+            : "a lista de pilotos NÃO foi gravada",
+      }, { status: r.codigo === "conflito" ? 409 : r.codigo === "excecao" ? 500 : 503 });
     }
-    await logAdminAction(actor, "autopilot.piloto.autorizar", wallet, { nota: nota.slice(0, 300) });
     broadcastAdminRefresh("audit");
-    return NextResponse.json({ ok: true, pilotos: nova });
+    return NextResponse.json({ ok: true, pilotos: r.estado === "executado" ? r.valor : nova, ...(r.estado === "executado" ? avisoDeAuditoria(r.auditoria) : {}) });
   }
 
   if (typeof body.liberar !== "boolean") {
     return NextResponse.json({ error: "invalid_body" }, { status: 400 });
   }
+  const liberar = body.liberar;
   const motivo = typeof body.motivo === "string" ? body.motivo : "";
-
-  const r = await registrarLiberacao(body.liberar, motivo);
-  if (!r.ok) {
-    return NextResponse.json(
-      { error: r.erro, minMotivo: MIN_MOTIVO },
-      { status: r.erro === "db_indisponivel" ? 503 : 400 },
-    );
+  if (liberar && motivo.trim().length < MIN_MOTIVO) {
+    return NextResponse.json({ error: "motivo_curto", minMotivo: MIN_MOTIVO }, { status: 400 });
   }
 
   // O log de auditoria carrega a justificativa junto — um registro de "abriu"
   // sem o porquê é a metade que não serve para nada depois.
-  await logAdminAction(actor, "autopilot.liberacao", undefined, {
-    liberar: body.liberar, motivo: motivo.slice(0, 500),
+  const r = await comandoAuditado({
+    acao: "autopilot.liberacao", ator: actor, depois: String(liberar),
+    dados: { liberar, motivo: motivo.slice(0, 500) },
+    executar: async () => {
+      const g = await registrarLiberacao(liberar, motivo);
+      return g.ok ? { ok: true, valor: true } : { ok: false, codigo: g.erro ?? "escrita_falhou" };
+    },
   });
+  if (r.estado === "recusado") {
+    return NextResponse.json({ error: "auditoria_indisponivel", porque: PORQUE_AUDITORIA_INDISPONIVEL }, { status: 503 });
+  }
+  if (r.estado === "falhou") {
+    return NextResponse.json(
+      { error: r.codigo, minMotivo: MIN_MOTIVO, ...avisoDeAuditoria(r.auditoria),
+        porque: "a liberação NÃO foi alterada: o banco recusou a gravação" },
+      { status: r.codigo === "motivo_curto" ? 400 : 503 },
+    );
+  }
   broadcastAdminRefresh("audit");
-
-  return NextResponse.json({ ok: true, ...(await lerLiberacao()) });
+  return NextResponse.json({ ok: true, ...(await lerLiberacao()), ...(r.estado === "executado" ? avisoDeAuditoria(r.auditoria) : {}) });
 }

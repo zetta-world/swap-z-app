@@ -25,6 +25,9 @@ interface Estado {
   minMotivo: number;
   verdes:   Verde[];
   pilotos:  Piloto[];
+  /** false = a leitura da lista FALHOU: `pilotos` vazio NÃO quer dizer "nenhum". */
+  pilotosLidos?: boolean;
+  pilotosErro?:  string;
 }
 
 const CAUSA_TEXTO: Record<Estado["causa"], string> = {
@@ -61,8 +64,8 @@ export default function LiberacaoPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ liberar, motivo }),
       });
-      const body = await res.json() as { error?: string };
-      if (!res.ok) { setErro(body.error ?? `HTTP ${res.status}`); return; }
+      const body = await res.json().catch(() => ({})) as { error?: string; porque?: string };
+      if (!res.ok) { setErro(body.porque ?? body.error ?? `HTTP ${res.status}`); await carregar(); return; }
       setMotivo("");
       await carregar();
     } finally { setBusy(false); }
@@ -79,8 +82,8 @@ export default function LiberacaoPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(corpo),
       });
-      const b = await res.json() as { error?: string };
-      if (!res.ok) { setErro(b.error ?? `HTTP ${res.status}`); return; }
+      const b = await res.json().catch(() => ({})) as { error?: string; porque?: string };
+      if (!res.ok) { setErro(b.porque ?? b.error ?? `HTTP ${res.status}`); await carregar(); return; }
       setNovoPiloto(""); setNotaPiloto("");
       await carregar();
     } finally { setBusy(false); }
@@ -191,7 +194,7 @@ export default function LiberacaoPanel() {
           {/* ─── PILOTOS: quem roda com a automação fechada ─────────────── */}
           <div style={{ marginTop: 12, borderTop: "1px solid var(--adm-border)", paddingTop: 8 }}>
             <div style={{ fontSize: 11, color: "var(--adm-ink-3)", marginBottom: 4 }}>
-              <b>CARTEIRAS PILOTO ({data.pilotos.length})</b> — rodam a automação mesmo
+              <b>CARTEIRAS PILOTO ({data.pilotosLidos === false ? "?" : data.pilotos.length})</b> — rodam a automação mesmo
               fechada, para teste com dinheiro real
             </div>
             {/* ⚠️ A CONSEQUÊNCIA VEM ANTES DA LISTA. */}
@@ -206,7 +209,13 @@ export default function LiberacaoPanel() {
               <code> ADMIN_WALLETS</code> (ambiente, exige redeploy) já é piloto e não
               precisa ser listada.
             </div>
-            {data.pilotos.length === 0 && (
+            {data.pilotosLidos === false && (
+              <div role="alert" style={{ fontSize: 11, color: "var(--adm-amber)", marginBottom: 5 }}>
+                ⚠ LISTA DESCONHECIDA — não consegui ler os pilotos ({data.pilotosErro ?? "erro"}). Isto NÃO
+                quer dizer que não há nenhum; autorizar/remover fica recusado até uma leitura dar certo.
+              </div>
+            )}
+            {data.pilotosLidos !== false && data.pilotos.length === 0 && (
               <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginBottom: 5 }}>
                 nenhuma carteira autorizada além do <code>ADMIN_WALLETS</code>
               </div>
@@ -247,7 +256,7 @@ export default function LiberacaoPanel() {
             />
             <button
               className="adm-btn" style={{ marginTop: 5 }}
-              disabled={busy || novoPiloto.trim().length < 8 || notaPiloto.trim().length < min}
+              disabled={busy || data.pilotosLidos === false || novoPiloto.trim().length < 8 || notaPiloto.trim().length < min}
               onClick={() => void mexerPiloto({ piloto: novoPiloto, motivo: notaPiloto })}
             >
               {notaPiloto.trim().length < min
