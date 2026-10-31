@@ -152,7 +152,8 @@ begin
   assert not ok_auth, 'T20.26 authenticated NÃO pode executar';
   assert ok_srv, 'T20.27 service_role executa';
   assert sd, 'T20.28 security definer';
-  assert sp @> array['search_path=public'], 'T20.29 search_path fixo';
+  -- 0081 (R4/M4): `public, pg_temp` — temporário buscado por ÚLTIMO, não primeiro.
+  assert sp @> array['search_path=public, pg_temp'], 'T20.29 search_path fixo (com pg_temp por último)';
   assert (select count(*) from pg_proc where proname = 'bancada_reservar_rodada') = 1, 'T20.30 sem overload';
 end $$;
 

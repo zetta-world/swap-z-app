@@ -223,6 +223,13 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
      * carteira das transmissões Solana, sem TTL; testes 24/24b). A 0078 é ADITIVA — colunas de
      * verificação on-chain em `operations` (todo o histórico fica `declarada`; teste 25).
      *
+     * E da 0079 à 0082, no ADMIN COMMAND CENTER 2.0 (R4, docs/ADMIN-SECURITY-DB-ACL.md §7):
+     * todas SÓ REVOGAM / ENDURECEM, nenhuma cria tabela nem edita migration anterior —
+     * 0079 tira TRUNCATE/REFERENCES/TRIGGER[/MAINTAIN] de anon nas 34 tabelas abertas (M1),
+     * 0080 fecha o EXECUTE das 4 INVOKER e a sequência de founders (M3), 0081 põe `pg_temp`
+     * por último no search_path de 14 funções (M4) e 0082 faz objeto novo nascer fechado
+     * (M2). Teste 26. NÃO aplicadas no hospedado (exige backup validado + autorização).
+     *
      * ⚠️ ESTADO MEDIDO (21/10, `list_migrations` no Supabase de produção): 0059–0076 FORAM
      * aplicadas em 14/10. A frase antiga "nenhuma foi aplicada" ficou desatualizada.
      */
@@ -246,6 +253,10 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
       "0076_bancada_papel_exclusivo_e_idempotente.sql",
       "0077_solana_tx_em_voo.sql",
       "0078_operations_verificacao_onchain.sql",
+      "0079_acl_revoga_truncate_references_trigger.sql",
+      "0080_acl_funcoes_invoker_e_sequencia.sql",
+      "0081_search_path_com_pg_temp.sql",
+      "0082_default_privileges_fechados.sql",
     ]);
   });
 });

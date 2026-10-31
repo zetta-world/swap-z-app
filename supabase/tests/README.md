@@ -24,8 +24,27 @@ create role authenticated nologin;
 create role service_role nologin bypassrls;
 ```
 
+⚠️ **E os default privileges da plataforma**, sem os quais os testes de ACL
+(14, 17, 26…) passam no vazio — em Postgres puro nada nasce com grant para
+`anon` (Q4 de `docs/ADMIN-SECURITY-DB-ACL.md`):
+
+```sql
+grant usage on schema public to anon, authenticated, service_role;
+alter default privileges for role postgres in schema public grant all on tables    to anon, authenticated, service_role;
+alter default privileges for role postgres in schema public grant all on sequences to anon, authenticated, service_role;
+alter default privileges for role postgres in schema public grant all on functions to anon, authenticated, service_role;
+```
+
 Depois aplique `supabase/migrations/*.sql` em ordem e rode os arquivos deste
 diretório.
+
+`26_acl_endurecimento_0079_0082.sql` (R4 do Admin CC 2.0) prova M1–M4: sem
+TRUNCATE/REFERENCES/TRIGGER para `anon` nas 34 tabelas (e o TRUNCATE de `anon`
+recusado com 42501), as 4 INVOKER e a sequência de `founders_sale_events`
+fechadas, `search_path = public, pg_temp` nas 14 funções, e objeto novo
+nascendo fechado (inclusive função fora de `public` — forma global). Com a
+cadeia só até 0078 ele FALHA no T26.1; aplicando 0079→0082 uma a uma, cada
+migration vira o teste dela.
 
 ## O que cada um prova
 

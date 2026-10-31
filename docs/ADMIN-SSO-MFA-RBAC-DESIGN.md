@@ -314,8 +314,12 @@ Comando sensível com auditoria durável: a ação e o registro em `admin_audit`
 
 Schema **`admin_private`** (não existe hoje; nome explícito para não colidir com um `private` genérico). Acesso só
 pelo servidor: `revoke all on schema admin_private from public, anon, authenticated; grant usage … to service_role`;
-`alter default privileges in schema admin_private revoke all on tables from public, anon, authenticated` e o mesmo
-para `execute on functions` (funções nascem executáveis por `PUBLIC` no Postgres). Para o `supabase-js`
+`alter default privileges in schema admin_private revoke all on tables from public, anon, authenticated`.
+⚠️ **Correção (R4, 0082):** para funções, a forma por schema **não** remove o `EXECUTE` a `PUBLIC` — ele é default
+GLOBAL do PostgreSQL e o per-schema só soma. A `0082_default_privileges_fechados.sql` aplica a forma global
+(`alter default privileges for role postgres revoke execute on functions from public`), provada pelo T26.8 de
+`supabase/tests/26_acl_endurecimento_0079_0082.sql` com uma função criada fora de `public`; cada função de
+`admin_private` ainda recebe `revoke execute … from public` explícito na própria migration, por redundância. Para o `supabase-js`
 (`.schema('admin_private')`) o schema precisa entrar em "Exposed schemas" — com `USAGE` só para `service_role`, o
 PostgREST nega `anon`/`authenticated`. Decisão final e testes com papéis reais ficam em R4
 (`docs/ADMIN-SECURITY-DB-ACL.md`). RLS habilitada sem policies, como o resto do repo.
