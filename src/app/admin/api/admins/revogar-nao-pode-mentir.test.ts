@@ -52,12 +52,25 @@ describe("① os dois DELETE do revoke são conferidos", () => {
   });
 });
 
+/**
+ * ⚠️ ESTE BLOCO MUDOU DE MECANISMO EM 26/10 (R0, ADM-005), e a troca fica
+ * escrita para ser auditável: ele exigia `logAdminAction(...)` DEPOIS da
+ * conferência. `logAdminAction` é best-effort — engole o erro do insert —,
+ * então "o registro só depois da confirmação" ainda deixava o registro FALTAR
+ * em silêncio. Agora os dois comandos passam por `comandoAuditado`: intenção
+ * gravada antes (sem ela, nada muda), e o desfecho `executado` só sai quando a
+ * função do comando devolve `ok: true` — o que só acontece depois da conferência.
+ */
 describe("② a auditoria só é escrita depois da revogação confirmada", () => {
   it("⚠️⚠️ o registro forense não pode mentir junto com a tela", () => {
+    const iCmd   = ROTA.indexOf('acao: "admin.revoke"');
     const iFalha = ROTA.indexOf("if (falhou.length)");
-    const iAudit = ROTA.indexOf('logAdminAction(actor, "admin.revoke"');
-    expect(iFalha).toBeGreaterThan(0);
-    expect(iAudit).toBeGreaterThan(iFalha);
+    const iOk    = ROTA.indexOf("return { ok: true, valor", iFalha);
+    expect(ROTA).toMatch(/comandoAuditado<Revogacao>\(/);
+    expect(iCmd).toBeGreaterThan(0);
+    expect(iFalha).toBeGreaterThan(iCmd);
+    expect(iOk).toBeGreaterThan(iFalha);
+    expect(ROTA).not.toMatch(/logAdminAction\(/);
   });
 
   it("⚠️ e a falha vira evento de SEGURANÇA alto, não silêncio", () => {
@@ -65,10 +78,17 @@ describe("② a auditoria só é escrita depois da revogação confirmada", () =
   });
 
   it("⚠️ a CONCESSÃO também confere antes de auditar", () => {
-    const iErro  = ROTA.indexOf("if (erroDaConcessao)");
-    const iAudit = ROTA.indexOf('logAdminAction(actor, "admin.grant"');
-    expect(iErro).toBeGreaterThan(0);
-    expect(iAudit).toBeGreaterThan(iErro);
+    const iCmd  = ROTA.indexOf('acao: "admin.grant"');
+    const iErro = ROTA.indexOf("if (erroDaConcessao)");
+    const iOk   = ROTA.indexOf("return { ok: true, valor: null }", iErro);
+    expect(iCmd).toBeGreaterThan(0);
+    expect(iErro).toBeGreaterThan(iCmd);
+    expect(iOk).toBeGreaterThan(iErro);
+  });
+
+  it("⚠️⚠️ sem a intenção gravada, nem concede nem revoga — 503", () => {
+    expect(ROTA).toMatch(/r\.estado === "recusado"/);
+    expect(ROTA).toMatch(/status: 503/);
   });
 });
 

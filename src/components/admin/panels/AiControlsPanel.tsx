@@ -2,13 +2,17 @@
 
 import { useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { useAdminConfirm } from "../useAdminConfirm";
+import {
+  conhecido, gravarInterruptor, lerInterruptoresCliente, rotuloDoEstado, type EstadoTri,
+} from "../interruptores-cliente";
 
 // A lista de gates NÃO é redigitada aqui (auditoria 01/08). Ela vem de
 // `gate-keys.ts` — módulo puro, sem import de servidor, justamente para que o
 // painel possa derivar da mesma fonte que o cron e o watchdog. Espelhar à mão
 // já custou três bugs: oracle/arbiter2 invisíveis no painel, e duas versões da
 // lista do disjuntor de custo com mesas faltando.
-import { FLYWHEEL_GATE_KEYS, type FlywheelGateKey } from "@/lib/admin/gate-keys";
+import { FLYWHEEL_GATE_KEYS, MAPA_INTERRUPTORES, type FlywheelGateKey } from "@/lib/admin/gate-keys";
 
 type GateKey = FlywheelGateKey;
 
@@ -45,33 +49,34 @@ const GATES: { key: GateKey; label: string; desc: string; master?: boolean }[] =
 const UNLISTED_GATES = FLYWHEEL_GATE_KEYS.filter((k) => !GATES.some((g) => g.key === k));
 
 export default function AiControlsPanel() {
-  const [gates, setGates] = useState<Record<GateKey, boolean>>(
-    () => Object.fromEntries(FLYWHEEL_GATE_KEYS.map((k) => [k, false])) as Record<GateKey, boolean>,
-  );
+  // ⚠️ Nasce DESCONHECIDO: antes um `false` default + leitura falha = "19 gates ON" na tela (ADM-004).
+  const [gates, setGates] = useState<Record<string, EstadoTri>>({});
   const [loading, setLoading]   = useState(true);
   const [mutating, setMutating] = useState<GateKey | null>(null);
   const [err, setErr]           = useState<string | null>(null);
-  const [note, setNote]         = useState<string | null>(null);
+  const [ilegivel, setIlegivel] = useState<string | null>(null);
   const [breakers, setBreakers] = useState<Breaker[]>([]);
+  const [breakersErro, setBreakersErro] = useState<string | null>(null);
   const [resetting, setResetting] = useState<string | null>(null);
+  const { confirm, modal: confirmModal } = useAdminConfirm();
 
   async function load() {
-    try {
-      const res  = await fetch("/admin/api/killswitch");
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? res.status);
-      const s = json.switches ?? {};
-      setGates(
-        Object.fromEntries(FLYWHEEL_GATE_KEYS.map((k) => [k, !!s[k]])) as Record<GateKey, boolean>,
-      );
-      if (json.note) setNote(json.note);
-    } catch (e) { setErr(String(e)); } finally { setLoading(false); }
-    // Circuit-breaker states — best-effort, never blocks the toggles.
+    const l = await lerInterruptoresCliente();
+    if (l.ok) {
+      setGates(Object.fromEntries(Object.entries(l.estados).map(([k, v]) => [k, v.estado])));
+      setIlegivel(null);
+    } else {
+      setGates({});
+      setIlegivel(l.porque);
+    }
+    setLoading(false);
+    // Breakers: falha de leitura aparece como falha, não como "seção vazia" nem "tudo ok".
     try {
       const res  = await fetch("/admin/api/ai-circuit");
-      const json = await res.json();
-      if (res.ok) setBreakers(json.breakers ?? []);
-    } catch { /* section just stays empty */ }
+      const json = await res.json().catch(() => null);
+      if (res.ok && json) { setBreakers(json.breakers ?? []); setBreakersErro(null); }
+      else setBreakersErro(json?.porque ?? json?.error ?? `HTTP ${res.status}`);
+    } catch (e) { setBreakersErro(String(e)); }
   }
 
   useEffect(() => { load(); }, []);
@@ -84,32 +89,48 @@ export default function AiControlsPanel() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id }),
       });
-      if (res.ok) setBreakers((prev) => prev.map((b) => b.id === id ? { ...b, fails: 0, tripped: false, cooldownEndsAt: null } : b));
-    } catch { /* keep old state */ } finally { setResetting(null); }
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        setErr(`reset do breaker ${id} falhou: ${json?.porque ?? json?.error ?? res.status}`);
+      }
+    } catch (e) { setErr(`reset do breaker ${id} falhou: ${String(e)}`); }
+    await load();
+    setResetting(null);
   }
 
   async function toggle(key: GateKey) {
-    const next = !gates[key];
+    const atual = gates[key];
+    if (!conhecido(atual)) return;
+    const next = atual === "off";             // on = pausado
+    const m = MAPA_INTERRUPTORES[key];
+    // Dinheiro/receita de cliente confirma nos DOIS sentidos.
+    if (m.dinheiro) {
+      const ok = await confirm(
+        `${next ? "PAUSAR" : "RELIGAR"} ${key} — mexe em dinheiro ou receita de cliente. Bloqueia: ${m.bloqueia}. `
+        + "Fica registrado no log de auditoria; sem trilha, o comando é recusado.",
+        true,
+      );
+      if (!ok) return;
+    }
     setMutating(key); setErr(null);
-    try {
-      const res = await fetch("/admin/api/killswitch", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ key, enabled: next }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? res.status);
-      setGates((prev) => ({ ...prev, [key]: next }));
-    } catch (e) { setErr(String(e)); } finally { setMutating(null); }
+    const r = await gravarInterruptor(key, next, atual === "on");
+    if (!r.ok) setErr(r.conflito ? "Outro admin mudou este gate — recarreguei o estado real." : r.porque);
+    await load();
+    setMutating(null);
   }
 
-  const masterPaused = gates.pause_backtest;
+  const masterPaused = gates.pause_backtest === "on";
 
   return (
     <TerminalPanel id="ai-controls" title="AI CONTROLS" subtitle="liga/desliga agentes · torneio" icon="⏻" source="supabase/admin_kv">
       {loading && <div className="adm-shimmer" style={{ height: 100 }} />}
       {err  && <div style={{ color: "var(--adm-red)", fontSize: 13, marginBottom: 8 }}>{err}</div>}
-      {note && <div style={{ color: "var(--adm-amber)", fontSize: 12, marginBottom: 10 }}>⚠ {note}</div>}
+      {ilegivel && (
+        <div role="alert" style={{ color: "var(--adm-amber)", fontSize: 12, marginBottom: 10 }}>
+          ⚠ ESTADO DESCONHECIDO — não consegui ler os gates ({ilegivel}). Isto NÃO quer dizer que estão ligados;
+          os botões ficam travados até uma leitura dar certo.
+        </div>
+      )}
       {UNLISTED_GATES.length > 0 && (
         <div style={{ color: "var(--adm-red)", fontSize: 12, marginBottom: 10 }}>
           ⚠ Gate sem cartão neste painel — só se desliga por deploy: {UNLISTED_GATES.join(", ")}
@@ -117,7 +138,8 @@ export default function AiControlsPanel() {
       )}
 
       {!loading && GATES.map(({ key, label, desc, master }) => {
-        const paused = gates[key];
+        const estado = gates[key];
+        const paused = estado === "on";
         // Sub-gates are visually dimmed while the master pause is on (moot).
         const dimmed = !master && masterPaused;
         return (
@@ -133,11 +155,14 @@ export default function AiControlsPanel() {
             </div>
             <button
               className={`adm-toggle ${paused ? "danger" : "active"}`}
+              role="switch"
+              aria-checked={conhecido(estado) ? !paused : "mixed"}
+              aria-label={`${label}: ${conhecido(estado) ? (paused ? "pausado" : "rodando") : rotuloDoEstado(estado)}`}
               onClick={() => toggle(key)}
-              disabled={mutating === key}
+              disabled={mutating === key || !conhecido(estado)}
               title={paused ? "Clique para LIGAR" : "Clique para DESLIGAR"}
             >
-              {mutating === key ? "…" : paused ? "OFF — LIGAR?" : "ON"}
+              {mutating === key ? "…" : !conhecido(estado) ? rotuloDoEstado(estado) : paused ? "OFF — LIGAR?" : "ON"}
             </button>
           </div>
         );
@@ -146,7 +171,12 @@ export default function AiControlsPanel() {
       {/* Circuit breakers — a provider that failed N straight calls is skipped
           for a cooldown. Show the state so the operator isn't blind to it, and
           allow a manual reset after fixing the key / topping up credits. */}
-      {!loading && breakers.some((b) => b.configured) && (
+      {!loading && breakersErro && (
+        <div role="alert" style={{ marginTop: 12, color: "var(--adm-amber)", fontSize: 12 }}>
+          ⚠ CIRCUIT BREAKERS — estado DESCONHECIDO ({breakersErro}). Não quer dizer que estão fechados.
+        </div>
+      )}
+      {!loading && !breakersErro && breakers.some((b) => b.configured) && (
         <div style={{ marginTop: 12, borderTop: "1px solid var(--adm-border)", paddingTop: 8 }}>
           <div style={{ fontSize: 11, color: "var(--adm-ink-4)", letterSpacing: "0.08em", marginBottom: 6 }}>
             CIRCUIT BREAKERS · pula provedor com falhas seguidas
@@ -172,6 +202,7 @@ export default function AiControlsPanel() {
           ))}
         </div>
       )}
+      {confirmModal}
     </TerminalPanel>
   );
 }

@@ -1,7 +1,20 @@
 import { notFound } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { logSecurity } from "@/lib/admin/track";
+import { logSecurityAguardado } from "@/lib/admin/auditoria-duravel";
+
+/**
+ * ⚠️ A NEGAÇÃO ESPERA O REGISTRO — com teto, e sem nunca lançar.
+ *
+ * `logSecurity` é fire-and-forget, e logo depois vem `notFound()`: a resposta
+ * sai, a função congela na Vercel, e o insert que provaria "alguém tentou" se
+ * perdia na corrida (`event-durability.test.ts` conta a mesma história). O teto
+ * curto existe para que um banco lento nunca transforme a negação num pendurão.
+ */
+async function negar(kind: string, meta: Record<string, unknown>, severity: "low" | "med" | "high"): Promise<never> {
+  await logSecurityAguardado(kind, meta, severity);
+  notFound();
+}
 
 /**
  * Server helper — call at the top of every admin Server Component / Route
@@ -46,8 +59,7 @@ export async function requireAdmin(): Promise<{ wallet: string }> {
    * alerta que importa — que é o `admin_access_denied` logo abaixo.
    */
   if (!session) {
-    logSecurity("admin_sem_sessao", { porque: "cookie ausente, expirado ou de outro domínio" }, "low");
-    notFound();
+    return negar("admin_sem_sessao", { porque: "cookie ausente, expirado ou de outro domínio" }, "low");
   }
 
   const wallet = session.sub;
@@ -60,12 +72,11 @@ export async function requireAdmin(): Promise<{ wallet: string }> {
    * registra. Fica indistinguível de "você não tem permissão" — para quem tem.
    */
   if (!db) {
-    logSecurity("admin_sem_banco", { wallet: `${wallet.slice(0, 10)}…` }, "high");
-    notFound();
+    return negar("admin_sem_banco", { wallet: `${wallet.slice(0, 10)}…` }, "high");
   }
 
   // Dedicated admin grants (the panel writes here).
-  const { data: pa } = await db
+  const { data: pa, error: erroPainel } = await db
     .from("platform_admins")
     .select("wallet_address")
     .eq("wallet_address", wallet)
@@ -73,7 +84,7 @@ export async function requireAdmin(): Promise<{ wallet: string }> {
   if (pa) return { wallet };
 
   // Legacy fallback: tier_cache.source = 'admin' (pre-platform_admins grants).
-  const { data } = await db
+  const { data, error: erroLegado } = await db
     .from("tier_cache")
     .select("source")
     .eq("wallet_address", wallet)
@@ -81,9 +92,20 @@ export async function requireAdmin(): Promise<{ wallet: string }> {
     .maybeSingle();
 
   if (!data) {
+    /**
+     * ⚠️ A DECISÃO NÃO MUDA (nega), O REGISTRO SIM. Uma leitura que falhou não
+     * é "esta carteira não é admin": marcá-la como `admin_access_denied` manda
+     * procurar um intruso quando o defeito é o banco — e é o admin LEGÍTIMO
+     * que está levando 404.
+     */
+    if (erroPainel || erroLegado) {
+      return negar("admin_sem_banco", {
+        wallet: `${wallet.slice(0, 10)}…`, porque: "leitura de permissão falhou",
+        falhou: [erroPainel ? "platform_admins" : "", erroLegado ? "tier_cache" : ""].filter(Boolean),
+      }, "high");
+    }
     // A signed-in wallet probing an admin surface — high-signal intrusion attempt.
-    logSecurity("admin_access_denied", { wallet: `${wallet.slice(0, 10)}…` }, "high");
-    notFound();
+    return negar("admin_access_denied", { wallet: `${wallet.slice(0, 10)}…` }, "high");
   }
   return { wallet };
 }
@@ -106,6 +128,10 @@ export function envAdminWallets(): string[] {
 /**
  * Writes one row to admin_audit_log. Fire-and-forget — never throws,
  * so a logging failure never aborts the action being audited.
+ *
+ * ⚠️ SÓ PARA TELEMETRIA. Comando sensível (grant/revoke, kill-switch, liberação,
+ * reset de capital, export) passa por `comandoAuditado` em
+ * `auditoria-duravel.ts`, que confere a gravação e recusa sem trilha.
  */
 export async function logAdminAction(
   actor: string,

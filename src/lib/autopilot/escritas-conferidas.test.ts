@@ -187,19 +187,25 @@ describe("o kill-switch não pode confirmar o que não gravou", () => {
   const KILL = readFileSync(join(process.cwd(), "src/app/admin/api/killswitch/route.ts"), "utf8");
   const codigo = semComentarios(KILL);
 
-  it("⚠️⚠️ o upsert tem o erro lido, e a rota devolve 500", () => {
-    expect(codigo).toMatch(/const \{ error: erroDaEscrita \} = await db\.from\("admin_kv"\)\.upsert/);
+  it("⚠️⚠️ a escrita tem o erro lido (e 0 linhas = conflito), e a rota devolve 500/409", () => {
+    expect(codigo).toMatch(/const \{ data: gravadas, error: erroDaEscrita \} = await escrita/);
     expect(codigo).toMatch(/if \(erroDaEscrita\)/);
-    expect(codigo).toMatch(/status: 500/);
+    expect(codigo).toMatch(/\(gravadas \?\? \[\]\)\.length === 0/);
+    expect(codigo).toMatch(/status: conflito \? 409 : 500/);
   });
 
-  it("⚠️⚠️ a AUDITORIA só é escrita depois da gravação confirmada", () => {
-    // O registro forense é o que se consulta quando algo dá errado. Ele mentir
-    // junto com a tela é o pior desfecho possível deste defeito.
+  it("⚠️⚠️ a AUDITORIA é durável: intenção ANTES, desfecho depois da escrita conferida (Admin CC 2.0, ADM-005)", () => {
+    // 25/10: `logAdminAction` (best-effort, engole erro) saiu deste caminho. O
+    // comando passa por `comandoAuditado`: sem a intenção gravada ele nem roda,
+    // e o desfecho registrado é o que a escrita CONFERIDA disse.
+    expect(codigo).toMatch(/await comandoAuditado<Gravacao>\(/);
+    expect(codigo).not.toMatch(/logAdminAction\(/);
+    const iExecutar = codigo.indexOf("executar: async () =>");
     const iErro = codigo.indexOf("if (erroDaEscrita)");
-    const iAudit = codigo.indexOf("logAdminAction(actor, `killswitch.");
-    expect(iErro).toBeGreaterThan(0);
-    expect(iAudit).toBeGreaterThan(iErro);
+    const iSucesso = codigo.indexOf("return NextResponse.json({ ok: true, key, enabled, antes");
+    expect(iExecutar).toBeGreaterThan(0);
+    expect(iErro).toBeGreaterThan(iExecutar);
+    expect(iSucesso).toBeGreaterThan(iErro);
   });
 
   it("⚠️ e o motivo diz que o interruptor NÃO mudou", () => {

@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin, logAdminAction, envAdminWallets } from "@/lib/admin/require";
+import { requireAdmin, envAdminWallets } from "@/lib/admin/require";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { broadcastAdminRefresh } from "@/lib/admin/realtime";
 import { logSecurity } from "@/lib/admin/track";
+import {
+  comandoAuditado, registrarAuditoria, novoId, avisoDeAuditoria, PORQUE_AUDITORIA_INDISPONIVEL,
+} from "@/lib/admin/auditoria-duravel";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +13,8 @@ export const dynamic = "force-dynamic";
  * ADMIN ACCESS control. GET → who currently has admin (env / panel / legacy).
  * POST → grant or revoke panel-managed admin access, decoupled from tiers.
  * Guards: never revoke yourself, never revoke an env admin (edit ADMIN_WALLETS),
- * never leave the platform with zero admins. Every change is audited.
+ * never leave the platform with zero admins. Every change is audited DURABLY
+ * (`comandoAuditado`: no intent row → no change), and every guard refusal too.
  */
 export async function GET(): Promise<NextResponse> {
   await requireAdmin();
@@ -45,6 +49,19 @@ export async function GET(): Promise<NextResponse> {
   return NextResponse.json({ admins: [...byWallet.values()], fetchedAt: new Date().toISOString() });
 }
 
+/**
+ * Registra uma NEGAÇÃO de guarda (ADM-009). A negação vale com ou sem trilha —
+ * negar é a direção segura —, mas um registro que falha vira evento.
+ */
+async function auditarNegacao(actor: string, target: string, codigo: string): Promise<void> {
+  const r = await registrarAuditoria({
+    ator: actor, acao: "admin.revoke", alvo: target, fase: "negado", req: novoId(), codigo,
+  });
+  if (!r.ok) {
+    logSecurity("auditoria_negacao_nao_gravada", { acao: "admin.revoke", codigo, erro: r.erro }, "med");
+  }
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const { wallet: actor } = await requireAdmin();
   const db = getSupabaseAdmin();
@@ -61,36 +78,70 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "action deve ser grant ou revoke" }, { status: 400 });
 
   if (action === "grant") {
-    const { error: erroDaConcessao } = await db.from("platform_admins").upsert(
-      { wallet_address: target, granted_by: actor, note, granted_at: new Date().toISOString() },
-      { onConflict: "wallet_address" },
-    );
-    if (erroDaConcessao) {
+    /**
+     * ⚠️ CONCEDER ADMIN É O COMANDO MAIS PERMISSIVO DO PAINEL, e passa por
+     * `comandoAuditado`: sem a intenção gravada, NÃO concede (503). A gravação
+     * é conferida dentro do comando, e o desfecho só vira `executado` depois.
+     */
+    const r = await comandoAuditado<null>({
+      acao: "admin.grant", ator: actor, alvo: target, dados: { note },
+      executar: async () => {
+        const { error: erroDaConcessao } = await db.from("platform_admins").upsert(
+          { wallet_address: target, granted_by: actor, note, granted_at: new Date().toISOString() },
+          { onConflict: "wallet_address" },
+        );
+        if (erroDaConcessao) {
+          return { ok: false, codigo: "nao_gravou", detalhe: String(erroDaConcessao.message ?? "").slice(0, 160) };
+        }
+        return { ok: true, valor: null };
+      },
+    });
+    if (r.estado === "recusado") {
+      return NextResponse.json(
+        { error: "auditoria_indisponivel", action, target, porque: `o admin NÃO foi criado. ${PORQUE_AUDITORIA_INDISPONIVEL}` },
+        { status: 503 },
+      );
+    }
+    if (r.estado !== "executado") {
       return NextResponse.json(
         { error: "nao_gravou", action, target,
-          porque: `o admin NÃO foi criado: ${erroDaConcessao.message.slice(0, 160)}` },
+          porque: `o admin NÃO foi criado: ${r.estado === "falhou" ? r.detalhe ?? r.codigo : "?"}` },
         { status: 500 },
       );
     }
-    // ⚠️ Auditoria e alerta DEPOIS da gravação confirmada — ver a nota do revoke.
-    await logAdminAction(actor, "admin.grant", target, { note });
     logSecurity("admin_granted", { by: `${actor.slice(0, 10)}…`, to: `${target.slice(0, 10)}…` }, "high");
     broadcastAdminRefresh("audit");
-    return NextResponse.json({ ok: true, action, target });
+    return NextResponse.json({ ok: true, action, target, ...avisoDeAuditoria(r.auditoria) });
   } else {
     // ── revoke guards ──
     // ⚠️ Comparação SEM CASE. Com ela literal, bastava digitar o próprio
     // endereço com outra caixa para furar a trava de auto-revogação.
-    if (target.toLowerCase() === actor.toLowerCase())
+    if (target.toLowerCase() === actor.toLowerCase()) {
+      await auditarNegacao(actor, target, "auto_revogacao");
       return NextResponse.json({ error: "você não pode revogar a si mesmo" }, { status: 400 });
-    if (envAdminWallets().includes(target.toLowerCase()))
+    }
+    if (envAdminWallets().includes(target.toLowerCase())) {
+      await auditarNegacao(actor, target, "admin_de_ambiente");
       return NextResponse.json({ error: "admin de ambiente — edite ADMIN_WALLETS no Vercel" }, { status: 400 });
+    }
 
     // Never leave zero admins: count what remains AFTER this revoke.
-    const [{ data: panel }, { data: legacy }] = await Promise.all([
+    const [{ data: panel, error: erroPainel }, { data: legacy, error: erroLegado }] = await Promise.all([
       db.from("platform_admins").select("wallet_address"),
       db.from("tier_cache").select("wallet_address").eq("source", "admin"),
     ]);
+    /**
+     * ⚠️ A CONTAGEM FALHOU = NÃO SEI QUANTOS SOBRAM, e isso recusa (fail-closed).
+     * Antes o `error` não era lido: a leitura falha contava só os admins de ENV
+     * e a trava do último admin passava a depender de existir um.
+     */
+    if (erroPainel || erroLegado) {
+      return NextResponse.json(
+        { error: "contagem_indisponivel", action, target,
+          porque: "não consegui contar os admins que sobram — a revogação NÃO foi feita" },
+        { status: 503 },
+      );
+    }
     /**
      * ⚠️ TUDO EM MINÚSCULO ANTES DE CONTAR. Misturando ENV (minúsculo) com
      * banco (checksum), a MESMA carteira entrava duas vezes — e a trava do
@@ -103,8 +154,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       ...(legacy ?? []).map((r) => r.wallet_address.toLowerCase()),
     ]);
     remaining.delete(target.toLowerCase());
-    if (remaining.size === 0)
+    if (remaining.size === 0) {
+      await auditarNegacao(actor, target, "ultimo_admin");
       return NextResponse.json({ error: "esse é o último admin — não dá pra revogar" }, { status: 400 });
+    }
 
     // Kill both mechanisms so access is actually gone.
     /**
@@ -120,24 +173,54 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
      *
      * ⚠⚠ ISTO É CONTROLE DE ACESSO, e é pior que o kill-switch (A25): ali o
      * operador deixava de procurar um problema; aqui ele deixa de procurar uma
-     * PESSOA com acesso de admin à plataforma inteira. E o `logAdminAction` +
-     * `logSecurity` gravavam "revogado" de qualquer jeito — o registro forense
-     * mentia junto com a tela.
+     * PESSOA com acesso de admin à plataforma inteira. E o registro gravava
+     * "revogado" de qualquer jeito — o registro forense mentia junto com a tela.
      *
      * ⚠️ SÃO DOIS MECANISMOS, e falhar em UM deixa o acesso de pé. Apagar
      * `platform_admins` e não apagar o `tier_cache` de origem `admin` é uma
      * revogação PELA METADE lida como completa — e a metade que sobra ainda
      * autoriza.
      */
-    const [doPainel, doLegado] = await Promise.all([
-      db.from("platform_admins").delete().ilike("wallet_address", target).select("wallet_address"),
-      db.from("tier_cache").delete().ilike("wallet_address", target).eq("source", "admin").select("wallet_address"),
-    ]);
-    const falhou = [
-      doPainel.error ? `platform_admins: ${doPainel.error.message.slice(0, 80)}` : "",
-      doLegado.error ? `tier_cache: ${doLegado.error.message.slice(0, 80)}` : "",
-    ].filter(Boolean);
-    if (falhou.length) {
+    type Revogacao = { removidas: number; painel: number; legado: number; falhou: string[] };
+    const r = await comandoAuditado<Revogacao>({
+      acao: "admin.revoke", ator: actor, alvo: target,
+      executar: async () => {
+        const [doPainel, doLegado] = await Promise.all([
+          db.from("platform_admins").delete().ilike("wallet_address", target).select("wallet_address"),
+          db.from("tier_cache").delete().ilike("wallet_address", target).eq("source", "admin").select("wallet_address"),
+        ]);
+        const falhou = [
+          doPainel.error ? `platform_admins: ${doPainel.error.message.slice(0, 80)}` : "",
+          doLegado.error ? `tier_cache: ${doLegado.error.message.slice(0, 80)}` : "",
+        ].filter(Boolean);
+        /**
+         * ⚠️ ZERO LINHAS NÃO É ERRO — mas também não é "revoguei".
+         *
+         * Um segundo clique no mesmo botão casa zero linhas e está certo: é
+         * idempotência. O que não pode é o painel dizer "revogado" quando nada
+         * mudou — o operador precisa distinguir "tirei o acesso" de "esta carteira
+         * já não tinha acesso por nenhum dos dois caminhos".
+         */
+        const removidas = (doPainel.data?.length ?? 0) + (doLegado.data?.length ?? 0);
+        const valor = {
+          removidas, falhou,
+          painel: doPainel.data?.length ?? 0,
+          legado: doLegado.data?.length ?? 0,
+        };
+        if (falhou.length) return { ok: false, codigo: "nao_revogou", valor, detalhe: falhou.join(" · ") };
+        return { ok: true, valor, depois: { removidas } };
+      },
+    });
+
+    if (r.estado === "recusado") {
+      return NextResponse.json(
+        { error: "auditoria_indisponivel", action, target,
+          porque: `o acesso de admin CONTINUA DE PÉ. ${PORQUE_AUDITORIA_INDISPONIVEL}` },
+        { status: 503 },
+      );
+    }
+    if (r.estado !== "executado") {
+      const falhou = r.estado === "falhou" ? r.valor?.falhou ?? [r.detalhe ?? r.codigo] : [];
       logSecurity("admin_revoke_falhou", {
         by: `${actor.slice(0, 10)}…`, to: `${target.slice(0, 10)}…`, falhou,
       }, "high");
@@ -149,24 +232,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    /**
-     * ⚠️ ZERO LINHAS NÃO É ERRO — mas também não é "revoguei".
-     *
-     * Um segundo clique no mesmo botão casa zero linhas e está certo: é
-     * idempotência. O que não pode é o painel dizer "revogado" quando nada
-     * mudou — o operador precisa distinguir "tirei o acesso" de "esta carteira
-     * já não tinha acesso por nenhum dos dois caminhos".
-     */
-    const removidas = (doPainel.data?.length ?? 0) + (doLegado.data?.length ?? 0);
-    await logAdminAction(actor, "admin.revoke", target, { removidas });
+    const { removidas, painel, legado } = r.valor;
     logSecurity("admin_revoked", {
       by: `${actor.slice(0, 10)}…`, to: `${target.slice(0, 10)}…`, removidas,
     }, "high");
     broadcastAdminRefresh("audit");
     return NextResponse.json({
-      ok: true, action, target, removidas,
-      painel: doPainel.data?.length ?? 0,
-      legado: doLegado.data?.length ?? 0,
+      ok: true, action, target, removidas, painel, legado,
+      ...avisoDeAuditoria(r.auditoria),
       ...(removidas === 0
         ? { nota: "nenhuma linha correspondia — esta carteira já não era admin por painel nem por legado" }
         : {}),

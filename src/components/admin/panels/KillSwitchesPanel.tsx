@@ -3,70 +3,59 @@
 import { useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 import { useAdminConfirm } from "../useAdminConfirm";
+import { MAPA_INTERRUPTORES, PLATFORM_KILL_KEYS, type PlatformKillKey } from "@/lib/admin/gate-keys";
+import {
+  conhecido, gravarInterruptor, lerInterruptoresCliente, rotuloDoEstado, type EstadoTri,
+} from "../interruptores-cliente";
 
-type SwitchKey = "disable_swap" | "disable_cex" | "maintenance_mode";
+const ROTULO: Record<PlatformKillKey, string> = {
+  disable_swap: "SWAP", disable_cex: "CEX", maintenance_mode: "MAINTENANCE",
+};
 
-const SWITCHES: { key: SwitchKey; label: string; desc: string }[] = [
-  { key: "disable_swap",     label: "SWAP",        desc: "Disable all swap execution" },
-  { key: "disable_cex",      label: "CEX",         desc: "Disable CEX autopilot & trading" },
-  { key: "maintenance_mode", label: "MAINTENANCE",  desc: "Show maintenance page to all users" },
-];
-
+/**
+ * ⚠️ O TEXTO DIZ O QUE A CHAVE FAZ DE VERDADE (`MAPA_INTERRUPTORES`, conferido
+ * por teste contra os consumidores). Antes: "Show maintenance page to all users"
+ * — e nada no middleware lia `maintenance_mode`.
+ */
 export default function KillSwitchesPanel() {
-  const [switches, setSwitches] = useState<Record<SwitchKey, boolean>>({
-    disable_swap:     false,
-    disable_cex:      false,
-    maintenance_mode: false,
-  });
+  const [estados, setEstados] = useState<Record<string, EstadoTri>>({});
   const [loading,  setLoading]  = useState(true);
-  const [mutating, setMutating] = useState<SwitchKey | null>(null);
+  const [mutating, setMutating] = useState<PlatformKillKey | null>(null);
   const [err,      setErr]      = useState<string | null>(null);
-  const [note,     setNote]     = useState<string | null>(null);
+  const [ilegivel, setIlegivel] = useState<string | null>(null);
   const { confirm, modal: confirmModal } = useAdminConfirm();
 
   async function load() {
-    try {
-      const res  = await fetch("/admin/api/killswitch");
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? res.status);
-      setSwitches(json.switches);
-      if (json.note) setNote(json.note);
-    } catch (e) {
-      setErr(String(e));
-    } finally {
-      setLoading(false);
+    const l = await lerInterruptoresCliente();
+    if (l.ok) {
+      setEstados(Object.fromEntries(Object.entries(l.estados).map(([k, v]) => [k, v.estado])));
+      setIlegivel(null);
+    } else {
+      setEstados({});            // nada lido = nada sabido: botões travados
+      setIlegivel(l.porque);
     }
+    setLoading(false);
   }
 
   useEffect(() => { load(); }, []);
 
-  async function toggle(key: SwitchKey) {
-    const next = !switches[key];
-    // Confirm only when ENABLING a kill-switch (the destructive direction).
-    if (next) {
-      const label = SWITCHES.find((s) => s.key === key)?.desc ?? key;
-      const ok = await confirm(
-        `Enable kill-switch: ${label}. This affects all users platform-wide and is recorded in the audit log.`,
-        true,
-      );
-      if (!ok) return;
-    }
+  async function toggle(key: PlatformKillKey) {
+    const atual = estados[key];
+    if (!conhecido(atual)) return;
+    const next = atual === "off";
+    const m = MAPA_INTERRUPTORES[key];
+    const ok = await confirm(
+      `${next ? "LIGAR" : "DESLIGAR"} ${ROTULO[key]} — bloqueia: ${m.bloqueia}. Não bloqueia: ${m.naoBloqueia}. `
+      + "Fica registrado no log de auditoria; sem trilha, o comando é recusado.",
+      true,
+    );
+    if (!ok) return;
     setMutating(key);
     setErr(null);
-    try {
-      const res = await fetch("/admin/api/killswitch", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ key, enabled: next }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? res.status);
-      setSwitches((prev) => ({ ...prev, [key]: next }));
-    } catch (e) {
-      setErr(String(e));
-    } finally {
-      setMutating(null);
-    }
+    const r = await gravarInterruptor(key, next, atual === "on");
+    if (!r.ok) setErr(r.conflito ? "Outro admin mudou este interruptor — recarreguei o estado real." : r.porque);
+    await load();                // a tela mostra o que o banco tem, não o que o clique supôs
+    setMutating(null);
   }
 
   return (
@@ -78,14 +67,18 @@ export default function KillSwitchesPanel() {
       source="supabase/admin_kv"
     >
       {loading && <div className="adm-shimmer" style={{ height: 80 }} />}
-      {err && <div style={{ color: "var(--adm-red)", fontSize: 13, marginBottom: 8 }}>{err}</div>}
-      {note && (
-        <div style={{ color: "var(--adm-amber)", fontSize: 12, marginBottom: 10 }}>
-          ⚠ {note}
+      {err && <div role="alert" style={{ color: "var(--adm-red)", fontSize: 13, marginBottom: 8 }}>{err}</div>}
+      {ilegivel && (
+        <div role="alert" style={{ color: "var(--adm-amber)", fontSize: 12, marginBottom: 10 }}>
+          ⚠ ESTADO DESCONHECIDO — não consegui ler os interruptores ({ilegivel}). Isto NÃO quer dizer que estão
+          desligados; os botões ficam travados até uma leitura dar certo.
+          <button className="adm-toggle" style={{ marginLeft: 8 }} onClick={() => { setLoading(true); load(); }}>recarregar</button>
         </div>
       )}
-      {!loading && SWITCHES.map(({ key, label, desc }) => {
-        const isOn = switches[key];
+      {!loading && PLATFORM_KILL_KEYS.map((key) => {
+        const estado = estados[key];
+        const isOn = estado === "on";
+        const m = MAPA_INTERRUPTORES[key];
         return (
           <div key={key} className="adm-stat" style={{ alignItems: "center" }}>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -94,18 +87,22 @@ export default function KillSwitchesPanel() {
                 fontWeight: 700,
                 letterSpacing: "0.18em",
                 textTransform: "uppercase",
-                color: isOn ? "var(--adm-red)" : "var(--adm-ink-3)",
+                color: isOn ? "var(--adm-red)" : conhecido(estado) ? "var(--adm-ink-3)" : "var(--adm-amber)",
               }}>
-                {label}
+                {ROTULO[key]}
               </div>
-              <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 2 }}>{desc}</div>
+              <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 2 }}>bloqueia: {m.bloqueia}</div>
+              <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginTop: 2 }}>não bloqueia: {m.naoBloqueia}</div>
             </div>
             <button
               className={`adm-toggle ${isOn ? "danger" : "active"}`}
+              role="switch"
+              aria-checked={conhecido(estado) ? isOn : "mixed"}
+              aria-label={`${ROTULO[key]}: ${rotuloDoEstado(estado)}`}
               onClick={() => toggle(key)}
-              disabled={mutating === key}
+              disabled={mutating === key || !conhecido(estado)}
             >
-              {mutating === key ? "…" : isOn ? "ON — DISABLE?" : "OFF"}
+              {mutating === key ? "…" : isOn ? "ON — DESLIGAR?" : rotuloDoEstado(estado)}
             </button>
           </div>
         );
