@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { mensagemDeFalha } from "@/lib/admin/metrica";
 import TerminalPanel from "../TerminalPanel";
+import { useAutoRefresh } from "../useAutoRefresh";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
 
 type Cron = { name: string; last: string | null; ageMin: number | null; stale: boolean; estado?: "ok" | "parado" | "nunca_visto" | "desconhecido" };
@@ -48,11 +49,7 @@ export default function SystemHealthPanel() {
     } catch (e) { setData(null); setError(String(e)); } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 45_000);
-    return () => clearInterval(t);
-  }, [load, realtime?.status]);
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 45_000 });
 
   return (
     <TerminalPanel
@@ -60,8 +57,7 @@ export default function SystemHealthPanel() {
       title="SYSTEM HEALTH"
       subtitle="crons · dependências externas · uptime"
       icon="♥"
-      source="heartbeats + live pings"
-    >
+      source="heartbeats + live pings" secondsAgo={secondsAgo} refreshing={refreshing} onRefresh={forceRefresh}>
       {loading && <div className="adm-shimmer" style={{ height: 100 }} />}
       {error   && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>}
 

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { useAutoRefresh } from "../useAutoRefresh";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
 
 type LogRow = {
@@ -34,11 +35,7 @@ export default function AuditLogPanel() {
   }, []);
 
   // Initial load + slow heartbeat (realtime covers real changes)
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 30_000);
-    return () => clearInterval(t);
-  }, [load, realtime?.status]);
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 30_000 });
 
   // Realtime: refetch on any audit-scoped ping
   useEffect(() => {
@@ -59,8 +56,7 @@ export default function AuditLogPanel() {
       title="AUDIT LOG"
       subtitle="all privileged actions"
       icon="◎"
-      source="supabase/admin_audit_log"
-    >
+      source="supabase/admin_audit_log" secondsAgo={secondsAgo} refreshing={refreshing} onRefresh={forceRefresh}>
       {loading && <div className="adm-shimmer" style={{ height: 100 }} />}
       {err && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{err}</div>}
       {!loading && !err && rows.length === 0 && (

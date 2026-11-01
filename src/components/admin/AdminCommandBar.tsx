@@ -64,12 +64,11 @@ export default function AdminCommandBar() {
   return (
     <div
       className="adm-cmdbar-backdrop"
+      role="presentation"
       onClick={(e) => e.target === e.currentTarget && setCmdOpen(false)}
-      role="dialog"
-      aria-label="Command bar"
-      aria-modal
+      onKeyDown={(e) => { if (e.key === "Escape") setCmdOpen(false); }}
     >
-      <div className="adm-cmdbar">
+      <div className="adm-cmdbar" role="dialog" aria-label="Command bar" aria-modal>
         <input
           ref={inputRef}
           className="adm-cmdbar-input"
@@ -94,7 +93,9 @@ export default function AdminCommandBar() {
               data-active={i === activeIdx ? "true" : "false"}
               role="option"
               aria-selected={i === activeIdx}
+              tabIndex={-1}
               onClick={(e) => commit(m.id, e.shiftKey)}
+              onKeyDown={(e) => { if (e.key === "Enter") commit(m.id, e.shiftKey); }}
               onMouseEnter={() => setActiveIdx(i)}
             >
               <span className="adm-cmdbar-item-icon">{m.icon}</span>

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { useAutoRefresh } from "../useAutoRefresh";
 
 type Alert = { metadata: { text?: string } | null; created_at: string };
 type Data = { configured: boolean; recent: Alert[] };
@@ -21,7 +22,7 @@ export default function AlertsPanel() {
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { load(); const t = setInterval(load, 60_000); return () => clearInterval(t); }, [load]);
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 60_000 });
 
   const sendTest = async () => {
     setTestMsg("sending…");
@@ -35,7 +36,7 @@ export default function AlertsPanel() {
   };
 
   return (
-    <TerminalPanel id="alerts" title="ALERTS" subtitle="Telegram · proactive notifications" icon="🔔" source="platform_events/alert">
+    <TerminalPanel id="alerts" title="ALERTS" subtitle="Telegram · proactive notifications" icon="🔔" source="platform_events/alert" secondsAgo={secondsAgo} refreshing={refreshing} onRefresh={forceRefresh}>
       {loading && <div className="adm-shimmer" style={{ height: 80 }} />}
       {error   && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>}
 

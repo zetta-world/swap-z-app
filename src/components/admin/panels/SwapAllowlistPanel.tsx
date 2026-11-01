@@ -1,5 +1,7 @@
 "use client";
 
+import { ativavel } from "../ativavel";
+
 import { useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 
@@ -15,7 +17,7 @@ function Copyable({ label, value }: { label: string; value: string }) {
     <div style={{ marginBottom: 8 }}>
       <div style={{ fontSize: 11, color: "var(--adm-ink-4)", letterSpacing: "0.08em", marginBottom: 2 }}>{label}</div>
       <div
-        onClick={() => { navigator.clipboard?.writeText(value).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1200); }); }}
+        {...ativavel(() => { navigator.clipboard?.writeText(value).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1200); }); }, { rotulo: "copiar endereço" })}
         style={{ cursor: "pointer", fontFamily: "monospace", fontSize: 12, color: "var(--adm-cyan)", wordBreak: "break-all",
           padding: "6px 8px", background: "rgba(0 229 255 / 0.04)", border: "1px solid rgba(0 229 255 / 0.15)", borderRadius: 2 }}
       >

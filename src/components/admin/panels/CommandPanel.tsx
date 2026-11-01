@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { useAutoRefresh } from "../useAutoRefresh";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
 import { corDoPnl } from "@/lib/admin/cor-resultado";
 import { mensagemDeFalha } from "@/lib/admin/metrica";
@@ -37,11 +38,7 @@ export default function CommandPanel() {
     } catch (e) { setD(null); setError(String(e)); }  // rede caiu: sem número velho na tela finally { setLoading(false); }
   }, []);
 
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 45_000);
-    return () => clearInterval(t);
-  }, [load, realtime?.status]);
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 45_000 });
 
   const hasAlerts = !!d && ((d.alerts.highSecurity24h ?? 0) > 0 || d.alerts.staleCrons.length > 0);
   // ⚠️ Sem ler tudo, NADA é declarado limpo: "ALL CLEAR" exige `falhas` vazio.
@@ -49,7 +46,7 @@ export default function CommandPanel() {
   const corFaixa = hasAlerts ? "var(--adm-red)" : incompleto ? "var(--adm-amber)" : "var(--adm-green)";
 
   return (
-    <TerminalPanel id="command" title="COMMAND" subtitle="the whole company at a glance" icon="◆" source="all workspaces">
+    <TerminalPanel id="command" title="COMMAND" subtitle="the whole company at a glance" icon="◆" source="all workspaces" secondsAgo={secondsAgo} refreshing={refreshing} onRefresh={forceRefresh}>
       {loading && <div className="adm-shimmer" style={{ height: 140 }} />}
       {error   && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>}
 

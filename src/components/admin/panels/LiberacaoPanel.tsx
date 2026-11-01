@@ -184,7 +184,7 @@ export default function LiberacaoPanel() {
             <>
               {/* ⚠️ Fechar NÃO exige justificativa: atrito na direção segura seria
                   atrito no lugar errado, exatamente quando se quer desligar rápido. */}
-              <input
+              <input aria-label="Motivo do fechamento da automação (opcional)"
                 value={motivo}
                 onChange={(e) => setMotivo(e.target.value)}
                 placeholder="motivo do fechamento (opcional)"
@@ -246,7 +246,7 @@ export default function LiberacaoPanel() {
                 >revogar</button>
               </div>
             ))}
-            <input
+            <input aria-label="Carteira a autorizar como piloto"
               value={novoPiloto}
               onChange={(e) => setNovoPiloto(e.target.value)}
               placeholder="0x… carteira a autorizar"
@@ -256,7 +256,7 @@ export default function LiberacaoPanel() {
                 borderRadius: 3, color: "var(--adm-ink-2)", fontSize: 12, fontFamily: "inherit",
               }}
             />
-            <input
+            <input aria-label="Justificativa para autorizar o piloto"
               value={notaPiloto}
               onChange={(e) => setNotaPiloto(e.target.value)}
               placeholder={`por que esta carteira (mínimo ${min} caracteres)`}

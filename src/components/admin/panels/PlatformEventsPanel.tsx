@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { useAutoRefresh } from "../useAutoRefresh";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
 
 type AnalyticsData = {
@@ -53,11 +54,7 @@ export default function PlatformEventsPanel() {
   }, []);
 
   // Initial load + heartbeat (slower when realtime is live)
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 60_000);
-    return () => clearInterval(t);
-  }, [load, realtime?.status]);
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 60_000 });
 
   // Realtime: refetch on any events-scoped ping (swap_intent / cex_order)
   useEffect(() => {
@@ -73,8 +70,7 @@ export default function PlatformEventsPanel() {
       title="PLATFORM EVENTS"
       subtitle="page views · swap intents · orders"
       icon="◉"
-      source="supabase/platform_events"
-    >
+      source="supabase/platform_events" fetchedAt={data ? (data as { fetchedAt?: string }).fetchedAt ?? null : undefined} refreshing={refreshing} onRefresh={forceRefresh}>
       {/* Tab bar */}
       <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
         {(["overview", "pages", "feed"] as const).map((t) => (

@@ -36,11 +36,13 @@ export function useAdminConfirm() {
   const modal = state.open ? (
     <div
       className="adm-cmdbar-backdrop"
+      role="presentation"
       onClick={(e) => e.target === e.currentTarget && close(false)}
-      role="alertdialog"
-      aria-modal
+      onKeyDown={(e) => { if (e.key === "Escape") close(false); }}
     >
       <div
+        role="alertdialog"
+        aria-modal
         className="adm-cmdbar"
         style={{
           maxWidth: 420,

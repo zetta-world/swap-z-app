@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { useAutoRefresh } from "../useAutoRefresh";
 import AvisoDeFonte from "../AvisoDeFonte";
 import { mensagemDeFalha, type OperationalMetric } from "@/lib/admin/metrica";
 
@@ -75,10 +76,10 @@ export default function AiCostPanel() {
     } catch (e) { setD(null); setErr(String(e)); }  // rede caiu: sem número velho na tela finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { load(); const t = setInterval(load, 300_000); return () => clearInterval(t); }, [load]);
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 300_000 });
 
   return (
-    <TerminalPanel id="ai-cost" title="CUSTO DE IA" subtitle="gasto por modelo · projeção do mês" icon="💸" source="platform_events/zion_analysis">
+    <TerminalPanel id="ai-cost" title="CUSTO DE IA" subtitle="gasto por modelo · projeção do mês" icon="💸" source="platform_events/zion_analysis" secondsAgo={secondsAgo} refreshing={refreshing} onRefresh={forceRefresh}>
       {loading && <div className="adm-shimmer" style={{ height: 80 }} />}
       {err && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{err}</div>}
 

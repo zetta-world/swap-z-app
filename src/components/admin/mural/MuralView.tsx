@@ -1,5 +1,7 @@
 "use client";
 
+import { useAutoRefresh } from "../useAutoRefresh";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import MapaMundi, { type Praca } from "./MapaMundi";
 import Pulso from "./Pulso";
@@ -86,15 +88,12 @@ export default function MuralView() {
     } catch (e) { setErro(String(e).slice(0, 120)); }
   }, []);
 
-  useEffect(() => {
-    void carregar();
-    const t = window.setInterval(() => void carregar(), 8000);
-    return () => window.clearInterval(t);
-  }, [carregar]);
+  // R3: pausa com a aba escondida e busca na volta (mesmo relógio dos painéis).
+  useAutoRefresh({ onRefresh: carregar, intervalMs: 8000, minGapMs: 4000 });
 
   /** O relógio anda sozinho, para "há 3s" não congelar entre buscas. */
   useEffect(() => {
-    const t = window.setInterval(() => setAgora(Date.now()), 1000);
+    const t = window.setInterval(() => { if (!document.hidden) setAgora(Date.now()); }, 1000);
     return () => window.clearInterval(t);
   }, []);
 

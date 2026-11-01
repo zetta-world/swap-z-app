@@ -1,7 +1,10 @@
 "use client";
 
+import { ativavel } from "../ativavel";
+
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { useAutoRefresh } from "../useAutoRefresh";
 
 type Unknown = { program: string; count: number; lastSeen: string; symbols: string[]; likelyJupiterChange: boolean };
 type Probe = {
@@ -54,14 +57,14 @@ export default function SwapGuardPanel() {
     } catch (e) { setErr(String(e)); } finally { setLoading(false); }
   }, [hours]);
 
-  useEffect(() => { load(); const t = setInterval(load, 120_000); return () => clearInterval(t); }, [load]);
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 120_000 });
 
   const m = data ? MODE_LABEL[data.mode] ?? MODE_LABEL.shadow : null;
   const rate = data?.refusalRate;
   const alarming = rate != null && rate > 0.5;
 
   return (
-    <TerminalPanel id="swap-guard" title="SOLANA GUARD" subtitle="verificação de assinatura · Jupiter" icon="⛨" source="platform_events/swap_guard">
+    <TerminalPanel id="swap-guard" title="SOLANA GUARD" subtitle="verificação de assinatura · Jupiter" icon="⛨" source="platform_events/swap_guard" secondsAgo={secondsAgo} refreshing={refreshing} onRefresh={forceRefresh}>
       {loading && <div className="adm-shimmer" style={{ height: 70 }} />}
       {err && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{err}</div>}
 
@@ -141,7 +144,7 @@ export default function SwapGuardPanel() {
               {data.unknown.map((u) => (
                 <div key={u.program} style={{ marginBottom: 5, fontSize: 12 }}>
                   <div
-                    onClick={() => navigator.clipboard?.writeText(u.program)}
+                    {...ativavel(() => { void navigator.clipboard?.writeText(u.program); }, { rotulo: "copiar programa" })}
                     title="toque p/ copiar"
                     style={{ fontFamily: "monospace", color: "var(--adm-cyan)", cursor: "pointer", wordBreak: "break-all" }}>
                     {u.program}

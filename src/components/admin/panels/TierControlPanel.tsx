@@ -73,7 +73,7 @@ export default function TierControlPanel() {
       source="supabase/tier_cache"
     >
       <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-        <input
+        <input aria-label="Endereço da carteira para consultar o plano"
           className="adm-input"
           placeholder="wallet address…"
           value={query}

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { mensagemDeFalha } from "@/lib/admin/metrica";
 import TerminalPanel from "../TerminalPanel";
+import { useAutoRefresh } from "../useAutoRefresh";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
 
 type Row = { event_type: string; metadata: Record<string, unknown> | null; created_at: string };
@@ -34,11 +35,7 @@ export default function LogsSecurityPanel() {
     } catch (e) { setData(null); setError(String(e)); } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 45_000);
-    return () => clearInterval(t);
-  }, [load, realtime?.status]);
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 45_000 });
 
   useEffect(() => {
     if (!realtime) return;
@@ -46,7 +43,7 @@ export default function LogsSecurityPanel() {
   }, [realtime, load]);
 
   return (
-    <TerminalPanel id="logs-security" title="LOGS & SECURITY" subtitle="errors · abuse · intrusion attempts" icon="⚠" source="supabase/platform_events">
+    <TerminalPanel id="logs-security" title="LOGS & SECURITY" subtitle="errors · abuse · intrusion attempts" icon="⚠" source="supabase/platform_events" secondsAgo={secondsAgo} refreshing={refreshing} onRefresh={forceRefresh}>
       <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
         {(["overview", "feed"] as const).map((t) => (
           <button key={t} className={`adm-toggle ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>

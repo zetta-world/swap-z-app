@@ -63,9 +63,31 @@ export async function syncRegistry(db: Db): Promise<{ synced: number }> {
     disagrees_with_ledger_why: s.discordaDoLivroPorque ?? null,
     updated_at: new Date().toISOString(),
   }));
-  const { error } = await db.from("lab_strategies").upsert(rows, { onConflict: "slug" });
+  /**
+   * ⚠️ R3/P2 (Admin CC 2.0): o GET do laboratório chama isto a cada sondagem (90 s por aba aberta).
+   * Antes regravava as ~28 linhas TODA vez — escrita sem mudança e `updated_at` sempre "agora", o
+   * que apagava a informação de quando o registro realmente mudou. Agora lê o que está gravado e só
+   * envia as linhas que DIFEREM do código. Leitura que falha → grava tudo (o comportamento de antes:
+   * o registro do código continua sendo a fonte).
+   */
+  const campos = ["name", "subtitle", "family", "capital_required_usd", "capital_why", "status", "hypothesis",
+    "killed_why", "not_measurable_why", "measured_elsewhere", "disagrees_with_ledger_why"] as const;
+  // leitura-limitada: o registro tem dezenas de linhas (uma por estratégia do código), muito abaixo de 1.000.
+  const { data: gravadas, error: erroLeitura } = await db.from("lab_strategies").select(["slug", ...campos].join(", ")).limit(1000);
+  const porSlug = new Map(((erroLeitura ? [] : gravadas) ?? []).map((g) => [String((g as unknown as Record<string, unknown>).slug), g as unknown as Record<string, unknown>]));
+  const norm = (v: unknown) => (v == null ? null : typeof v === "number" ? v : String(v));
+  const mudaram = erroLeitura ? rows : rows.filter((r) => {
+    const g = porSlug.get(r.slug);
+    if (!g) return true;
+    return campos.some((c) => {
+      const a = norm((r as Record<string, unknown>)[c]), b = norm(g[c]);
+      return typeof a === "number" || typeof b === "number" ? Number(a) !== Number(b) : a !== b;
+    });
+  });
+  if (mudaram.length === 0) return { synced: 0 };
+  const { error } = await db.from("lab_strategies").upsert(mudaram, { onConflict: "slug" });
   if (error) throw new Error(`syncRegistry: ${error.message}`);
-  return { synced: rows.length };
+  return { synced: mudaram.length };
 }
 
 /** Devolve o id da estratégia, criando-a a partir do registro se faltar. */

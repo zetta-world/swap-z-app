@@ -1,5 +1,7 @@
 "use client";
 
+import { ativavel } from "../ativavel";
+
 import { useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 
@@ -136,7 +138,7 @@ export default function AuditBenchPanel() {
                 marginBottom: 4, padding: "5px 7px", borderRadius: 3, cursor: "pointer",
                 background: f.pass && !f.inconclusive ? "transparent" : "rgba(255 255 255 / 0.02)",
                 borderLeft: `2px solid ${color(f)}`,
-              }} onClick={() => setOpen(isOpen ? null : f.id)}>
+              }} {...ativavel(() => setOpen(isOpen ? null : f.id), { expandido: isOpen })}>
                 <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                   <span style={{ color: color(f), fontSize: 13, width: 10 }}>{icon(f)}</span>
                   <span style={{ fontSize: 12, color: "var(--adm-ink-2)", flex: 1 }}>{f.name}</span>

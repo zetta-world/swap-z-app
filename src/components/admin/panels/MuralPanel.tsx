@@ -1,5 +1,7 @@
 "use client";
 
+import { useAutoRefresh } from "../useAutoRefresh";
+
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 import MapaMundi, { type Praca } from "../mural/MapaMundi";
@@ -31,11 +33,8 @@ export default function MuralPanel() {
     } catch (e) { setErro(String(e).slice(0, 120)); }
   }, []);
 
-  useEffect(() => {
-    void carregar();
-    const t = window.setInterval(() => void carregar(), 15000);
-    return () => window.clearInterval(t);
-  }, [carregar]);
+  // R3: pausa com a aba escondida e busca na volta.
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: carregar, intervalMs: 15000 });
 
   const total = (d?.pracas ?? []).reduce((s, p) => s + p.acessos, 0);
 

@@ -1,5 +1,9 @@
 "use client";
 
+import { useAutoRefresh } from "../useAutoRefresh";
+
+import { ativavel } from "../ativavel";
+
 import { Fragment, useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
@@ -160,11 +164,9 @@ export default function PaperPanel() {
     } catch { /* a seção some, o painel continua */ }
   }, []);
 
-  useEffect(() => {
-    load(); loadRepair(); loadRecap();
-    const t = setInterval(load, realtime?.status === "live" ? 60_000 : 90_000);
-    return () => clearInterval(t);
-  }, [load, loadRepair, loadRecap, realtime?.status]);
+  // R3: o livro sonda com pausa de aba; reparo/recap só na montagem (são consultas de ação).
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 60_000 });
+  useEffect(() => { loadRepair(); loadRecap(); }, [loadRepair, loadRecap]);
 
   async function runRepair() {
     setRepairing(true); setRepairErro(null);
@@ -206,7 +208,7 @@ export default function PaperPanel() {
   const totalRet = data && data.totals.startingUsd > 0 ? (data.totals.equity / data.totals.startingUsd - 1) * 100 : 0;
 
   return (
-    <TerminalPanel id="paper" title="PAPER · GATE.IO" subtitle="③ SÓ AS CARTEIRAS, sem ranking — unidade: patrimônio em USDT" icon="📈" source="supabase/paper_accounts">
+    <TerminalPanel id="paper" title="PAPER · GATE.IO" subtitle="③ SÓ AS CARTEIRAS, sem ranking — unidade: patrimônio em USDT" icon="📈" source="supabase/paper_accounts" secondsAgo={secondsAgo} refreshing={refreshing} onRefresh={forceRefresh}>
       {loading && <div className="adm-shimmer" style={{ height: 140 }} />}
       {error   && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>}
 
@@ -509,7 +511,7 @@ export default function PaperPanel() {
                 const isOpen = open === r.source;
                 return (
                   <Fragment key={r.source}>
-                    <tr style={{ cursor: "pointer" }} onClick={() => setOpen(isOpen ? null : r.source)}>
+                    <tr style={{ cursor: "pointer" }} {...ativavel(() => setOpen(isOpen ? null : r.source), { papel: null, expandido: isOpen })}>
                       <td>{MEDAL[i] ?? `#${i + 1}`}</td>
                       {/* ⚠️ O MOTIVO DO SILÊNCIO VIAJA COM O NOME, não atrás de
                           um clique. A pergunta "todos os agentes estão rodando

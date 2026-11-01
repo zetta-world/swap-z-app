@@ -1,5 +1,7 @@
 "use client";
 
+import { ativavel } from "../ativavel";
+
 import { useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 import { corDoResultado } from "@/lib/admin/cor-resultado";
@@ -153,7 +155,7 @@ export default function WhatWorkedPanel() {
                  */
                 const julgavel = d.correlacao.effectiveSymbols >= INDEPENDENTES_MINIMO;
                 return (
-                  <tr key={e.name} style={{ cursor: "pointer" }} onClick={() => setAberta(aberta === e.name ? null : e.name)}>
+                  <tr key={e.name} style={{ cursor: "pointer" }} {...ativavel(() => setAberta(aberta === e.name ? null : e.name), { papel: null, expandido: aberta === e.name })}>
                     <td style={{ color: "var(--adm-ink-2)" }}>
                       {e.usesShort && <span style={{ color: "var(--adm-cyan)" }}>⇅ </span>}
                       {e.name}

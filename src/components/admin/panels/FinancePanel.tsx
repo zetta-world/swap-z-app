@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { useAutoRefresh } from "../useAutoRefresh";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
 import AvisoDeFonte from "../AvisoDeFonte";
 import { mensagemDeFalha, type OperationalMetric } from "@/lib/admin/metrica";
@@ -44,14 +45,10 @@ export default function FinancePanel() {
     } catch (e) { setData(null); setError(String(e)); }  // rede caiu: sem número velho na tela finally { setLoading(false); }
   }, []);
 
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 120_000);
-    return () => clearInterval(t);
-  }, [load, realtime?.status]);
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 120_000 });
 
   return (
-    <TerminalPanel id="finance" title="RECEITA" subtitle="passes vendidos · volume transacionado" icon="💰" source="tiers · operations">
+    <TerminalPanel id="finance" title="RECEITA" subtitle="passes vendidos · volume transacionado" icon="💰" source="tiers · operations" secondsAgo={secondsAgo} refreshing={refreshing} onRefresh={forceRefresh}>
       <div style={{ display: "flex", gap: 6, marginBottom: 12, alignItems: "center" }}>
         {(["revenue", "volume"] as const).map((t) => (
           <button key={t} className={`adm-toggle ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>{t.toUpperCase()}</button>

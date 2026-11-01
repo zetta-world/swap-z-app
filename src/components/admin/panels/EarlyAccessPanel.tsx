@@ -1,5 +1,7 @@
 "use client";
 
+import { ativavel } from "../ativavel";
+
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
@@ -166,17 +168,17 @@ export default function EarlyAccessPanel() {
         </div>
       )}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-        <select className="adm-input" value={status} onChange={(e) => setStatus(e.target.value as "" | Estado)}>
+        <select aria-label="Filtrar por status" className="adm-input" value={status} onChange={(e) => setStatus(e.target.value as "" | Estado)}>
           <option value="">todos</option>
           {ESTADOS.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select className="adm-input" value={verificado} onChange={(e) => setVerificado(e.target.value as "" | "1" | "0")}>
+        <select aria-label="Filtrar por email verificado" className="adm-input" value={verificado} onChange={(e) => setVerificado(e.target.value as "" | "1" | "0")}>
           <option value="">email: todos</option>
           <option value="1">email verificado</option>
           <option value="0">email não verificado</option>
         </select>
         <form onSubmit={(e) => { e.preventDefault(); setQ(qDigitado.trim().toLowerCase()); }} style={{ display: "flex", gap: 8 }}>
-          <input className="adm-input" placeholder="prefixo do email" value={qDigitado} onChange={(e) => setQDigitado(e.target.value)} />
+          <input aria-label="Buscar por prefixo do email" className="adm-input" placeholder="prefixo do email" value={qDigitado} onChange={(e) => setQDigitado(e.target.value)} />
           <button type="submit" className="adm-btn">BUSCAR</button>
         </form>
         <a className="adm-btn" href="/admin/api/early-access/export">CSV</a>
@@ -223,7 +225,7 @@ function FragmentoLinha({ l, aberta, eventos, motivo, setMotivo, codigo, setCodi
   ].filter(Boolean).join(" · ");
   return (
     <>
-      <tr onClick={onAbrir} style={{ cursor: "pointer" }}>
+      <tr {...ativavel(onAbrir, { papel: null })} style={{ cursor: "pointer" }}>
         <td style={{ fontSize: 12, color: "var(--adm-ink-3)", whiteSpace: "nowrap" }}>{new Date(l.created_at).toLocaleString()}</td>
         <td style={{ fontSize: 12, fontFamily: "monospace" }}>{l.email_normalized}</td>
         <td style={{ fontSize: 12 }}>{l.display_name}</td>
@@ -235,11 +237,11 @@ function FragmentoLinha({ l, aberta, eventos, motivo, setMotivo, codigo, setCodi
         <tr>
           <td colSpan={6}>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", margin: "6px 0" }}>
-              <select className="adm-input" value={codigo} onChange={(e) => setCodigo(e.target.value as Motivo | "")}>
+              <select aria-label="Código do convite" className="adm-input" value={codigo} onChange={(e) => setCodigo(e.target.value as Motivo | "")}>
                 <option value="">código do motivo…</option>
                 {MOTIVOS.map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
-              <input className="adm-input" placeholder="nota opcional (some na purga; não vai ao log de admin)" value={motivo}
+              <input aria-label="Nota opcional do convite" className="adm-input" placeholder="nota opcional (some na purga; não vai ao log de admin)" value={motivo}
                 onChange={(e) => setMotivo(e.target.value)} maxLength={NOTA_MAX} style={{ minWidth: 260 }} />
               {transicoesDisponiveis(l.status, l.converted_at !== null, l.email_verified_at !== null).map((p) => (
                 <button key={p} type="button" className="adm-btn" onClick={() => onTransicionar(p)} style={{ color: COR[p] }}>

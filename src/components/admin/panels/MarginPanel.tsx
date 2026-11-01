@@ -1,5 +1,7 @@
 "use client";
 
+import { ativavel } from "../ativavel";
+
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 import { useAutoRefresh } from "../useAutoRefresh";
@@ -65,14 +67,14 @@ export default function MarginPanel() {
       </span>
       {edit === key ? (
         <>
-          <input value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus
+          <input aria-label="Novo valor do parâmetro de margem" value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus
             onKeyDown={(e) => { if (e.key === "Enter") save(key); if (e.key === "Escape") setEdit(null); }}
             style={{ width: 70, fontSize: 12, padding: "1px 4px", background: "var(--adm-bg)", color: "var(--adm-cyan)",
               border: "1px solid var(--adm-cyan)", borderRadius: 2, fontFamily: "monospace" }} />
           <button onClick={() => save(key)} style={{ fontSize: 11, color: "var(--adm-green)", background: "none", border: "none", cursor: "pointer" }}>✓</button>
         </>
       ) : (
-        <span onClick={() => { setEdit(key); setDraft(String(value)); }}
+        <span {...ativavel(() => { setEdit(key); setDraft(String(value)); }, { rotulo: `editar ${key}` })}
           title="toque p/ editar"
           style={{ color: "var(--adm-ink-2)", fontVariantNumeric: "tabular-nums", cursor: "pointer", borderBottom: "1px dotted var(--adm-ink-4)" }}>
           {usd(value)}

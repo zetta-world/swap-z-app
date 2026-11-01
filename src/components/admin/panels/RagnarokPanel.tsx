@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { deskFor } from "@/lib/zion/desks";
 import { sampleLabel, shouldTint } from "@/lib/admin/sample";
 import TerminalPanel from "../TerminalPanel";
+import { useAutoRefresh } from "../useAutoRefresh";
 
 type Wallet = {
   source: string; name: string; who: string | null; brain: string | null;
@@ -46,7 +47,7 @@ export default function RagnarokPanel() {
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   }, [days]);
 
-  useEffect(() => { load(); const t = setInterval(load, 180_000); return () => clearInterval(t); }, [load]);
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 180_000 });
 
   return (
     /* TRÊS PAINÉIS, AS MESMAS CINCO MESAS — e três números diferentes.
@@ -61,7 +62,7 @@ export default function RagnarokPanel() {
      * subtítulos existe para que a diferença apareça ANTES do número: dois
      * valores que não batem só assustam quando ninguém disse que eles medem
      * coisas distintas. */
-    <TerminalPanel id="ragnarok" title="RAGNARÖK" subtitle="② A FICHA do Setor A — unidade: USDT acumulado na carteira" icon="ᚱ" source="zion_suggestions/strat_*">
+    <TerminalPanel id="ragnarok" title="RAGNARÖK" subtitle="② A FICHA do Setor A — unidade: USDT acumulado na carteira" icon="ᚱ" source="zion_suggestions/strat_*" secondsAgo={secondsAgo} refreshing={refreshing} onRefresh={forceRefresh}>
       {loading && <div className="adm-shimmer" style={{ height: 100 }} />}
       {error && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>}
 
