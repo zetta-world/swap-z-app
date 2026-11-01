@@ -16,8 +16,9 @@
 
 Produção = `main` `770f60c` (`dpl_6aT7pvUWYDiEcgS18Jvo6yEeMmD4`), código `CERTIFIED_FEATURE_SHA=bb8d838`, em
 `ADMIN_AUTH_MODE` ausente (= legacy): o Admin decide como antes; R1 (login corporativo) implantado e DESLIGADO.
-Banco hospedado: 0079–0083 aplicadas e conferidas, após backup lógico com restauração validada; **0084–0087 pendentes**
-(aplicação barrada pela trava de permissão da sessão). Ledger "ADMIN-CC2 — rollout em produção".
+Banco hospedado: **0079–0087 aplicadas e conferidas**, uma por vez, após backup lógico com restauração validada; as 34
+tabelas antes abertas negam a chave pública (42501). ACL-DEFAULT-GRANTS: **fechado**. Pendente: IdP + contas reais para
+ligar o R1. Ledger "ADMIN-CC2 — rollout em produção".
 
 ## Atualização C1c — blockhash do servidor (25/10/2026, tarde)
 

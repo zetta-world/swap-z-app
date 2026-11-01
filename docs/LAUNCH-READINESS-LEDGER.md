@@ -1560,8 +1560,19 @@ DEFINER ficam executáveis por anon; no hospedado: 0) — ACL "antes" guardada c
 | 0081 | 0 SECURITY DEFINER sem `search_path` com `pg_temp`; 0 abertas |
 | 0082 | default privileges de `postgres` em `public` só postgres+service_role; EXECUTE global a PUBLIC removido |
 | 0083 | `admin_private`: 4 tabelas, RLS ligado, anon/authenticated sem USAGE, auditoria append-only (2 gatilhos) |
-| **0084–0087** | **NÃO aplicadas** — a aplicação da 0084 foi barrada pela trava de permissão da sessão; nada parcial |
+| 0084 (G1) | 4 tabelas fechadas; smoke 200; nonce de login GRAVADO depois (10:48:37 UTC) — service_role escreve |
+| 0085 (G2) | 5 tabelas fechadas; smoke 200 |
+| 0086 (G3) | 5 tabelas fechadas; smoke 200 (telemetria real: 3 eventos/30 h, só de navegador — tráfego de homologação) |
+| 0087 (G4) | 20 tabelas fechadas; smoke 200 |
+(0084–0087 aplicadas depois de o dono liberar a ferramenta: "tudo liberado pode aplicar".)
 Depois de 0083: catálogo `cacf63b0b64d0b39f549957b75ba8e85`; produção re-testada (200 em `/`, `/api/tier`, cotação, nonce).
 
-**Pendente:** 0084→0087 no hospedado (o dono libera `apply_migration` ou aplica o SQL do repositório, uma por vez, com
-smoke entre elas); IdP + contas reais com TOTP (3 identidades para o 1º superadmin); variáveis R1 na Vercel só depois do IdP.
+**Verificação final (hospedado):** 34/34 tabelas sem privilégio para anon/authenticated/PUBLIC, service_role com
+SELECT/INSERT/UPDATE/DELETE nas 34, RLS ligada nas 34, 0 objetos de `public` com `anon`; 9 migrations no histórico
+(0079–0087). **De fora** (API REST pública com a chave anon): `platform_admins`, `tier_cache`, `platform_events`,
+`paper_positions`, `operations` → 42501; `rpc/consume_rate_limit` → `permission denied for function` (antes: 200 com 0
+linhas). Produção: `/`, `/api/tier`, `/settings`, `/founders-pass`, cotação, nonce → 200; `/admin` sem sessão → 404.
+
+**Pendente (depende do dono):** IdP Google/Entra + contas reais com TOTP (3 identidades para o 1º superadmin, pelo CHECK
+da 0083); variáveis R1 na Vercel (`ADMIN_AUTH_MODE=dual`, `ADMIN_SESSION_ENC_KEY`, `ADMIN_ORIGIN`) só depois do IdP; expor
+`admin_private` em "Exposed schemas" do Data API nessa hora.
