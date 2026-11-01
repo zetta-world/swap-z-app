@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { mensagemDeFalha } from "@/lib/admin/metrica";
 import TerminalPanel from "../TerminalPanel";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
 
@@ -22,6 +23,8 @@ function dot(ok: boolean): string { return ok ? "var(--adm-green)" : "var(--adm-
 function ageLabel(c: Cron): string {
   // ⚠️ "never" só quando o banco foi LIDO e não há batimento. Ilegível = desconhecido.
   if (c.estado === "desconhecido") return "DESCONHECIDO";
+  // batimento GRAVADO mas ilegível: o cron bateu — "never" seria falso.
+  if (c.estado === "parado" && c.ageMin == null) return "ILEGÍVEL";
   if (c.ageMin == null) return "never";
   if (c.ageMin < 1) return "just now";
   if (c.ageMin < 90) return `${c.ageMin}m ago`;
@@ -37,10 +40,12 @@ export default function SystemHealthPanel() {
   const load = useCallback(async () => {
     try {
       const res = await fetch("/admin/api/health");
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? res.status);
+      const json = await res.json().catch(() => null);
+      // ⚠️ Falha some com o veredito velho: "ALL SYSTEMS OPERATIONAL" de 45 s atrás
+      // ao lado de um erro é lido como atual (revisão adversarial).
+      if (!res.ok || json == null) { setData(null); setError(mensagemDeFalha(res.status, json)); return; }
       setData(json); setError(null);
-    } catch (e) { setError(String(e)); } finally { setLoading(false); }
+    } catch (e) { setData(null); setError(String(e)); } finally { setLoading(false); }
   }, []);
 
   useEffect(() => {

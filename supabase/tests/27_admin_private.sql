@@ -68,6 +68,12 @@ begin
     values (decode(repeat('cd', 32), 'hex'), 'corp', 'mfa_pending', '00000000-0000-0000-0000-00000000000b', '0xabc', now() + interval '1 hour', 600);
     raise exception 'T27.3 FALHOU: sessão corp com carteira';
   exception when check_violation then null; end;
+  begin
+    -- aal NULL: o CHECK antigo (`aal = 'aal2'`) dava NULL e PASSAVA (três valores)
+    insert into admin_private.admin_sessions (token_hash, kind, state, identity_id, aal, mfa_verified_at, absolute_expires_at, idle_timeout_s)
+    values (decode(repeat('12', 32), 'hex'), 'corp', 'active', '00000000-0000-0000-0000-00000000000b', null, now(), now() + interval '8 hours', 1800);
+    raise exception 'T27.3 FALHOU: sessão ativa com aal NULL';
+  exception when check_violation then null; end;
   insert into admin_private.admin_sessions (token_hash, kind, state, identity_id, aal, mfa_verified_at, absolute_expires_at, idle_timeout_s)
   values (decode(repeat('ef', 32), 'hex'), 'corp', 'active', '00000000-0000-0000-0000-00000000000b', 'aal2', now(), now() + interval '8 hours', 1800);
   raise notice 'T27.3 ok — ativa só com aal2; corp ≠ break-glass';

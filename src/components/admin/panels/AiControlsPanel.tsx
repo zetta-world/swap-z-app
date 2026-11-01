@@ -19,6 +19,8 @@ type GateKey = FlywheelGateKey;
 type Breaker = {
   id: string; label: string; configured: boolean;
   fails: number; tripped: boolean; cooldownEndsAt: string | null;
+  /** `cb:<id>` gravado e ilegível: o circuito trata como fechado — a tela não pode dizer "ok". */
+  invalido?: boolean;
 };
 
 const GATES: { key: GateKey; label: string; desc: string; master?: boolean }[] = [
@@ -134,13 +136,15 @@ export default function AiControlsPanel() {
   const masterPaused = gates.pause_backtest === "on";
 
   return (
-    <TerminalPanel id="ai-controls" title="AI CONTROLS" subtitle="liga/desliga agentes · torneio" icon="⏻" source="supabase/admin_kv">
+    <TerminalPanel id="ai-controls" title="AI CONTROLS" subtitle="liga/desliga agentes · torneio" icon="⏻" source="supabase/admin_kv"
+      onRefresh={() => { setLoading(true); void load(); }}>
       {loading && <div className="adm-shimmer" style={{ height: 100 }} />}
       {err  && <div style={{ color: "var(--adm-red)", fontSize: 13, marginBottom: 8 }}>{err}</div>}
       {ilegivel && (
         <div role="alert" style={{ color: "var(--adm-amber)", fontSize: 12, marginBottom: 10 }}>
           ⚠ ESTADO DESCONHECIDO — não consegui ler os gates ({ilegivel}). Isto NÃO quer dizer que estão ligados;
           os botões ficam travados até uma leitura dar certo.
+          <button className="adm-toggle" style={{ marginLeft: 8 }} onClick={() => { setLoading(true); void load(); }}>recarregar</button>
         </div>
       )}
       {UNLISTED_GATES.length > 0 && (
@@ -196,7 +200,14 @@ export default function AiControlsPanel() {
           {breakers.filter((b) => b.configured).map((b) => (
             <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", fontSize: 12 }}>
               <span style={{ flex: 1, color: "var(--adm-ink)" }}>{b.label}</span>
-              {b.tripped ? (
+              {b.invalido ? (
+                <>
+                  <span style={{ color: "var(--adm-amber)" }}>⚠ estado ilegível (tratado como fechado)</span>
+                  <button className="adm-toggle danger" onClick={() => resetBreaker(b.id)} disabled={resetting === b.id}>
+                    {resetting === b.id ? "…" : "RESET"}
+                  </button>
+                </>
+              ) : b.tripped ? (
                 <>
                   <span style={{ color: "var(--adm-red)" }}>
                     ⛔ TRIPADO até {b.cooldownEndsAt ? new Date(b.cooldownEndsAt).toLocaleTimeString() : "—"}

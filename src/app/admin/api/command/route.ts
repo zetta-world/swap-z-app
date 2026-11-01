@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { lerBatimentos } from "@/lib/admin/health";
-import { lerTodasAsPaginas } from "@/lib/supabase/paginar";
-import { agregarUsoDeIa, type LinhaDeUsoIa } from "@/lib/admin/ai-cost";
+import { lerTodasPorChave } from "@/lib/supabase/paginar";
+import { agregarUsoDeIa } from "@/lib/admin/ai-cost";
+import { utcDayKey } from "@/lib/autopilot/sessions";
 
 export const dynamic = "force-dynamic";
 
@@ -33,37 +34,49 @@ export async function GET(): Promise<NextResponse> {
     return r;
   };
   type Pagina<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
-  const paginado = async <T,>(nome: string, montar: (de: number, ate: number) => Pagina<T>): Promise<T[] | null> => {
-    const l = await lerTodasAsPaginas<T>(montar, { teto: 100_000 }).catch(() => null);
+  // POR CHAVE (revisão adversarial): por offset com a mais nova primeiro, linha gravada
+  // durante a leitura deslocava as páginas e a de fronteira era somada duas vezes.
+  const paginado = async <T extends { id: string }>(nome: string, montar: (depois: string | null, n: number) => Pagina<T>): Promise<T[] | null> => {
+    const l = await lerTodasPorChave<T & Record<string, unknown>>(
+      montar as (depois: string | null, n: number) => Pagina<T & Record<string, unknown>>, "id", { teto: 100_000 },
+    ).catch(() => null);
     if (!l || l.erro) { falhas.push(nome); return null; }
     if (l.truncado) falhas.push(`${nome}:truncado`);
     return l.linhas;
   };
 
   const [
-    usersR, active24hR, ops, aiR, apActiveR, apSessR, positionsR, suggestionsR, securityR, batimentos,
+    usersR, active24hR, ops, aiR, apActiveR, apSessR, positionsR, winsR, lossesR, securityR, batimentos,
   ] = await Promise.all([
     db.from("users").select("*", { count: "exact", head: true }),
     db.from("users").select("*", { count: "exact", head: true }).gte("last_seen_at", ago24h),
-    paginado<{ volume_usd: unknown; pnl_usd: unknown; created_at: string }>("operations", (de, ate) =>
-      db.from("operations").select("volume_usd, pnl_usd, created_at")
-        .order("created_at", { ascending: false }).order("id", { ascending: false })
-        .range(de, ate) as unknown as Pagina<{ volume_usd: unknown; pnl_usd: unknown; created_at: string }>),
+    paginado<{ id: string; volume_usd: unknown; pnl_usd: unknown; created_at: string }>("operations", (depois, n) => {
+      let q = db.from("operations").select("id, volume_usd, pnl_usd, created_at");
+      if (depois != null) q = q.gt("id", depois);
+      return q.order("id", { ascending: true }).limit(n) as unknown as Pagina<{ id: string; volume_usd: unknown; pnl_usd: unknown; created_at: string }>;
+    }),
     // Custo de IA 24h PAGINADO (o recorte de 1.000 subestimava em silêncio) e
     // agregado pela MESMA conta do /finance (`agregarUsoDeIa`: cache fora, token
-    // ilegível não vira NaN).
-    paginado<LinhaDeUsoIa>("zion_analysis_24h", (de, ate) =>
-      db.from("platform_events").select("metadata, created_at").eq("event_type", "zion_analysis").gte("created_at", ago24h)
-        .order("created_at", { ascending: false }).order("id", { ascending: false })
-        .range(de, ate) as unknown as Pagina<LinhaDeUsoIa>),
+    // ilegível não vira NaN). Paginada por chave: `paginado` → lerTodasPorChave.
+    paginado<{ id: string; metadata: unknown; created_at: string }>("zion_analysis_24h", (depois, n) => {
+      let q = db.from("platform_events").select("id, metadata, created_at").eq("event_type", "zion_analysis").gte("created_at", ago24h);
+      if (depois != null) q = q.gt("id", depois);
+      return q.order("id", { ascending: true }).limit(n) as unknown as Pagina<{ id: string; metadata: unknown; created_at: string }>;
+    }),
     db.from("autopilot_sessions").select("*", { count: "exact", head: true }).eq("is_active", true),
     // leitura-limitada: sessões do autopilot — dezenas, não milhares.
-    db.from("autopilot_sessions").select("pnl_today"),
+    db.from("autopilot_sessions").select("pnl_today, last_reset_day"),
     // leitura-limitada: posições abertas — dezenas, não milhares.
     db.from("autopilot_positions").select("cost_usd").neq("status", "closed"),
-    // leitura-limitada: contadores do painel de comando. São indicadores de
-    // pulso, não a base de nenhuma decisão automática.
-    db.from("zion_suggestions").select("status").is("archived_at", null),
+    /**
+     * ⚠️ WIN-RATE CONTADO NO BANCO (revisão adversarial): a leitura de linhas sem
+     * `range` cortava em 1.000 — e o ledger vivo já passou disso (o watchdog
+     * pagina esta mesma consulta). "N decididas" travava em ≤1.000 com estado ok.
+     */
+    db.from("zion_suggestions").select("*", { count: "exact", head: true })
+      .is("archived_at", null).in("status", ["win", "hit_target"]),
+    db.from("zion_suggestions").select("*", { count: "exact", head: true })
+      .is("archived_at", null).in("status", ["loss", "hit_stop"]),
     /**
      * ⚠️ CONTAGEM NO BANCO, NÃO NA AMOSTRA (revisão adversarial). A leitura antiga
      * trazia 1.000 eventos ARBITRÁRIOS: um flood de eventos `low` (ex.: spam no
@@ -81,7 +94,8 @@ export async function GET(): Promise<NextResponse> {
   const apActive = conferir("autopilot_sessions_ativas", apActiveR);
   const apSess = conferir("autopilot_sessions", apSessR);
   const positions = conferir("autopilot_positions", positionsR);
-  const suggestions = conferir("zion_suggestions", suggestionsR);
+  const winsC = conferir("zion_suggestions_wins", winsR);
+  const lossesC = conferir("zion_suggestions_losses", lossesR);
   const security = conferir("security_24h", securityR);
   if (!batimentos.lido) falhas.push("cron_heartbeats");
 
@@ -95,17 +109,24 @@ export async function GET(): Promise<NextResponse> {
   const aiCost24h: number | null = ai ? agregarUsoDeIa(ai, now).all : null;
 
   let apPnlToday: number | null = null;
-  if (apSess) { apPnlToday = 0; for (const x of (apSess.data ?? []) as Array<{ pnl_today: unknown }>) apPnlToday += Number(x.pnl_today) || 0; }
+  // ⚠️ Só sessões que JÁ viraram o dia (revisão adversarial): `pnl_today` só zera
+  // quando o cron processa a sessão; uma desativada ontem com -$40 somava -$40 hoje.
+  // Mesma regra da 0064 (`last_reset_day <> hoje` = base zero).
+  const hoje = utcDayKey(new Date(now));
+  if (apSess) {
+    apPnlToday = 0;
+    for (const x of (apSess.data ?? []) as Array<{ pnl_today: unknown; last_reset_day: string | null }>) {
+      if (x.last_reset_day === hoje) apPnlToday += Number(x.pnl_today) || 0;
+    }
+  }
   let exposure: number | null = null;
   const posLinhas = positions ? (positions.data ?? []) as Array<{ cost_usd: unknown }> : null;
   if (posLinhas) { exposure = 0; for (const p of posLinhas) exposure += Number(p.cost_usd) || 0; }
 
-  let wins = 0, losses = 0;
-  for (const x of (suggestions?.data ?? []) as Array<{ status: string }>) {
-    if (x.status === "win" || x.status === "hit_target") wins++;
-    else if (x.status === "loss" || x.status === "hit_stop") losses++;
-  }
-  const winRate = suggestions && wins + losses > 0 ? wins / (wins + losses) : null;
+  const wins = winsC?.count, losses = lossesC?.count;
+  const decididas = typeof wins === "number" && typeof losses === "number" ? wins + losses : null;
+  if ((winsC || lossesC) && decididas == null) falhas.push("zion_suggestions:sem_contagem");
+  const winRate = decididas != null && decididas > 0 ? wins! / decididas : null;
 
   const highSec24h: number | null = security ? (security.count ?? null) : null;
   if (security && security.count == null) falhas.push("security_24h:sem_contagem");
@@ -128,7 +149,7 @@ export async function GET(): Promise<NextResponse> {
     pnlAll,
     aiCost24h,
     autopilot: { activeSessions: apActive?.count ?? null, pnlToday: apPnlToday, openPositions: posLinhas ? posLinhas.length : null, exposure },
-    backtest: { winRate, decided: suggestions ? wins + losses : null },
+    backtest: { winRate, decided: decididas },
     alerts: { highSecurity24h: highSec24h, staleCrons },
     fetchedAt: new Date().toISOString(),
   }, { headers: { "Cache-Control": "no-store" } });

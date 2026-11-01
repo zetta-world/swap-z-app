@@ -32,9 +32,9 @@ export default function CommandPanel() {
     try {
       const res = await fetch("/admin/api/command");
       const json = await res.json().catch(() => null);
-      if (!res.ok) { setD(null); setError(mensagemDeFalha(res.status, json)); return; }
+      if (!res.ok || json == null) { setD(null); setError(mensagemDeFalha(res.status, json)); return; }
       setD(json); setError(null);
-    } catch (e) { setError(String(e)); } finally { setLoading(false); }
+    } catch (e) { setD(null); setError(String(e)); }  // rede caiu: sem número velho na tela finally { setLoading(false); }
   }, []);
 
   useEffect(() => {

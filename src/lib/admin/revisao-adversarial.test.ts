@@ -60,3 +60,66 @@ describe("revisão adversarial — achados confirmados", () => {
     expect(ler("src/app/admin/api/audit-bench/route.ts")).toMatch(/acao: "security\.bench\.run"/);
   });
 });
+
+describe("segunda varredura (679fdfb) — achados confirmados", () => {
+  it("C01 Liberação: recusa de comando não é apagada pelo recarregar", () => {
+    const l = ler("src/components/admin/panels/LiberacaoPanel.tsx");
+    expect(l).toMatch(/await carregar\(\); setErroComando\(body\.porque/);
+    expect(l).toMatch(/await carregar\(\); setErroComando\(b\.porque/);
+    expect(l).not.toMatch(/setErro\(b(?:ody)?\.porque/);
+  });
+
+  it("C02 Paper: falha do reparo aparece fora dos blocos condicionais", () => {
+    const p = ler("src/components/admin/panels/PaperPanel.tsx");
+    expect(p.indexOf("{repairErro && ")).toBeGreaterThan(0);
+    expect(p.indexOf("{repairErro && ")).toBeLessThan(p.indexOf("{repair && repair.plan.length > 0 && ("));
+  });
+
+  it("C03/C04 falha (inclusive rede) some com o número velho", () => {
+    expect(ler("src/components/admin/panels/SystemHealthPanel.tsx")).toMatch(/catch \(e\) \{ setData\(null\);/);
+    expect(ler("src/components/admin/panels/CommandPanel.tsx")).toMatch(/catch \(e\) \{ setD\(null\);/);
+    expect(ler("src/components/admin/panels/FinancePanel.tsx")).toMatch(/catch \(e\) \{ setData\(null\);/);
+    expect(ler("src/components/admin/panels/AiCostPanel.tsx")).toMatch(/catch \(e\) \{ setD\(null\);/);
+  });
+
+  it("C05/C07 AiControls: disjuntor ilegível não é '● ok'; gates ilegíveis têm recarregar", () => {
+    const a = ler("src/components/admin/panels/AiControlsPanel.tsx");
+    expect(a).toMatch(/\{b\.invalido \? \(/);
+    expect(a).toMatch(/recarregar<\/button>/);
+  });
+
+  it("C06 batimento ilegível não é 'never'", () => {
+    expect(ler("src/components/admin/panels/SystemHealthPanel.tsx")).toMatch(/c\.estado === "parado" && c\.ageMin == null\) return "ILEGÍVEL"/);
+  });
+
+  it("C08 /finance e /command somam por CHAVE (sem offset)", () => {
+    for (const r of ["finance", "command"]) {
+      const c = ler(`src/app/admin/api/${r}/route.ts`);
+      expect(c, r).toContain("lerTodasPorChave");
+      expect(c, r).not.toContain("lerTodasAsPaginas");
+      expect(c, r).not.toMatch(/\.range\(/);
+    }
+  });
+
+  it("C10/C11 COMMAND: win-rate por contagem exata; P&L de hoje só de sessão que virou o dia", () => {
+    const c = ler("src/app/admin/api/command/route.ts");
+    expect(c).toMatch(/from\("zion_suggestions"\)\.select\("\*", \{ count: "exact", head: true \}\)/);
+    expect(c).toMatch(/x\.last_reset_day === hoje/);
+  });
+
+  it("C14 CoinGecko com teto", () => {
+    expect(ler("src/app/admin/api/finance/route.ts")).toMatch(/signal: AbortSignal\.timeout\(3_000\)/);
+  });
+
+  it("C15 CHECK de sessão ativa é NULL-safe", () => {
+    expect(readFileSync("supabase/migrations/0083_admin_private_identidade_rbac.sql", "utf8"))
+      .toContain("aal is not distinct from 'aal2'");
+  });
+
+  it("C16/C17 fora de legacy não se cria platform_admins; /tier não apaga admin legado em nenhuma ação", () => {
+    expect(ler("src/app/admin/api/admins/route.ts")).toMatch(/action === "grant" && modo !== "legacy"/);
+    const t = ler("src/app/admin/api/tier/route.ts");
+    expect(t).toMatch(/\.neq\("source", "admin"\)/);
+    expect(t).not.toMatch(/if \(action === "grant"\) \{\s*const \{ data: atual/);
+  });
+});

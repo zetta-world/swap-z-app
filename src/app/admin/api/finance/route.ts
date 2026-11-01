@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { agregarUsoDeIa, type AgregadoIa, type LinhaDeUsoIa } from "@/lib/admin/ai-cost";
-import { lerTodasAsPaginas, type LeituraPaginada } from "@/lib/supabase/paginar";
+import { lerTodasPorChave, type LeituraPaginada } from "@/lib/supabase/paginar";
 import { comTeto, deLeitura, estadoGeral, indisponivel, type OperationalMetric } from "@/lib/admin/metrica";
 
 export const dynamic = "force-dynamic";
@@ -17,18 +17,34 @@ const TETO_MS = 8_000;
 
 async function solUsd(): Promise<number | null> {
   try {
-    const res = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd", { next: { revalidate: 1800 } });
+    // ⚠️ Com teto (revisão adversarial): sem `signal`, um CoinGecko pendurado segurava a
+    // resposta inteira — inclusive custo/volume já lidos — muito além do TETO_MS.
+    const res = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
+      { next: { revalidate: 1800 }, signal: AbortSignal.timeout(3_000) });
     if (!res.ok) return null;
     const j = await res.json() as { solana?: { usd?: number } };
     return j.solana?.usd ?? null;
   } catch { return null; }
 }
 
+type LinhaIa = { id: string; metadata: unknown; created_at: string; [k: string]: unknown };
+type LinhaOp = { id: string; volume_usd: unknown; created_at: string; [k: string]: unknown };
+type LinhaTier = { wallet_address: string; tier: string; [k: string]: unknown };
+
 type Pagina<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
 
-/** Leitura paginada com orçamento; estouro/exceção viram `erro`, nunca `[]`. */
-async function lerFonte<T>(montar: (de: number, ate: number) => Pagina<T>): Promise<LeituraPaginada<T>> {
-  const r = await comTeto(() => lerTodasAsPaginas<T>(montar, { teto: TETO_LINHAS }), TETO_MS);
+/**
+ * Leitura paginada POR CHAVE com orçamento; estouro/exceção viram `erro`, nunca `[]`.
+ *
+ * ⚠️ Por chave, não por offset (revisão adversarial): com a mais nova primeiro, cada
+ * linha gravada durante a leitura empurrava as páginas e a de fronteira era SOMADA
+ * DUAS VEZES — dinheiro em dobro com estado `ok`. As somas daqui não dependem de
+ * ordem, então ordenar pela chave única não muda mais nada.
+ */
+async function lerFonte<T extends Record<string, unknown>>(
+  montar: (depoisDe: string | null, limite: number) => Pagina<T>, chave: keyof T & string,
+): Promise<LeituraPaginada<T>> {
+  const r = await comTeto(() => lerTodasPorChave<T>(montar, chave, { teto: TETO_LINHAS }), TETO_MS);
   return r.ok ? r.valor : { linhas: [], erro: r.errorCode, truncado: false, paginas: 0 };
 }
 
@@ -60,15 +76,21 @@ export async function GET(): Promise<NextResponse> {
   const [aiL, opsL, tierL, sol] = await Promise.all([
     // leitura-limitada: uso do ZION para a tela de custo. O teto de gasto real
     // é aplicado em `tier/enforce.ts` contra o banco, não a partir daqui.
-    lerFonte<LinhaDeUsoIa>((de, ate) => db.from("platform_events").select("metadata, created_at")
-      .eq("event_type", "zion_analysis").order("created_at", { ascending: false }).order("id", { ascending: false })
-      .range(de, ate) as unknown as Pagina<LinhaDeUsoIa>),
-    lerFonte<{ volume_usd: unknown; created_at: string }>((de, ate) => db.from("operations").select("volume_usd, created_at")
-      .order("created_at", { ascending: false }).order("id", { ascending: false })
-      .range(de, ate) as unknown as Pagina<{ volume_usd: unknown; created_at: string }>),
-    lerFonte<{ tier: string }>((de, ate) => db.from("tier_cache").select("tier")
-      .order("wallet_address", { ascending: true })
-      .range(de, ate) as unknown as Pagina<{ tier: string }>),
+    lerFonte<LinhaIa>((depois, n) => {
+      let q = db.from("platform_events").select("id, metadata, created_at").eq("event_type", "zion_analysis");
+      if (depois != null) q = q.gt("id", depois);
+      return q.order("id", { ascending: true }).limit(n) as unknown as Pagina<LinhaIa>;
+    }, "id"),
+    lerFonte<LinhaOp>((depois, n) => {
+      let q = db.from("operations").select("id, volume_usd, created_at");
+      if (depois != null) q = q.gt("id", depois);
+      return q.order("id", { ascending: true }).limit(n) as unknown as Pagina<LinhaOp>;
+    }, "id"),
+    lerFonte<LinhaTier>((depois, n) => {
+      let q = db.from("tier_cache").select("wallet_address, tier");
+      if (depois != null) q = q.gt("wallet_address", depois);
+      return q.order("wallet_address", { ascending: true }).limit(n) as unknown as Pagina<LinhaTier>;
+    }, "wallet_address"),
     solUsd(),
   ]);
 
@@ -112,6 +134,8 @@ export async function GET(): Promise<NextResponse> {
   return NextResponse.json({
     state: estado === "completo" ? "ok" : estado === "parcial" ? "partial" : "unavailable",
     estado,
+    // Todas caíram: o 503 diz o PORQUÊ no topo (antes o painel mostrava "sem código").
+    ...(estado === "indisponivel" ? { errorCode: aiM.errorCode ?? volM.errorCode ?? recM.errorCode ?? "leitura_falhou" } : {}),
     ai: usar(aiM),
     volume: usar(volM),
     revenue: usar(recM),

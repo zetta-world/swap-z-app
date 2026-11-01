@@ -105,7 +105,8 @@ create table admin_private.admin_sessions (
   revoke_reason        text,
   check ((kind = 'corp' and identity_id is not null and breakglass_wallet is null)
       or (kind = 'breakglass' and identity_id is null and breakglass_wallet is not null)),
-  check (state <> 'active' or kind = 'breakglass' or (aal = 'aal2' and mfa_verified_at is not null)),
+  -- ⚠️ NULL-safe: com `aal = 'aal2'`, aal NULL dava NULL e o CHECK PASSAVA (três valores)
+  check (state <> 'active' or kind = 'breakglass' or (aal is not distinct from 'aal2' and mfa_verified_at is not null)),
   check (absolute_expires_at > created_at)
 );
 

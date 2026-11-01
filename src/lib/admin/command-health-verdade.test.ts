@@ -17,7 +17,7 @@ vi.mock("@/lib/supabase/server", () => ({
       const r = () => s.pendurado ? new Promise(() => {})
         : Promise.resolve(s.quebrado ? { data: null, count: null, error: { message: "x" } } : { data: [], count: 0, error: null });
       const q: Record<string, unknown> = {};
-      for (const m of ["select", "eq", "gte", "neq", "is", "like", "order", "limit"]) q[m] = () => q;
+      for (const m of ["select", "eq", "gte", "gt", "in", "neq", "is", "like", "order", "limit"]) q[m] = () => q;
       q.range = r;
       q.then = (ok: (v: unknown) => unknown, err: (e: unknown) => unknown) => r().then(ok, err);
       return q;
@@ -64,6 +64,17 @@ describe("GET /admin/api/health", () => {
     expect(j.deps.find((d: { name: string }) => d.name === "Supabase").ok).toBe(false);
     expect(new Set(j.crons.map((c: { estado: string }) => c.estado))).toEqual(new Set(["desconhecido"]));
   });
+
+  it("C09: banco PENDURADO não pendura o /health — crons DESCONHECIDOS e Supabase DOWN no teto", async () => {
+    s.pendurado = true;
+    const { GET } = await import("@/app/admin/api/health/route");
+    const t0 = Date.now();
+    const j = await (await GET()).json();
+    expect(Date.now() - t0).toBeLessThan(5_000);
+    expect(j.ok).toBe(false);
+    expect(j.batimentosLidos).toBe(false);
+    expect(j.batimentosErro).toBe("tempo_esgotado");
+  }, 10_000);
 
   it("ping do banco tem teto: pendurado → DOWN em vez de pendurar a tela", async () => {
     s.pendurado = true;

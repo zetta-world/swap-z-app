@@ -26,6 +26,7 @@ type Fin = {
     daily: Array<{ date: string; cost: number; calls?: number }>;
     monthProjection: number;
     respostasDoCache?: number; semPrecoProprio?: number; tokensIlegiveis?: number; datasIlegiveis?: number;
+    projecaoInstavel?: boolean;
   };
   fontes?: { ai?: OperationalMetric<unknown> };
 };
@@ -69,9 +70,9 @@ export default function AiCostPanel() {
       const res = await fetch("/admin/api/finance");
       const json = await res.json().catch(() => null);
       // 503 = nenhuma fonte lida. A tela diz INDISPONÍVEL — e some o número velho.
-      if (!res.ok) { setD(null); setErr(mensagemDeFalha(res.status, json)); return; }
+      if (!res.ok || json == null) { setD(null); setErr(mensagemDeFalha(res.status, json)); return; }
       setD(json); setErr(null);
-    } catch (e) { setErr(String(e)); } finally { setLoading(false); }
+    } catch (e) { setD(null); setErr(String(e)); }  // rede caiu: sem número velho na tela finally { setLoading(false); }
   }, []);
 
   useEffect(() => { load(); const t = setInterval(load, 300_000); return () => clearInterval(t); }, [load]);
@@ -88,7 +89,7 @@ export default function AiCostPanel() {
             <Stat label="HOJE"    value={usd4(d.ai.today)} color="var(--adm-gold)" />
             <Stat label="7 DIAS"  value={usd4(d.ai.week)}  color="var(--adm-ink)" />
             <Stat label="MÊS"     value={usd4(d.ai.month)} color="var(--adm-ink)" />
-            <Stat label="PROJ. MÊS" value={usd4(d.ai.monthProjection)} color="var(--adm-gold)" />
+            <Stat label={d.ai.projecaoInstavel ? "PROJ. MÊS (instável)" : "PROJ. MÊS"} value={usd4(d.ai.monthProjection)} color="var(--adm-gold)" />
           </div>
 
           <div className="adm-category">Gasto diário · 14 dias</div>

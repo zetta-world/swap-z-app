@@ -26,6 +26,28 @@ describe("agregarUsoDeIa (ADM-007)", () => {
   });
 });
 
+describe("projeção do mês pelo tempo decorrido (C12)", () => {
+  it("1 chamada/hora desde 00:00 do dia 1º, às 06:00 → ritmo real, não 4× menor", () => {
+    const agora = Date.parse("2026-11-01T06:00:00Z");
+    const linhas = Array.from({ length: 6 }, (_, h) => ({
+      created_at: `2026-11-01T0${h}:00:00Z`, metadata: { model: "claude-sonnet-4-5", inTokens: 1_000_000 },
+    }));
+    const a = agregarUsoDeIa(linhas, agora);
+    expect(a.monthProjection).toBeCloseTo((a.month / 0.25) * 30, 6);
+    expect(a.projecaoInstavel).toBe(true);
+  });
+});
+
+describe("deLeitura mantém o porquê (C13)", () => {
+  it("estouro de tempo ≠ consulta recusada", async () => {
+    const { deLeitura } = await import("./metrica");
+    const m = deLeitura({ linhas: [], erro: "tempo_esgotado", truncado: false, paginas: 0 }, "x", () => 0);
+    expect(m).toMatchObject({ state: "unavailable", errorCode: "tempo_esgotado" });
+    const n = deLeitura({ linhas: [], erro: "permission denied", truncado: false, paginas: 0 }, "x", () => 0);
+    expect(n.errorCode).toBe("leitura_falhou");
+  });
+});
+
 describe("metrica — os quatro casos que a tela confundia", () => {
   it("indisponível ≠ zero ≠ vazio ≠ parcial", () => {
     const base = { quality: "measured" as const, source: "x", asOf: null };
@@ -50,11 +72,13 @@ vi.mock("@/lib/admin/require", () => ({ requireAdmin: async () => ({ wallet: "0x
 vi.mock("@/lib/supabase/server", () => ({
   getSupabaseAdmin: () => ({
     from: (t: string) => {
+      let depois: string | null = null;
       const q = {
         select: () => q, eq: () => q, order: () => q,
-        range: async (de: number) => s.erroEm.has(t)
+        gt: (_c: string, v: string) => { depois = v; return q; },
+        limit: async () => s.erroEm.has(t)
           ? { data: null, error: { message: "falhou" } }
-          : { data: de === 0 ? (s.linhas[t] ?? []) : [], error: null },
+          : { data: depois == null ? (s.linhas[t] ?? []) : [], error: null },
       };
       return q;
     },
@@ -64,9 +88,9 @@ vi.mock("@/lib/supabase/server", () => ({
 beforeEach(() => {
   s.erroEm = new Set();
   s.linhas = {
-    platform_events: [{ created_at: "2026-10-25T10:00:00Z", metadata: { model: "claude-sonnet-4-5", inTokens: 10 } }],
-    operations: [{ volume_usd: 100, created_at: new Date().toISOString() }],
-    tier_cache: [{ tier: "pro" }],
+    platform_events: [{ id: "e1", created_at: "2026-10-25T10:00:00Z", metadata: { model: "claude-sonnet-4-5", inTokens: 10 } }],
+    operations: [{ id: "o1", volume_usd: 100, created_at: new Date().toISOString() }],
+    tier_cache: [{ wallet_address: "w1", tier: "pro" }],
   };
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false })));
 });
@@ -93,5 +117,6 @@ describe("GET /admin/api/finance (ADM-006)", () => {
     const j = await r.json();
     expect(j.ai).toBeNull();
     expect(j.revenue).toBeNull();
+    expect(j.errorCode).toBe("leitura_falhou");   // C13: o 503 diz o porquê
   });
 });

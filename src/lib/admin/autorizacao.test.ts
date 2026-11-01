@@ -260,3 +260,19 @@ describe("páginas no mesmo ponto único (revisão adversarial)", () => {
     await expect(autorizarPaginaAdmin("mural")).resolves.toMatchObject({ wallet: "0xenv", pagina: "mural", modo: "legacy" });
   });
 });
+
+describe("C18 · dual admite pela primeira fonte PERMITIDA que casa", () => {
+  it("carteira no env E em platform_admins, ADMIN_LEGACY_SOURCES=panel → entra como panel (antes: 404)", async () => {
+    vi.stubEnv("ADMIN_AUTH_MODE", "dual");
+    vi.stubEnv("ADMIN_LEGACY_SOURCES", "panel");
+    s.sessao = { sub: "0xenv" }; s.painel = ["0xenv"];
+    await expect(autorizarAdmin("security.killswitch.read")).resolves.toMatchObject({ fonte: "panel", modo: "dual" });
+  });
+  it("só casa em fonte desligada → 404 nomeado (admin_fonte_legada_recusada)", async () => {
+    vi.stubEnv("ADMIN_AUTH_MODE", "dual");
+    vi.stubEnv("ADMIN_LEGACY_SOURCES", "panel");
+    s.sessao = { sub: "0xenv" }; s.painel = [];
+    await expect(autorizarAdmin("security.killswitch.read")).rejects.toThrow("NEXT_NOT_FOUND");
+    expect(s.eventos.map((e) => e.kind)).toContain("admin_fonte_legada_recusada");
+  });
+});

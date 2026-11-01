@@ -210,6 +210,11 @@ export default function PaperPanel() {
       {loading && <div className="adm-shimmer" style={{ height: 140 }} />}
       {error   && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>}
 
+      {/* Falha do reparo FORA dos blocos condicionais: o reparo é disparado de dois
+          botões (caixa e contador) e, depois dele, o bloco do caixa pode sumir —
+          o porquê não pode sumir junto (revisão adversarial). */}
+      {repairErro && <div role="alert" style={{ color: "var(--adm-red)", fontSize: 11, marginBottom: 8 }}>✗ reparo: {repairErro}</div>}
+
       {/* O ROMBO QUE SOBROU. O bug do débito-sem-posição foi corrigido em 01/08,
           mas correção não devolve dinheiro: uma mesa com $51 de $1.000 não abre
           posição nenhuma e some do experimento sem nada ficar vermelho. */}
@@ -235,7 +240,6 @@ export default function PaperPanel() {
           <button className="adm-btn" style={{ marginTop: 6 }} onClick={runRepair} disabled={repairing}>
             {repairing ? "devolvendo…" : "↺ devolver o capital às carteiras vivas"}
           </button>
-          {repairErro && <div role="alert" style={{ color: "var(--adm-red)", fontSize: 11, marginTop: 4 }}>{repairErro}</div>}
         </div>
       )}
       {/**

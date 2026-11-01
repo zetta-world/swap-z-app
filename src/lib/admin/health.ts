@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { comTeto } from "@/lib/admin/metrica";
 import { aiAtivo } from "@/lib/ai/ativo";
 
 /**
@@ -124,7 +125,11 @@ export async function lerBatimentos(): Promise<LeituraBatimentos> {
   const db = getSupabaseAdmin();
   if (!db) return { lido: false, batimentos, erro: "db_indisponivel" };
   try {
-    const { data, error } = await db.from("admin_kv").select("key, value").like("key", "cron:%");
+    // ⚠️ COM TETO (revisão adversarial): sem ele, banco pendurado pendurava o /health
+    // inteiro e o watchdog — o teto de 3 s do pingBanco não adiantava nada.
+    const r = await comTeto(() => db.from("admin_kv").select("key, value").like("key", "cron:%"), 3_000);
+    if (!r.ok) return { lido: false, batimentos, erro: r.errorCode };
+    const { data, error } = r.valor;
     if (error) return { lido: false, batimentos, erro: "leitura_falhou" };
     for (const r of data ?? []) {
       const m = /^cron:(.+):last$/.exec(r.key);

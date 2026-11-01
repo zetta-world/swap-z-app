@@ -153,8 +153,11 @@ async function decidir(
     }, "high");
   }
 
-  // legacy e dual: a decisão de QUEM é admin continua em `requireAdmin()`.
-  const r = await requireAdmin();
+  // legacy e dual: a decisão de QUEM é admin continua em `requireAdmin()`. Em `dual`,
+  // ela recebe as fontes permitidas e admite pela primeira PERMITIDA que casar.
+  const r = modo.modo === "dual"
+    ? await requireAdmin({ fontesPermitidas: fontesLegadasPermitidas() })
+    : await requireAdmin();
   const autorizado = { wallet: r.wallet, fonte: r.fonte, acao, modo: modo.modo };
 
   if (modo.modo === "dual") {

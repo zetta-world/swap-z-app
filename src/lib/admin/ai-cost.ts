@@ -123,6 +123,8 @@ export interface AgregadoIa {
   /** 14 dias UTC. Dia sem chamada = `calls: 0` (medido: nenhuma), não um zero inventado. */
   daily: Array<{ date: string; cost: number; calls: number }>;
   monthProjection: number;
+  /** true = menos de 1 dia de mês decorrido: a projeção ainda oscila muito. */
+  projecaoInstavel: boolean;
   /** Eventos `cacheHit: true` — servidos da memória, sem chamada nem token. */
   respostasDoCache: number;
   /** Chamadas precificadas pelo padrão por falta de modelo conhecido. */
@@ -172,7 +174,7 @@ export function agregarUsoDeIa(linhas: readonly LinhaDeUsoIa[], agoraMs: number)
     calls: { today: 0, week: 0, month: 0, year: 0, all: 0 },
     byModel: {}, bySource: {}, models: [],
     tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    daily: [], monthProjection: 0,
+    daily: [], monthProjection: 0, projecaoInstavel: false,
     respostasDoCache: 0, semPrecoProprio: 0, tokensIlegiveis: 0, datasIlegiveis: 0,
   };
   const porModelo = new Map<string, ModeloAgregado>();
@@ -212,6 +214,14 @@ export function agregarUsoDeIa(linhas: readonly LinhaDeUsoIa[], agoraMs: number)
   ai.daily = [...dias.entries()].map(([date, v]) => ({ date, cost: v.cost, calls: v.calls }));
   ai.models = [...porModelo.values()].sort((a, b) => b.all - a.all);
   const diasNoMes = new Date(Date.UTC(Y, Mo + 1, 0)).getUTCDate();
-  ai.monthProjection = (ai.month / Da) * diasNoMes;
+  /**
+   * ⚠️ Pelo tempo DECORRIDO do mês, não pelo número do dia (revisão adversarial):
+   * `month / Da` contava hoje como dia cheio — às 06:00 do dia 1º a projeção saía 4×
+   * menor que o ritmo real. Piso de 1 h para não multiplicar uma chamada por 720 no
+   * primeiro minuto do mês; `projecaoInstavel` avisa quando há menos de 1 dia de dados.
+   */
+  const decorridosDias = Math.max((agoraMs - inicioMes) / 86_400_000, 1 / 24);
+  ai.monthProjection = (ai.month / decorridosDias) * diasNoMes;
+  ai.projecaoInstavel = decorridosDias < 1;
   return ai;
 }

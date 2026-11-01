@@ -40,6 +40,13 @@ const CAUSA_TEXTO: Record<Estado["causa"], string> = {
 export default function LiberacaoPanel() {
   const [data,   setData]   = useState<Estado | null>(null);
   const [erro,   setErro]   = useState<string | null>(null);
+  /**
+   * Recusa de COMANDO, separada do erro de leitura: `carregar()` limpa `erro` a
+   * cada GET que dá certo e apagava, no mesmo instante, o porquê de um POST
+   * recusado (409 "outro admin mudou", 503 sem trilha…) — revisão adversarial.
+   * Só some no próximo comando ou num sucesso.
+   */
+  const [erroComando, setErroComando] = useState<string | null>(null);
   const [motivo, setMotivo] = useState("");
   const [busy,   setBusy]   = useState(false);
   const [novoPiloto, setNovoPiloto] = useState("");
@@ -57,7 +64,7 @@ export default function LiberacaoPanel() {
   useEffect(() => { void carregar(); }, [carregar]);
 
   const alternar = useCallback(async (liberar: boolean) => {
-    setBusy(true);
+    setBusy(true); setErroComando(null);
     try {
       const res = await fetch("/admin/api/autopilot-liberacao", {
         method: "POST",
@@ -65,9 +72,11 @@ export default function LiberacaoPanel() {
         body: JSON.stringify({ liberar, motivo }),
       });
       const body = await res.json().catch(() => ({})) as { error?: string; porque?: string };
-      if (!res.ok) { setErro(body.porque ?? body.error ?? `HTTP ${res.status}`); await carregar(); return; }
+      if (!res.ok) { await carregar(); setErroComando(body.porque ?? body.error ?? `HTTP ${res.status}`); return; }
       setMotivo("");
       await carregar();
+    } catch (e) {
+      setErroComando(`o comando NÃO foi confirmado: ${String(e).slice(0, 120)}`);
     } finally { setBusy(false); }
   }, [motivo, carregar]);
 
@@ -75,7 +84,7 @@ export default function LiberacaoPanel() {
   const curto = motivo.trim().length < min;
 
   const mexerPiloto = async (corpo: Record<string, string>) => {
-    setBusy(true);
+    setBusy(true); setErroComando(null);
     try {
       const res = await fetch("/admin/api/autopilot-liberacao", {
         method: "POST",
@@ -83,9 +92,11 @@ export default function LiberacaoPanel() {
         body: JSON.stringify(corpo),
       });
       const b = await res.json().catch(() => ({})) as { error?: string; porque?: string };
-      if (!res.ok) { setErro(b.porque ?? b.error ?? `HTTP ${res.status}`); await carregar(); return; }
+      if (!res.ok) { await carregar(); setErroComando(b.porque ?? b.error ?? `HTTP ${res.status}`); return; }
       setNovoPiloto(""); setNotaPiloto("");
       await carregar();
+    } catch (e) {
+      setErroComando(`o comando NÃO foi confirmado: ${String(e).slice(0, 120)}`);
     } finally { setBusy(false); }
   };
 
@@ -98,7 +109,8 @@ export default function LiberacaoPanel() {
       source="admin_kv/autopilot_cex_liberado"
       onRefresh={carregar}
     >
-      {erro && <div style={{ color: "var(--adm-red)", fontSize: 12 }}>{erro}</div>}
+      {erro && <div role="alert" style={{ color: "var(--adm-red)", fontSize: 12 }}>{erro}</div>}
+      {erroComando && <div role="alert" style={{ color: "var(--adm-red)", fontSize: 12 }}>✗ {erroComando}</div>}
       {!data && !erro && <div className="adm-shimmer" style={{ height: 60 }} />}
 
       {data && (

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { notFound } from "next/navigation";
 import { envAdminWallets } from "@/lib/admin/require";
 import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -67,17 +68,17 @@ export async function GET(): Promise<NextResponse> {
  * Registra uma NEGAÇÃO de guarda (ADM-009). A negação vale com ou sem trilha —
  * negar é a direção segura —, mas um registro que falha vira evento.
  */
-async function auditarNegacao(actor: string, target: string, codigo: string): Promise<void> {
+async function auditarNegacao(actor: string, target: string, codigo: string, acao = "admin.revoke"): Promise<void> {
   const r = await registrarAuditoria({
-    ator: actor, acao: "admin.revoke", alvo: target, fase: "negado", req: novoId(), codigo,
+    ator: actor, acao, alvo: target, fase: "negado", req: novoId(), codigo,
   });
   if (!r.ok) {
-    logSecurity("auditoria_negacao_nao_gravada", { acao: "admin.revoke", codigo, erro: r.erro }, "med");
+    logSecurity("auditoria_negacao_nao_gravada", { acao, codigo, erro: r.erro }, "med");
   }
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const { wallet: actor } = await autorizarAdmin("identity.admins.write");
+  const { wallet: actor, modo } = await autorizarAdmin("identity.admins.write");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 
@@ -98,6 +99,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "wallet inválida" }, { status: 400 });
   if (action !== "grant" && action !== "revoke")
     return NextResponse.json({ error: "action deve ser grant ou revoke" }, { status: 400 });
+
+  /**
+   * ⚠️ FORA DE `legacy`, CONCEDER ADMIN POR CARTEIRA ESTÁ DESLIGADO (desenho §5;
+   * revisão adversarial). A isenção de bootstrap do `env` em `dual` serve para
+   * convidar IDENTIDADE corporativa — não para criar `platform_admins` novo, que
+   * viraria uma fonte legada nova admitida em `dual` com quase tudo. Revogar segue.
+   */
+  if (action === "grant" && modo !== "legacy") {
+    await auditarNegacao(actor, target, `concessao_por_carteira_em_${modo}`, "admin.grant");
+    notFound();
+  }
 
   if (action === "grant") {
     /**

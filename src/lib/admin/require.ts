@@ -41,7 +41,17 @@ async function negar(kind: string, meta: Record<string, unknown>, severity: "low
 /** Qual das três origens legadas admitiu (observação R5; não muda a decisão). */
 export type FonteLegada = "env" | "panel" | "tier";
 
-export async function requireAdmin(): Promise<{ wallet: string; fonte: FonteLegada }> {
+/**
+ * `fontesPermitidas` (só em `dual`): a fonte que admite é a PRIMEIRA PERMITIDA que
+ * casa — não a primeira que casa. Antes, com `ADMIN_LEGACY_SOURCES=panel,tier`, uma
+ * carteira que estava no env E em `platform_admins` resolvia como `env` e levava 404
+ * (revisão adversarial). Sem a opção (legacy), a decisão é a de sempre.
+ */
+export async function requireAdmin(
+  opcoes: { fontesPermitidas?: ReadonlySet<FonteLegada> } = {},
+): Promise<{ wallet: string; fonte: FonteLegada }> {
+  const permitida = (f: FonteLegada) => !opcoes.fontesPermitidas || opcoes.fontesPermitidas.has(f);
+  const recusadas: FonteLegada[] = [];
   const session = await getSession();
   /**
    * ⚠️⚠️ ESTE 404 ERA MUDO, E FOI ELE QUE CUSTOU A INVESTIGAÇÃO DE 13/09.
@@ -67,7 +77,10 @@ export async function requireAdmin(): Promise<{ wallet: string; fonte: FonteLega
 
   const wallet = session.sub;
 
-  if (isEnvAdmin(wallet)) return { wallet, fonte: "env" };
+  if (isEnvAdmin(wallet)) {
+    if (permitida("env")) return { wallet, fonte: "env" };
+    recusadas.push("env");
+  }
 
   const db = getSupabaseAdmin();
   /**
@@ -84,7 +97,10 @@ export async function requireAdmin(): Promise<{ wallet: string; fonte: FonteLega
     .select("wallet_address")
     .eq("wallet_address", wallet)
     .maybeSingle();
-  if (pa) return { wallet, fonte: "panel" };
+  if (pa) {
+    if (permitida("panel")) return { wallet, fonte: "panel" };
+    recusadas.push("panel");
+  }
 
   // Legacy fallback: tier_cache.source = 'admin' (pre-platform_admins grants).
   const { data, error: erroLegado } = await db
@@ -94,7 +110,8 @@ export async function requireAdmin(): Promise<{ wallet: string; fonte: FonteLega
     .eq("source", "admin")
     .maybeSingle();
 
-  if (!data) {
+  if (data && !permitida("tier")) recusadas.push("tier");
+  if (!data || !permitida("tier")) {
     /**
      * ⚠️ A DECISÃO NÃO MUDA (nega), O REGISTRO SIM. Uma leitura que falhou não
      * é "esta carteira não é admin": marcá-la como `admin_access_denied` manda
@@ -106,6 +123,11 @@ export async function requireAdmin(): Promise<{ wallet: string; fonte: FonteLega
         wallet: `${wallet.slice(0, 10)}…`, porque: "leitura de permissão falhou",
         falhou: [erroPainel ? "platform_admins" : "", erroLegado ? "tier_cache" : ""].filter(Boolean),
       }, "high");
+    }
+    // Casou só em fonte(s) que `ADMIN_LEGACY_SOURCES` desligou (dual): recusa nomeada.
+    // Depois do erro de leitura: uma fonte permitida que não pôde ser lida é infra, não recusa.
+    if (recusadas.length > 0) {
+      return negar("admin_fonte_legada_recusada", { wallet: `${wallet.slice(0, 10)}…`, fontes: recusadas }, "high");
     }
     // A signed-in wallet probing an admin surface — high-signal intrusion attempt.
     return negar("admin_access_denied", { wallet: `${wallet.slice(0, 10)}…` }, "high");

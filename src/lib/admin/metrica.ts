@@ -108,7 +108,11 @@ export function deLeitura<L, T>(
 ): OperationalMetric<T> {
   const quality = opcoes.quality ?? "measured";
   const asOf = opcoes.asOf ?? null;
-  if (l.erro) return indisponivel(source, quality, "leitura_falhou", asOf);
+  if (l.erro) {
+    // Estouro e exceção mantêm o código (banco pendurado ≠ consulta recusada).
+    const codigo: ErrorCode = l.erro === "tempo_esgotado" || l.erro === "excecao" ? l.erro : "leitura_falhou";
+    return indisponivel(source, quality, codigo, asOf);
+  }
   const coverage: Cobertura | undefined = l.truncado || opcoes.esperado != null
     ? { expected: opcoes.esperado ?? null, observed: l.linhas.length, truncated: l.truncado }
     : undefined;

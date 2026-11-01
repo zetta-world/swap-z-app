@@ -39,9 +39,9 @@ export default function FinancePanel() {
     try {
       const res = await fetch("/admin/api/finance");
       const json = await res.json().catch(() => null);
-      if (!res.ok) { setData(null); setError(mensagemDeFalha(res.status, json)); return; }
+      if (!res.ok || json == null) { setData(null); setError(mensagemDeFalha(res.status, json)); return; }
       setData(json); setError(null);
-    } catch (e) { setError(String(e)); } finally { setLoading(false); }
+    } catch (e) { setData(null); setError(String(e)); }  // rede caiu: sem número velho na tela finally { setLoading(false); }
   }, []);
 
   useEffect(() => {

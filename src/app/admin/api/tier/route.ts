@@ -63,19 +63,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
    * AUTH-04 só cobria a revogação). Agora: lida conferida; linha `'admin'` → 409,
    * nada gravado. O caminho é migrar o acesso para `platform_admins` antes.
    */
-  if (action === "grant") {
+  /**
+   * ⚠️ E REVOGAR PLANO TAMBÉM APAGAVA ADMIN LEGADO — por fora das guardas de
+   * ADMIN ACCESS (não revogar a si, não revogar o último) e, em `dual`, por quem
+   * não pode mexer em identidade (revisão adversarial). Agora vale para as duas
+   * ações: linha `'admin'` → 409, nada gravado; remover admin é em ADMIN ACCESS.
+   */
+  {
     const { data: atual, error: erroAtual } = await db.from("tier_cache")
       .select("source").eq("wallet_address", target).maybeSingle();
     if (erroAtual) {
       return NextResponse.json({
-        error: "leitura_falhou", porque: "NADA foi concedido: não consegui ler o registro atual desta carteira",
+        error: "leitura_falhou", porque: "NADA foi alterado: não consegui ler o registro atual desta carteira",
       }, { status: 503 });
     }
     if (atual?.source === "admin") {
       return NextResponse.json({
         error: "admin_legado", target,
-        porque: "NADA foi concedido: esta carteira é admin pela fonte legada (tier_cache.source='admin'); "
-          + "conceder plano aqui apagaria o acesso admin. Conceda admin em ADMIN ACCESS (platform_admins) antes.",
+        porque: "NADA foi alterado: esta carteira é admin pela fonte legada (tier_cache.source='admin'); "
+          + "mexer no plano aqui apagaria o acesso admin. Use ADMIN ACCESS (conceder em platform_admins / revogar).",
       }, { status: 409 });
     }
   }
@@ -134,8 +140,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
        * `ok: true` e o log de auditoria dizia "revogou" com o DELETE recusado.
        * Agora o erro é lido e o `.select()` conta o que saiu de fato.
        */
+      // `.neq("source", "admin")` na MESMA instrução: uma linha que virou admin entre a
+      // leitura acima e aqui não é apagada por este caminho.
       const { data: apagadas, error: erroDoRevoke } = await db.from("tier_cache")
-        .delete().eq("wallet_address", target).select("tier, source");
+        .delete().eq("wallet_address", target).neq("source", "admin").select("tier, source");
       if (erroDoRevoke) return { ok: false, codigo: "nao_consegui_revogar", detalhe: erroDoRevoke.message.slice(0, 200) };
       const removidas = (apagadas ?? []).map((l) => ({ tier: l.tier ?? null, source: l.source ?? null }));
       return { ok: true, valor: { removidas }, depois: { removidas } };
