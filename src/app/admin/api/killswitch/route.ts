@@ -105,12 +105,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // Reenvio de um clique que JÁ executou responde `repetido` ANTES do compare-and-set:
   // depois da 1ª gravação o `esperado` não casa mais, e o reenvio legítimo virava
   // 409 "outro admin mudou".
+  /** D-AUD-1: ligar (kill switch ou gate `pause_*`) é PROTETOR; desligar é permissivo. */
+  const protetor = enabled === true;
   if (idem) {
     const b = await buscarExecutado(`killswitch.${key}`, idem);
-    if ("falhou" in b) {
+    if ("falhou" in b && !protetor) {
       return NextResponse.json({ error: "auditoria_indisponivel", key, porque: PORQUE_AUDITORIA_INDISPONIVEL }, { status: 503 });
     }
-    if (b.achou) return NextResponse.json({ ok: true, repetido: true, key, enabled });
+    if ("achou" in b && b.achou) return NextResponse.json({ ok: true, repetido: true, key, enabled });
   }
 
   const atual = await lerInterruptores([key]);
@@ -135,7 +137,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const r = await comandoAuditado<Gravacao>({
     acao: `killswitch.${key}`, ator: actor, alvo: key, antes, depois: String(enabled), idem,
-    dados: { enabled },
+    dados: { enabled }, protetor,
     executar: async () => {
       /**
        * ⚠️⚠️ UM KILL-SWITCH QUE DIZ "LIGADO" SEM TER GRAVADO É PIOR QUE NÃO TER

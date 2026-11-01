@@ -24,10 +24,13 @@
  * transacional (Desenho B, uma RPC que grava o estado e a trilha juntos) exige
  * migration e autorização do dono.
  *
- * ⚠️ DECISÃO PENDENTE D-AUD-1: hoje TODO comando recusa sem intenção gravada,
- * inclusive os protetores (ligar kill-switch, fechar automação). A proposta do
- * documento é deixar os protetores passarem com alerta; até o dono decidir, o
- * caminho de emergência sem trilha é o SQL do dono.
+ * ⚠️ D-AUD-1 (decisão do dono, 31/10/2026: "Protetor executa + alerta"). Comando
+ * PROTETOR — o que BLOQUEIA/PAUSA/FECHA/REMOVE (ligar kill switch ou gate, fechar a
+ * liberação da automação, remover piloto) — declara `protetor: true` e EXECUTA mesmo
+ * quando a intenção não grava: travar o incidente vale mais que a trilha completa.
+ * Nesse caso: evento de segurança `high` AGUARDADO antes de executar, e o resultado
+ * volta marcado `auditoria: "intencao_nao_gravada"`. Os PERMISSIVOS (abrir, liberar,
+ * autorizar, conceder) continuam recusados com 503 sem a intenção gravada.
  *
  * O que vai no `payload`: fase, correlação, idempotência e os campos que o
  * chamador passa. NUNCA segredo, e nada de PII além da carteira que o log de
@@ -174,9 +177,15 @@ export interface Comando<T> {
   dados?:   Record<string, unknown>;
   /** Faz a coisa E confere a própria escrita. Lançar conta como falha (estado incerto). */
   executar: () => Promise<DesfechoComando<T>>;
+  /**
+   * D-AUD-1: `true` SÓ na direção que bloqueia/pausa/fecha/remove. Sem trilha, executa
+   * com alerta alto aguardado e `auditoria: "intencao_nao_gravada"`. Explícito de
+   * propósito: o padrão (ausente) é o comportamento seguro de antes — recusar.
+   */
+  protetor?: boolean;
 }
 
-export type AuditoriaDoDesfecho = "completa" | "desfecho_nao_gravado";
+export type AuditoriaDoDesfecho = "completa" | "desfecho_nao_gravado" | "intencao_nao_gravada";
 
 export type ResultadoComando<T> =
   | { estado: "recusado"; erro: "auditoria_indisponivel"; detalhe: string; req: string }
@@ -221,21 +230,25 @@ export async function comandoAuditado<T>(c: Comando<T>): Promise<ResultadoComand
   const req = novoId();
   const base = { ator: c.ator, acao: c.acao, alvo: c.alvo ?? null, req, idem: c.idem ?? null, dados: c.dados };
 
+  const protetor = c.protetor === true;
   if (c.idem) {
     const b = await buscarExecutado(c.acao, c.idem);
     if ("falhou" in b) {
-      await logSecurityAguardado("auditoria_indisponivel", { acao: c.acao, etapa: "idempotencia", erro: b.falhou }, "high");
-      return { estado: "recusado", erro: "auditoria_indisponivel", detalhe: `idempotência: ${b.falhou}`, req };
-    }
-    if (b.achou) return { estado: "repetido", req, anterior: b.achou };
+      // Protetor: repetir um bloqueio é inofensivo — não saber se já rodou não o impede.
+      await logSecurityAguardado(protetor ? "auditoria_indisponivel_protetor_executa" : "auditoria_indisponivel",
+        { acao: c.acao, etapa: "idempotencia", erro: b.falhou }, "high");
+      if (!protetor) return { estado: "recusado", erro: "auditoria_indisponivel", detalhe: `idempotência: ${b.falhou}`, req };
+    } else if (b.achou) return { estado: "repetido", req, anterior: b.achou };
   }
 
   const intencao = await registrarAuditoria({
     ...base, id: req, fase: "intencao", antes: c.antes, depois: c.depois,
   });
+  const semIntencao = !intencao.ok;
   if (!intencao.ok) {
-    await logSecurityAguardado("auditoria_indisponivel", { acao: c.acao, etapa: "intencao", erro: intencao.erro }, "high");
-    return { estado: "recusado", erro: "auditoria_indisponivel", detalhe: intencao.erro, req };
+    await logSecurityAguardado(protetor ? "auditoria_indisponivel_protetor_executa" : "auditoria_indisponivel",
+      { acao: c.acao, etapa: "intencao", erro: intencao.erro, req }, "high");
+    if (!protetor) return { estado: "recusado", erro: "auditoria_indisponivel", detalhe: intencao.erro, req };
   }
 
   let desfecho: DesfechoComando<T>;
@@ -248,8 +261,8 @@ export async function comandoAuditado<T>(c: Comando<T>): Promise<ResultadoComand
   const fim = await registrarAuditoria(desfecho.ok
     ? { ...base, fase: "executado", depois: desfecho.depois ?? c.depois }
     : { ...base, fase: "falhou", codigo: desfecho.codigo, dados: { ...c.dados, ...(desfecho.detalhe ? { detalhe: desfecho.detalhe } : {}) } });
-  let auditoria: AuditoriaDoDesfecho = "completa";
-  if (!fim.ok) {
+  let auditoria: AuditoriaDoDesfecho = semIntencao ? "intencao_nao_gravada" : "completa";
+  if (!fim.ok && !semIntencao) {
     auditoria = "desfecho_nao_gravado";
     await logSecurityAguardado("auditoria_desfecho_nao_gravado", {
       acao: c.acao, req, fase: desfecho.ok ? "executado" : "falhou", erro: fim.erro,
@@ -266,8 +279,13 @@ export const PORQUE_AUDITORIA_INDISPONIVEL =
   "NADA foi alterado: a intenção não pôde ser registrada no log de auditoria, "
   + "e comando sensível sem trilha não executa. Confira o banco (admin_audit_log).";
 
-/** Marca no corpo quando o comando rodou mas o desfecho não entrou na trilha. */
+/** Marca no corpo quando o comando rodou mas a trilha ficou incompleta. */
 export function avisoDeAuditoria(a: AuditoriaDoDesfecho): Record<string, string> {
+  if (a === "intencao_nao_gravada") return {
+    auditoria: "intencao_nao_gravada",
+    auditoriaPorque: "comando PROTETOR executado SEM a intenção na trilha (D-AUD-1): o log de auditoria "
+      + "estava indisponível; um alerta alto foi disparado — registre o ocorrido quando o banco voltar",
+  };
   return a === "completa" ? {} : {
     auditoria: "desfecho_nao_gravado",
     auditoriaPorque: "o comando FOI executado, mas o desfecho não entrou no log de auditoria — "

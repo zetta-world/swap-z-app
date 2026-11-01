@@ -105,3 +105,58 @@ describe("idempotência", () => {
     expect(executar).not.toHaveBeenCalled();
   });
 });
+
+describe("D-AUD-1 · protetor executa sem trilha, com alerta alto; permissivo continua recusado", () => {
+  it("PROTETOR com a intenção recusada → EXECUTA, alerta alto aguardado, marca `intencao_nao_gravada`", async () => {
+    b.falharInsert = [true];
+    const executar = vi.fn(async () => ({ ok: true as const, valor: "ligado" }));
+    const r = await comandoAuditado({ acao: "killswitch.disable_swap", ator: "0xA", protetor: true, executar });
+    expect(executar).toHaveBeenCalledTimes(1);
+    expect(r).toMatchObject({ estado: "executado", valor: "ligado", auditoria: "intencao_nao_gravada" });
+    expect(JSON.stringify(b.eventos)).toContain("auditoria_indisponivel_protetor_executa");
+    expect(JSON.stringify(b.eventos)).toContain('"severity":"high"');
+    // o desfecho ainda tenta entrar na trilha (aqui entra)
+    expect(fase(0)).toBe("executado");
+  });
+
+  it("PROTETOR sem banco nenhum → executa e marca; nunca lança", async () => {
+    b.semBanco = true;
+    const executar = vi.fn(async () => ({ ok: true as const, valor: 1 }));
+    const r = await comandoAuditado({ acao: "autopilot.liberacao", ator: "a", protetor: true, executar });
+    expect(r).toMatchObject({ estado: "executado", auditoria: "intencao_nao_gravada" });
+    expect(executar).toHaveBeenCalled();
+  });
+
+  it("⚠️ PERMISSIVO (sem `protetor`, ou `protetor: false`) com a intenção recusada → recusado, não executa", async () => {
+    for (const protetor of [undefined, false]) {
+      b.falharInsert = [true];
+      const executar = vi.fn(async () => ({ ok: true as const, valor: 1 }));
+      const r = await comandoAuditado({ acao: "killswitch.disable_swap", ator: "a", executar, ...(protetor === undefined ? {} : { protetor }) });
+      expect(r).toMatchObject({ estado: "recusado", erro: "auditoria_indisponivel" });
+      expect(executar).not.toHaveBeenCalled();
+    }
+  });
+
+  it("PROTETOR com a idempotência ilegível → executa (repetir bloqueio é inofensivo); permissivo → recusado", async () => {
+    b.leituraIdem = { data: [], error: { message: "fora" } };
+    const prot = vi.fn(async () => ({ ok: true as const, valor: 1 }));
+    expect(await comandoAuditado({ acao: "x", ator: "a", idem: "k", protetor: true, executar: prot }))
+      .toMatchObject({ estado: "executado", auditoria: "completa" });
+    expect(prot).toHaveBeenCalled();
+    const perm = vi.fn(async () => ({ ok: true as const, valor: 1 }));
+    expect(await comandoAuditado({ acao: "x", ator: "a", idem: "k", executar: perm })).toMatchObject({ estado: "recusado" });
+    expect(perm).not.toHaveBeenCalled();
+  });
+
+  it("PROTETOR com a trilha funcionando → igual a antes (`completa`, intenção + executado)", async () => {
+    const r = await comandoAuditado({ acao: "x", ator: "a", protetor: true, executar: async () => ({ ok: true as const, valor: 1 }) });
+    expect(r).toMatchObject({ estado: "executado", auditoria: "completa" });
+    expect([fase(0), fase(1)]).toEqual(["intencao", "executado"]);
+  });
+
+  it("PROTETOR que falha ao executar continua `falhou` (sem trilha não vira sucesso)", async () => {
+    b.falharInsert = [true];
+    const r = await comandoAuditado({ acao: "x", ator: "a", protetor: true, executar: async () => ({ ok: false as const, codigo: "nao_gravou" }) });
+    expect(r).toMatchObject({ estado: "falhou", codigo: "nao_gravou", auditoria: "intencao_nao_gravada" });
+  });
+});

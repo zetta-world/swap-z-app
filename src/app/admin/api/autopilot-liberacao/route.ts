@@ -120,6 +120,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
     const r = await comandoAuditado({
       acao, ator: actor, alvo, antes: lista.map((p) => p.wallet), depois: nova.map((p) => p.wallet), dados,
+      // D-AUD-1: remover piloto TIRA poder — protetor; autorizar dá poder — permissivo.
+      protetor: acao === "autopilot.piloto.remover",
       executar: async () => {
         const g = await gravarPilotos(nova, leitura.versao);
         return g.ok ? { ok: true, valor: nova } : { ok: false, codigo: g.erro };
@@ -156,6 +158,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const r = await comandoAuditado({
     acao: "autopilot.liberacao", ator: actor, depois: String(liberar),
     dados: { liberar, motivo: motivo.slice(0, 500) },
+    // D-AUD-1: FECHAR a automação é protetor; liberar continua exigindo a trilha.
+    protetor: liberar === false,
     executar: async () => {
       const g = await registrarLiberacao(liberar, motivo);
       return g.ok ? { ok: true, valor: true } : { ok: false, codigo: g.erro ?? "escrita_falhou" };

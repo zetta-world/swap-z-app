@@ -54,7 +54,9 @@ export default function KillSwitchesPanel() {
         ? `${ROTULO[key]} tem valor INVÁLIDO gravado (${JSON.stringify(brutos[key] ?? null)}) — hoje ele NÃO bloqueia nada. Gravar "true" (LIGAR)? `
         : `${next ? "LIGAR" : "DESLIGAR"} ${ROTULO[key]} — `)
       + `bloqueia: ${m.bloqueia}. Não bloqueia: ${m.naoBloqueia}. `
-      + "Fica registrado no log de auditoria; sem trilha, o comando é recusado.",
+      + (next
+        ? "Fica registrado no log de auditoria; LIGAR é protetor: se a trilha estiver fora, executa assim mesmo e dispara alerta alto."
+        : "Fica registrado no log de auditoria; DESLIGAR sem trilha é recusado."),
       true,
     );
     if (!ok) return;
