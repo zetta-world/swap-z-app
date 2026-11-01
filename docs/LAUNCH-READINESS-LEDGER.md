@@ -1536,3 +1536,32 @@ restauração validada.
 
 **BLOQUEADO (depende do dono):** IdP Google/Entra e contas reais com TOTP; o CHECK da 0083 exige **3 identidades** para
 conceder `superadmin` (aprovador ≠ concedente ≠ alvo); `corp` só depois de `dual` com essas contas.
+
+## ADMIN-CC2 — rollout em produção (01/11/2026)
+
+**Passo 1 — merge + deploy (autorização (d) do dono, 31/10):** PR #451 → `main` = `770f60c` (merge de C2 `e4fca5d`, sobre
+`CERTIFIED_FEATURE_SHA=bb8d838`; CI verde em `e4fca5d`). Produção `dpl_6aT7pvUWYDiEcgS18Jvo6yEeMmD4` READY, servida em
+`swap-z-app.vercel.app`; `ADMIN_AUTH_MODE` ausente (= legacy). Smoke: `/`, `/settings`, `/founders-pass`, `/api/tier`,
+`/api/quote` (Solana) → 200; `/admin`, `/admin/api/*` sem sessão → 404; `/admin-acesso*` e `/api/admin-auth/*` → 404
+(R1 desligado). Runtime errors 30 min: 0. Rollback: `dpl_7KTQpQSh3BWYzrVJsb22TH5n7zdR` (`10ebd12`).
+
+**Passo 2 — backup (autorização (b)):** dump lógico (esquema, dados, papéis) do hospedado via `supabase db dump --linked`;
+**restauração validada** num PG 17.6.1.127 descartável: 0 erros, contagem das 54 tabelas de `public` IDÊNTICA ao hospedado.
+Limite registrado: o `pg_dump` não reproduz ACL sob os default privileges do Supabase (na restauração as 36 SECURITY
+DEFINER ficam executáveis por anon; no hospedado: 0) — ACL "antes" guardada como catálogo (hash
+`114f8edcc26d776e5351693be2ca7b47`). Ensaio 0079→0087 na cópia restaurada: sem erro; testes 27/28 PASS. Evidência
+`zswap-local/evidence/db-backup-pre-0079-20261101/` (700/600, dados pessoais).
+
+**Passo 3 — migrations no hospedado, uma por vez, cada uma conferida:**
+| migration | resultado conferido |
+|---|---|
+| 0079 | 0 tabelas com TRUNCATE para anon/authenticated; service_role intacto |
+| 0080 | 4 funções INVOKER e a sequência founders fechadas; service_role executa `consume_rate_limit` |
+| 0081 | 0 SECURITY DEFINER sem `search_path` com `pg_temp`; 0 abertas |
+| 0082 | default privileges de `postgres` em `public` só postgres+service_role; EXECUTE global a PUBLIC removido |
+| 0083 | `admin_private`: 4 tabelas, RLS ligado, anon/authenticated sem USAGE, auditoria append-only (2 gatilhos) |
+| **0084–0087** | **NÃO aplicadas** — a aplicação da 0084 foi barrada pela trava de permissão da sessão; nada parcial |
+Depois de 0083: catálogo `cacf63b0b64d0b39f549957b75ba8e85`; produção re-testada (200 em `/`, `/api/tier`, cotação, nonce).
+
+**Pendente:** 0084→0087 no hospedado (o dono libera `apply_migration` ou aplica o SQL do repositório, uma por vez, com
+smoke entre elas); IdP + contas reais com TOTP (3 identidades para o 1º superadmin); variáveis R1 na Vercel só depois do IdP.
