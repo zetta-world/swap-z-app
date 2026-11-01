@@ -125,3 +125,178 @@ export const GATE_SPENDS_TOKENS: Record<FlywheelGateKey, boolean> = {
 /** Os gates que o disjuntor de custo deve fechar. Derivado, nunca digitado. */
 export const TOKEN_SPENDING_GATES: FlywheelGateKey[] =
   FLYWHEEL_GATE_KEYS.filter((k) => GATE_SPENDS_TOKENS[k]);
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * O MAPA DOS INTERRUPTORES — o que cada chave REALMENTE faz (R0.3, C1/C12).
+ *
+ * ⚠️ Mora aqui pelo mesmo motivo das chaves: os dois painéis são client e não
+ * podem importar `kill-switches.ts`/`gates.ts` (cliente Supabase de servidor).
+ *
+ * ⚠️⚠️ OS RÓTULOS ANTIGOS PROMETIAM O QUE O CÓDIGO NÃO FAZ: "Show maintenance
+ * page to all users" (nada no `middleware.ts` lê `maintenance_mode`) e "Disable
+ * all swap execution" (`disable_swap` só barra a cotação FIRME). O operador
+ * virava a chave e acreditava ter feito outra coisa. O texto agora sai daqui,
+ * e `consumidores` é CONFERIDO contra o código em
+ * `interruptores-consumidores.test.ts` — um mapa que mente reprova o CI.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+export const PLATFORM_KILL_KEYS = ["disable_swap", "disable_cex", "maintenance_mode"] as const;
+export type PlatformKillKey = (typeof PLATFORM_KILL_KEYS)[number];
+
+export type ChaveDeInterruptor = PlatformKillKey | FlywheelGateKey;
+
+/** Tudo que `POST /admin/api/killswitch` aceita. Derivado, nunca digitado. */
+export const CHAVES_DE_INTERRUPTOR: ChaveDeInterruptor[] = [...PLATFORM_KILL_KEYS, ...FLYWHEEL_GATE_KEYS];
+
+/**
+ * O que o CONSUMIDOR faz quando não consegue ler a chave.
+ *   · `fecha`    — bloqueia (dinheiro que sai: ordem de corretora);
+ *   · `abre`     — segue como se a chave estivesse desligada;
+ *   · `por_rota` — cada consumidor escolhe (ver `kill-switches.ts`).
+ */
+export type DirecaoNaFalha = "fecha" | "abre" | "por_rota";
+
+export interface MapaDoInterruptor {
+  direcaoNaFalha: DirecaoNaFalha;
+  /** Arquivos FORA do admin que leem a chave no código. Conferido pelo teste. */
+  consumidores:   string[];
+  bloqueia:       string;
+  naoBloqueia:    string;
+  /** Mexer nele mexe em dinheiro ou receita de cliente: o painel confirma nos dois sentidos. */
+  dinheiro?:      boolean;
+  /** Só tem efeito com o master `pause_backtest` desligado (roda dentro do bloco dele). */
+  sobMaster?:     boolean;
+  /** Sem consumidor nenhum. O texto diz por que a chave ainda existe. */
+  aposentado?:    string;
+}
+
+const BACKTEST = "src/app/api/zion/backtest/route.ts";
+const RADAR    = "src/app/api/radar/route.ts";
+const GATE_ABRE = "abre" as const;
+
+export const MAPA_INTERRUPTORES: Record<ChaveDeInterruptor, MapaDoInterruptor> = {
+  disable_swap: {
+    direcaoNaFalha: "abre",
+    consumidores: ["src/app/api/quote/route.ts"],
+    bloqueia: "a cotação FIRME (/api/quote mode=quote) — o payload assinável novo",
+    naoBloqueia: "cotação de lista, transação já cotada ou assinada, broadcast feito pela carteira. "
+      + "Leitura falha → a cotação SEGUE (exceção documentada: o usuário ainda assina)",
+    dinheiro: true,
+  },
+  disable_cex: {
+    direcaoNaFalha: "fecha",
+    consumidores: [
+      "src/app/api/cex/order/route.ts", "src/app/api/autopilot/session/route.ts",
+      "src/lib/cex/execucao/executor.ts",
+    ],
+    bloqueia: "ordem nova de corretora (manual e autopilot), armar sessão de autopilot e a passada "
+      + "do executor (autopilot e DCA, inclusive simulado)",
+    naoBloqueia: "cancelar ordem, revogar chave, ler saldo. Leitura falha → BLOQUEIA",
+    dinheiro: true,
+  },
+  maintenance_mode: {
+    direcaoNaFalha: "por_rota",
+    consumidores: [
+      "src/app/api/cex/order/route.ts", "src/app/api/quote/route.ts",
+      "src/app/api/autopilot/session/route.ts", "src/lib/cex/execucao/executor.ts",
+    ],
+    bloqueia: "o mesmo que disable_swap + disable_cex juntos, nas mesmas rotas",
+    naoBloqueia: "NÃO mostra página de manutenção (nada no middleware lê esta chave); o resto do site "
+      + "segue no ar. Leitura falha → cotação segue, ordem de corretora bloqueia",
+    dinheiro: true,
+  },
+  pause_backtest: {
+    direcaoNaFalha: GATE_ABRE, consumidores: [BACKTEST],
+    bloqueia: "as varreduras do tick (mesas mecânicas e de IA dentro do bloco do master)",
+    naoBloqueia: "resolução, paper da casa, bancada do cliente, radar, arbiters, ZION do usuário, DCA",
+  },
+  pause_agent_a: {
+    direcaoNaFalha: GATE_ABRE, consumidores: [],
+    bloqueia: "nada — nenhum código lê esta chave",
+    naoBloqueia: "tudo",
+    aposentado: "Agent A saiu do tick em 27/07; a chave ficou por histórico. Recomendação ao dono: "
+      + "aposentar (tirar do painel e do corte automático de custo, manter a linha no banco)",
+  },
+  pause_agent_b: {
+    direcaoNaFalha: GATE_ABRE, consumidores: [BACKTEST], sobMaster: true,
+    bloqueia: "o Agent B híbrido (também exige HYBRID_B_ENABLED)", naoBloqueia: "as outras mesas",
+  },
+  pause_tournament: {
+    direcaoNaFalha: GATE_ABRE, consumidores: [BACKTEST], sobMaster: true,
+    bloqueia: "o torneio de provedores diretos", naoBloqueia: "as outras mesas",
+  },
+  pause_paper: {
+    direcaoNaFalha: GATE_ABRE, consumidores: [BACKTEST],
+    bloqueia: "o agente de papel DA CASA (Gate.io)", naoBloqueia: "a bancada dos clientes (pause_bancada)",
+  },
+  pause_radar: {
+    direcaoNaFalha: GATE_ABRE, consumidores: [RADAR],
+    bloqueia: "o acorde do modelo nos gatilhos do radar", naoBloqueia: "a detecção de gatilho e o heartbeat",
+  },
+  pause_sniper: {
+    direcaoNaFalha: GATE_ABRE, consumidores: [RADAR],
+    bloqueia: "o SNIPER legado (só tem efeito com SNIPER_LEGACY=on)", naoBloqueia: "o resto do radar",
+  },
+  pause_arbiter: {
+    direcaoNaFalha: GATE_ABRE, consumidores: [RADAR],
+    bloqueia: "a mesa ARBITER (papel)", naoBloqueia: "as outras mesas do radar",
+  },
+  pause_oracle: {
+    direcaoNaFalha: GATE_ABRE, consumidores: [BACKTEST], sobMaster: true,
+    bloqueia: "a VÖLVA (tese diária)", naoBloqueia: "as outras mesas",
+  },
+  pause_arbiter2: {
+    direcaoNaFalha: GATE_ABRE, consumidores: [RADAR],
+    bloqueia: "a mesa ARBITER 2.0 (papel) e os gêmeos alavancados junto", naoBloqueia: "as outras mesas do radar",
+  },
+  pause_ragnarok: {
+    direcaoNaFalha: GATE_ABRE, consumidores: [BACKTEST], sobMaster: true,
+    bloqueia: "VÖLUNDR/SKAÐI (mecânicas)", naoBloqueia: "MÍMIR (pause_ragnarok_ai) e FREYJA (pause_ragnarok_dex)",
+  },
+  pause_ragnarok_ai: {
+    direcaoNaFalha: GATE_ABRE, consumidores: [BACKTEST], sobMaster: true,
+    bloqueia: "MÍMIR (mesa de IA)", naoBloqueia: "as mesas mecânicas",
+  },
+  pause_ragnarok_dex: {
+    direcaoNaFalha: GATE_ABRE, consumidores: [BACKTEST], sobMaster: true,
+    bloqueia: "FREYJA (praça DEX)", naoBloqueia: "as mesas de CEX",
+  },
+  pause_ullr: {
+    direcaoNaFalha: GATE_ABRE, consumidores: [BACKTEST], sobMaster: true,
+    bloqueia: "ULLR (lançamentos on-chain)", naoBloqueia: "as outras mesas",
+  },
+  pause_zion: {
+    direcaoNaFalha: GATE_ABRE, consumidores: ["src/app/api/zion/route.ts"],
+    bloqueia: "o ZION do USUÁRIO (/api/zion responde 503)",
+    naoBloqueia: "cotação e swap. Leitura falha → o ZION SEGUE (decisão D-KS-1 pendente; o teto diário amortece)",
+    dinheiro: true,
+  },
+  pause_urdr: {
+    direcaoNaFalha: GATE_ABRE, consumidores: [BACKTEST], sobMaster: true,
+    bloqueia: "URÐR (mecânica por histórico)", naoBloqueia: "as outras mesas",
+  },
+  pause_arbiter2_lev: {
+    direcaoNaFalha: GATE_ABRE, consumidores: [RADAR],
+    bloqueia: "só os gêmeos alavancados 3×/5× (papel)", naoBloqueia: "o ARBITER 2.0 sem alavanca",
+  },
+  pause_bancada: {
+    direcaoNaFalha: GATE_ABRE,
+    consumidores: ["src/app/api/bancada/tique/route.ts", "src/app/api/bancada/agentes/route.ts", BACKTEST],
+    bloqueia: "o tique dos agentes que os CLIENTES contrataram (receita); a tela do cliente diz que a casa pausou",
+    naoBloqueia: "o paper da casa. Leitura falha → o tique SEGUE",
+    dinheiro: true,
+  },
+  pause_dca: {
+    direcaoNaFalha: GATE_ABRE, consumidores: ["src/app/api/dca/cron/route.ts", "src/app/api/dca/planos/route.ts"],
+    bloqueia: "entrada nova dos planos de DCA na corretora do CLIENTE (dinheiro real); o recovery continua",
+    naoBloqueia: "o recovery de intents vivos. Leitura falha → a entrada nova SEGUE, segurada pela "
+      + "liberação do DCA e pelo disable_cex do executor (decisão D-KS-2 pendente)",
+    dinheiro: true,
+  },
+};
+
+/**
+ * Gates SEM consumidor que continuam na lista — explícitos, para o teste de
+ * completude não aceitar um fantasma novo por omissão.
+ */
+export const INTERRUPTORES_SEM_CONSUMIDOR: ChaveDeInterruptor[] = ["pause_agent_a"];

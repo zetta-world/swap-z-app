@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { fetchTimedCandles } from "@/lib/api/market-indicators";
 import { runBenchmarks, meanPairwiseCorrelation, effectiveSampleSize } from "@/lib/zion/benchmarks";
 import { recordEvent } from "@/lib/admin/track";
@@ -61,7 +61,7 @@ const WARMUP = 60;
 const BARS_1D = Number(process.env.WHATWORKED_BARS ?? (WARMUP + JANELA_DIAS));
 
 export async function POST(req: Request): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.benchmarks.run");
   const t0 = Date.now();
   const backDays = Math.max(0, Number(new URL(req.url).searchParams.get("backDays") ?? 0));
   const endAtMs = backDays > 0 ? Date.now() - backDays * 86_400_000 : undefined;

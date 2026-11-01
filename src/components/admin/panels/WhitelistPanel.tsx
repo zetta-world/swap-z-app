@@ -6,14 +6,20 @@ import TerminalPanel from "../TerminalPanel";
 export default function WhitelistPanel() {
   const [envWallets, setEnvWallets] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
     // Fetch the list of admin wallets from the stats endpoint
     // The allowlist is ENV-only so it's not manageable via UI — we show it read-only
     fetch("/admin/api/whitelist")
-      .then((r) => r.json())
-      .then((j) => { setEnvWallets(j.wallets ?? []); setLoaded(true); })
-      .catch(() => setLoaded(true));
+      // ⚠️ `res.ok` conferido (R3, P1-8): falha virava "nenhuma ADMIN_WALLETS" — falso.
+      .then(async (r) => {
+        const j = await r.json().catch(() => null) as { wallets?: string[]; error?: string } | null;
+        if (!r.ok || !j || !Array.isArray(j.wallets)) setErro(j?.error ?? `HTTP ${r.status}`);
+        else setEnvWallets(j.wallets);
+        setLoaded(true);
+      })
+      .catch((e) => { setErro(String(e).slice(0, 120)); setLoaded(true); });
   }, []);
 
   return (
@@ -26,12 +32,18 @@ export default function WhitelistPanel() {
     >
       <div style={{ color: "var(--adm-amber)", fontSize: 12, marginBottom: 12, letterSpacing: "0.1em" }}>
         ⚠ The admin allowlist is managed via the ADMIN_WALLETS environment variable.
-        Changes require a redeploy. Wallets with tier_cache.source=&apos;admin&apos; bypass this list.
+        Changes require a redeploy. Admins also come from <code>platform_admins</code> (granted in ADMIN
+        ACCESS) and, legacy, <code>tier_cache.source=&apos;admin&apos;</code> — this list is only one of three sources.
       </div>
       {!loaded && <div className="adm-shimmer" style={{ height: 40 }} />}
-      {loaded && envWallets.length === 0 && (
+      {loaded && erro && (
+        <div role="alert" style={{ color: "var(--adm-red)", fontSize: 13 }}>
+          INDISPONÍVEL — não consegui ler a lista ({erro}). Isto não quer dizer que ela está vazia.
+        </div>
+      )}
+      {loaded && !erro && envWallets.length === 0 && (
         <div style={{ color: "var(--adm-ink-3)", fontSize: 13 }}>
-          No ADMIN_WALLETS env var set — tier_cache.source=&apos;admin&apos; is the only gate.
+          No ADMIN_WALLETS env var set — admins come only from platform_admins and the legacy tier_cache source.
         </div>
       )}
       {loaded && envWallets.length > 0 && (

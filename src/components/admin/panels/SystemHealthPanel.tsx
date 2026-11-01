@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { mensagemDeFalha } from "@/lib/admin/metrica";
 import TerminalPanel from "../TerminalPanel";
+import { useAutoRefresh } from "../useAutoRefresh";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
 
-type Cron = { name: string; last: string | null; ageMin: number | null; stale: boolean };
+type Cron = { name: string; last: string | null; ageMin: number | null; stale: boolean; estado?: "ok" | "parado" | "nunca_visto" | "desconhecido" };
 type Dep  = { name: string; ok: boolean; latencyMs: number | null; note?: string };
 type Ext = {
   id: string; name: string; purpose: string; breaks: string;
@@ -20,6 +22,10 @@ const IMPACT_LABEL: Record<string, string> = {
 function dot(ok: boolean): string { return ok ? "var(--adm-green)" : "var(--adm-red)"; }
 
 function ageLabel(c: Cron): string {
+  // ⚠️ "never" só quando o banco foi LIDO e não há batimento. Ilegível = desconhecido.
+  if (c.estado === "desconhecido") return "DESCONHECIDO";
+  // batimento GRAVADO mas ilegível: o cron bateu — "never" seria falso.
+  if (c.estado === "parado" && c.ageMin == null) return "ILEGÍVEL";
   if (c.ageMin == null) return "never";
   if (c.ageMin < 1) return "just now";
   if (c.ageMin < 90) return `${c.ageMin}m ago`;
@@ -35,17 +41,15 @@ export default function SystemHealthPanel() {
   const load = useCallback(async () => {
     try {
       const res = await fetch("/admin/api/health");
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? res.status);
+      const json = await res.json().catch(() => null);
+      // ⚠️ Falha some com o veredito velho: "ALL SYSTEMS OPERATIONAL" de 45 s atrás
+      // ao lado de um erro é lido como atual (revisão adversarial).
+      if (!res.ok || json == null) { setData(null); setError(mensagemDeFalha(res.status, json)); return; }
       setData(json); setError(null);
-    } catch (e) { setError(String(e)); } finally { setLoading(false); }
+    } catch (e) { setData(null); setError(String(e)); } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 45_000);
-    return () => clearInterval(t);
-  }, [load, realtime?.status]);
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 45_000 });
 
   return (
     <TerminalPanel
@@ -53,8 +57,7 @@ export default function SystemHealthPanel() {
       title="SYSTEM HEALTH"
       subtitle="crons · dependências externas · uptime"
       icon="♥"
-      source="heartbeats + live pings"
-    >
+      source="heartbeats + live pings" secondsAgo={secondsAgo} refreshing={refreshing} onRefresh={forceRefresh}>
       {loading && <div className="adm-shimmer" style={{ height: 100 }} />}
       {error   && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>}
 

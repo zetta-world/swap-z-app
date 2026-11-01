@@ -93,12 +93,15 @@ describe("migrations — a numeração é a coordenação entre as sessões", ()
     const criadas = new Map<string, string>();
     for (const f of ARQUIVOS) {
       const sql = readFileSync(join(DIR, f), "utf8").toLowerCase();
-      for (const m of sql.matchAll(/create table (?:if not exists )?(?:public\.)?([a-z0-9_]+)/g)) {
-        if (!criadas.has(m[1])) criadas.set(m[1], f);
+      // Schema explícito (ex.: `admin_private.`, 0083) faz parte do nome: sem isto a
+      // regex parava no ponto e acusava o SCHEMA como tabela.
+      for (const m of sql.matchAll(/create table (?:if not exists )?((?:[a-z_]+\.)?[a-z0-9_]+)/g)) {
+        const nome = m[1].replace(/^public\./, "");
+        if (!criadas.has(nome)) criadas.set(nome, f);
       }
     }
     const faltando = [...criadas.entries()]
-      .filter(([t]) => !new RegExp(`alter table (?:if exists )?(?:public\\.)?${t}\\s+enable row level security`).test(tudo))
+      .filter(([t]) => !new RegExp(`alter table (?:if exists )?(?:public\\.)?${t.replace(".", "\\.")}\\s+enable row level security`).test(tudo))
       .map(([t, f]) => `${t} (criada em ${f})`);
 
     expect(faltando,

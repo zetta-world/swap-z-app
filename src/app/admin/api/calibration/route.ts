@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { fetchTimedCandles } from "@/lib/api/market-indicators";
 import { backtestPlaybooks, mergeResults, WARMUP_BARS } from "@/lib/zion/playbook-backtest";
 import { DEFAULT_LIMITS, type BracketLimits } from "@/lib/zion/bracket";
@@ -56,7 +56,7 @@ const VARIACOES: Array<{ nome: string; oQueMuda: string; limits: Partial<Bracket
 ];
 
 export async function POST(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.calibration.run");
   const t0 = Date.now();
 
   // As velas são baixadas UMA vez e reusadas em todas as variações. É o que

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import { CUSTO_IDA_E_VOLTA_PCT } from "@/lib/zion/custo";
@@ -17,7 +17,7 @@ const MIN_SAMPLE = Number(process.env.BACKTEST_MIN_SAMPLE ?? 100);
  *  filter (R2.4) so the headline can be read PER AGENT (self_scan /
  *  hybrid_scan / <provider>_scan / radar) instead of everything blended. */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.backtest.read");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 

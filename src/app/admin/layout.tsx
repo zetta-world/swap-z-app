@@ -1,12 +1,13 @@
 import type { ReactNode } from "react";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarPaginaAdmin } from "@/lib/admin/authz";
 import AdminShell from "@/components/admin/AdminShell";
 import "./admin.css";
 
 export const metadata = { title: "Control Panel" };
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
-  const { wallet } = await requireAdmin();
+  // Ponto único (R2): em dual/corp/modo inválido o shell segue a MESMA decisão das APIs.
+  const { wallet } = await autorizarPaginaAdmin("shell");
 
   // The anon key is safe in the browser by design (RLS-protected), and these
   // tables have no RLS policies — so it can only listen to the broadcast bus,

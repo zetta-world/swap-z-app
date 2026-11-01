@@ -12,6 +12,14 @@
 
 ---
 
+## Atualização ADMIN COMMAND CENTER 2.0 (01/11/2026, C1b)
+
+`CERTIFIED_FEATURE_SHA=bb8d838fb480d42c41b2b32530b7179dc2479855` (RECERT PASS; ledger "ADMIN-CC2 — C1b"). Branch
+`claude/admin-command-center-2-20261025`, PR #451. Produção ainda em `10ebd12` até o merge/deploy autorizado (em
+`ADMIN_AUTH_MODE` ausente = legacy). Migrations 0079–0087 só no repo; no hospedado, uma por vez, depois de dump lógico +
+restauração validada. R1 (login corporativo) implementado e DESLIGADO; ativar depende de IdP + contas reais (3 identidades
+para o 1º superadmin).
+
 ## Atualização C1c — blockhash do servidor (25/10/2026, tarde)
 
 Produção em `0430644` (código `31920d7`, Next 16.4.3). 1º swap real: o servidor ACEITOU a transação da Phantom e o nó

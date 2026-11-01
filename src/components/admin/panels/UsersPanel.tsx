@@ -1,5 +1,7 @@
 "use client";
 
+import { ativavel } from "../ativavel";
+
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 import { corDoPnl } from "@/lib/admin/cor-resultado";
@@ -66,7 +68,7 @@ export default function UsersPanel() {
   return (
     <TerminalPanel id="users-explorer" title="USERS" subtitle="raio-x financeiro + comportamento por carteira" icon="◭" source="operations + autopilot + events">
       <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-        <input className="adm-input" placeholder="cola uma wallet…" value={query} spellCheck={false}
+        <input aria-label="Buscar carteira" className="adm-input" placeholder="cola uma wallet…" value={query} spellCheck={false}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && query.trim()) openWallet(query.trim()); }}
           style={{ flex: 1, fontSize: 13, fontFamily: "monospace", background: "var(--adm-bg-raise)", border: "1px solid var(--adm-border)", borderRadius: 6, padding: "5px 8px", color: "var(--adm-ink)" }} />
@@ -166,7 +168,7 @@ export default function UsersPanel() {
             <thead><tr><th>WALLET</th><th>TIER</th><th>OPS</th><th>VOL</th><th>P&L</th><th>👁</th><th>🤖</th></tr></thead>
             <tbody>
               {list.map((w) => (
-                <tr key={w.wallet} style={{ cursor: "pointer" }} onClick={() => openWallet(w.wallet)}>
+                <tr key={w.wallet} style={{ cursor: "pointer" }} {...ativavel(() => openWallet(w.wallet), { papel: null })}>
                   <td style={{ color: "var(--adm-cyan)", fontFamily: "monospace" }} title={`1ª vez ${date(w.firstSeen)}`}>{short(w.wallet)}</td>
                   <td style={{ color: "var(--adm-violet)" }}>{w.tier}</td>
                   <td>{w.ops}</td>

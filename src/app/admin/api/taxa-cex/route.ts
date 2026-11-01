@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { recordEvent } from "@/lib/admin/track";
 import { fetchTaxasGateio, compararCusto } from "@/lib/cex/taxa-gateio";
 import { CUSTO_POR_PERNA_PCT } from "@/lib/zion/custo";
@@ -51,7 +51,7 @@ const SIMBOLOS = ["BTC", "ETH", "SOL", "BNB", "AVAX", "LINK", "ARB", "OP", "ADA"
 const MODELO_POR_PERNA_PCT = CUSTO_POR_PERNA_PCT;
 
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.cex_fee.read");
   const t0 = Date.now();
 
   const { taxas, falha } = await fetchTaxasGateio(SIMBOLOS);

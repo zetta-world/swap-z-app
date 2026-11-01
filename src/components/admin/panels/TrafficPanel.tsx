@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { useAutoRefresh } from "../useAutoRefresh";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
 import { WORLD_DOTS } from "./world-dots";
 
@@ -57,16 +58,12 @@ export default function TrafficPanel() {
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 120_000);
-    return () => clearInterval(t);
-  }, [load, realtime?.status]);
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 120_000 });
 
   const maxViews = data ? Math.max(1, ...data.days.map((d) => d.views)) : 1;
 
   return (
-    <TerminalPanel id="traffic" title="MIDGARD" subtitle="acessos · mapa · dia/semana/mês" icon="🌍" source="supabase/platform_events">
+    <TerminalPanel id="traffic" title="MIDGARD" subtitle="acessos · mapa · dia/semana/mês" icon="🌍" source="supabase/platform_events" secondsAgo={secondsAgo} refreshing={refreshing} onRefresh={forceRefresh}>
       <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
         {(["mapa", "dias", "origem", "visitantes"] as const).map((v) => (
           <button key={v} className={`adm-toggle ${tab === v ? "active" : ""}`} onClick={() => setTab(v)}>

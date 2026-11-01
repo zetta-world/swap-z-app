@@ -102,8 +102,12 @@ describe("portão R-03 do npm audit (exceção congelada)", () => {
   });
 });
 
-describe("portão R-04 do npm audit — a exceção VIVA (zod, decisão do dono 25/10/2026)", () => {
-  const viva = JSON.parse(readFileSync(join(RAIZ, "scripts/release/audit-exceptions.json"), "utf8"));
+/**
+ * R-04 (zod) CONGELADA como fixture em 31/10 quando a R-05 entrou no arquivo vivo — mesmo padrão da R-03.
+ * O arquivo vivo agora tem R-04 + R-05 e é provado no bloco R-05 abaixo.
+ */
+describe("portão R-04 do npm audit — exceção congelada (zod, decisão do dono 25/10/2026)", () => {
+  const viva = JSON.parse(readFileSync(join(RAIZ, "src/lib/release/fixtures/audit-exceptions-r04-20261025.json"), "utf8"));
   const real = () => JSON.parse(readFileSync(join(RAIZ, "src/lib/release/fixtures/npm-audit-r04-20261025.json"), "utf8"));
 
   it("o audit real do lock que a criou passa, avisando que NÃO está corrigido", () => {
@@ -143,5 +147,51 @@ describe("portão R-04 do npm audit — a exceção VIVA (zod, decisão do dono 
       via: [{ source: 1242816, name: "next", severity: "critical", range: ">=16.0.0 <=16.4.0", url: "https://github.com/advisories/GHSA-2464-fhr4-w9xw" }] };
     a.metadata.vulnerabilities.critical = 1;
     expect(avaliar(a, viva).ok).toBe(false);
+  });
+});
+
+describe("portão R-05 do npm audit — a exceção VIVA (R-04 zod + R-05 decode-uri-component, dono 31/10/2026)", () => {
+  const viva = JSON.parse(readFileSync(join(RAIZ, "scripts/release/audit-exceptions.json"), "utf8"));
+  const r04 = JSON.parse(readFileSync(join(RAIZ, "src/lib/release/fixtures/audit-exceptions-r04-20261025.json"), "utf8"));
+  const real = () => JSON.parse(readFileSync(join(RAIZ, "src/lib/release/fixtures/npm-audit-r05-20261031.json"), "utf8"));
+
+  it("o audit real do lock que a criou passa, avisando que NÃO está corrigido", () => {
+    const r = avaliar(real(), viva);
+    expect(r.falhas).toEqual([]);
+    expect(r.avisos.join()).toMatch(/R-04.*R-05.*NÃO corrigida.*antes da seleção de RC/);
+  });
+
+  it("temporária; R-04 intacta; R-05 só o advisory do decode-uri-component e só a cadeia nova", () => {
+    expect(viva).toMatchObject({ status: "TEMPORARIA", revisar_antes_do_rc: true });
+    expect(viva.decisao).toMatch(/dono, 2026-10-31: R-05 aprovada/);
+    expect(viva.excecoes.map((e: { id: string }) => e.id)).toEqual(["R-04", "R-05"]);
+    expect(viva.excecoes[0]).toEqual(r04.excecoes[0]);
+    const r05 = viva.excecoes[1];
+    expect(r05).toMatchObject({ id: "R-05", corrigido: false });
+    expect(r05.advisory).toEqual({ source: 1243857, name: "decode-uri-component", severity: "high", range: "<=0.5.0",
+      url: "https://github.com/advisories/GHSA-qr28-fpjm-wq7f" });
+    expect(r05.cadeia.map((i: { name: string }) => i.name)).toEqual(
+      ["@walletconnect/core", "@walletconnect/sign-client", "@walletconnect/universal-provider", "decode-uri-component", "query-string"]);
+    const todas = [...viva.excecoes[0].cadeia, ...r05.cadeia].sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name));
+    expect(cadeiaAtual(real())).toEqual(todas);
+  });
+
+  it("⚠️ follow-redirects foi CORRIGIDO (override), não excetuado: some do relatório e de toda exceção", () => {
+    expect(JSON.stringify(real().vulnerabilities)).not.toMatch(/follow-redirects/);
+    expect(JSON.stringify(viva.excecoes)).not.toMatch(/follow-redirects/);
+  });
+
+  it("critical no decode-uri-component e high novo continuam reprovando", () => {
+    const a = real();
+    a.vulnerabilities["decode-uri-component"].severity = "critical";
+    a.metadata.vulnerabilities.critical = 1;
+    expect(avaliar(a, viva).falhas.join()).toMatch(/CRITICAL/);
+    const b = real();
+    b.vulnerabilities["query-string"].via.push({ source: 999997, name: "query-string", severity: "high", range: "<8", url: "https://github.com/advisories/GHSA-novo3" });
+    expect(avaliar(b, viva).falhas.join()).toMatch(/NOVO_HIGH: advisory 999997/);
+  });
+
+  it("o lock do C1 (sem a R-05) reprovaria: a exceção congelada R-04 sozinha não cobre o advisory novo", () => {
+    expect(avaliar(real(), r04).falhas.join()).toMatch(/NOVO_HIGH: advisory 1243857/);
   });
 });

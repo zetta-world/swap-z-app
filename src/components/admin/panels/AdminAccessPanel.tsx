@@ -40,9 +40,9 @@ export default function AdminAccessPanel() {
     try {
       const res = await fetch("/admin/api/admins");
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? res.status);
+      if (!res.ok) { setAdmins([]); throw new Error(json.porque ?? json.error ?? res.status); }
       setAdmins(json.admins ?? []); setErr(null);
-    } catch (e) { setErr(String(e)); }
+    } catch (e) { setAdmins([]); setErr(String(e)); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -93,10 +93,10 @@ export default function AdminAccessPanel() {
   return (
     <TerminalPanel id="admin-access" title="ADMIN ACCESS" subtitle="conceder · revogar acesso ao painel" icon="🛡" source="supabase/platform_admins">
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
-        <input className="adm-input" placeholder="wallet address a conceder…" value={wallet}
+        <input aria-label="Endereço da carteira a conceder acesso de admin" className="adm-input" placeholder="wallet address a conceder…" value={wallet}
           onChange={(e) => setWallet(e.target.value)} spellCheck={false} />
         <div style={{ display: "flex", gap: 6 }}>
-          <input className="adm-input" placeholder="nota (opcional: 'sócio', 'ops'…)" value={note}
+          <input aria-label="Nota sobre o novo admin (opcional)" className="adm-input" placeholder="nota (opcional: 'sócio', 'ops'…)" value={note}
             onChange={(e) => setNote(e.target.value)} spellCheck={false} style={{ flex: 1 }} />
           <button className="adm-toggle" onClick={grant} disabled={busy || !wallet.trim()} style={{ flexShrink: 0, color: "var(--adm-cyan)" }}>
             CONCEDER

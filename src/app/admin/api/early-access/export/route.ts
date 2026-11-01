@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { broadcastAdminRefresh } from "@/lib/admin/realtime";
 import { csvCell } from "@/lib/admin/csv";
 import { contarInscricoes, lerTudoParaExport, registrarExport, type LinhaInscricao } from "@/lib/early-access/store";
@@ -50,7 +50,7 @@ const COM_EMAIL: (keyof LinhaInscricao)[] = ["email_normalized"];
 const COM_IDENTIDADE: (keyof LinhaInscricao)[] = ["display_name", "wallet_chain", "wallet_address"];
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const { wallet: actor } = await requireAdmin();
+  const { wallet: actor } = await autorizarAdmin("users.early_access.export");
   const p = req.nextUrl.searchParams;
   const opcoes = { email: p.get("email") === "1", identidade: p.get("identidade") === "1" };
   const cols: (keyof LinhaInscricao)[] = [

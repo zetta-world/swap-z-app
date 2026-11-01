@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { useAutoRefresh } from "../useAutoRefresh";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
 
 /**
@@ -37,16 +38,12 @@ export default function GrowthPanel() {
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 120_000);
-    return () => clearInterval(t);
-  }, [load, realtime?.status]);
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 120_000 });
 
   const maxCount = d ? Math.max(1, ...d.funnel.map((f) => f.count ?? 0)) : 1;
 
   return (
-    <TerminalPanel id="growth" title="GROWTH" subtitle="funnel · active users · signups" icon="↗" source="users + operations + tiers">
+    <TerminalPanel id="growth" title="GROWTH" subtitle="funnel · active users · signups" icon="↗" source="users + operations + tiers" secondsAgo={secondsAgo} refreshing={refreshing} onRefresh={forceRefresh}>
       <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
         {(["funnel", "active"] as const).map((t) => (
           <button key={t} className={`adm-toggle ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>{t.toUpperCase()}</button>

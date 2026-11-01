@@ -1,7 +1,10 @@
 "use client";
 
+import { ativavel } from "../ativavel";
+
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
+import { useAutoRefresh } from "../useAutoRefresh";
 
 type Criterion = { id: string; name: string; pass: boolean; pending: boolean; detail: string; why: string };
 type Desk = {
@@ -33,7 +36,7 @@ export default function LaunchGatePanel() {
     } catch (e) { setErr(String(e)); } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { load(); const t = setInterval(load, 300_000); return () => clearInterval(t); }, [load]);
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 300_000 });
 
   return (
     <TerminalPanel
@@ -41,8 +44,7 @@ export default function LaunchGatePanel() {
       title="BARRA DE LANÇAMENTO"
       subtitle="critério pré-registrado · 5 de 5 ou não vai"
       icon="🚦"
-      source="docs/PLANO-BARRA-DE-LANCAMENTO.md"
-    >
+      source="docs/PLANO-BARRA-DE-LANCAMENTO.md" secondsAgo={secondsAgo} refreshing={refreshing} onRefresh={forceRefresh}>
       <div style={{ fontSize: 11, color: "var(--adm-ink-4)", lineHeight: 1.6, marginBottom: 8 }}>
         Registrado em 30/07, ANTES dos dados. Depois que o número aparece é humano demais
         racionalizar — a barra escrita antes é a defesa contra isso. Conjunção, não média:
@@ -69,7 +71,7 @@ export default function LaunchGatePanel() {
             return (
               <div key={d.source} style={{ marginBottom: 6, borderLeft: `2px solid ${d.passed ? "var(--adm-green)" : "var(--adm-border)"}`, paddingLeft: 7 }}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 8, cursor: "pointer" }}
-                     onClick={() => setOpen(isOpen ? null : d.source)}>
+                     {...ativavel(() => setOpen(isOpen ? null : d.source), { expandido: isOpen })}>
                   <span style={{ fontSize: 13, color: "var(--adm-ink-2)", flex: 1 }}>{d.name}</span>
                   <span style={{ fontSize: 12, color: d.passed ? "var(--adm-green)" : "var(--adm-ink-3)" }}>
                     {ok}/5

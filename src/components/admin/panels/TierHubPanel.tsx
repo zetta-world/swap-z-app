@@ -55,7 +55,7 @@ export default function TierHubPanel() {
   /** A galeria gira sozinha — é vitrine, e vitrine parada não é vitrine. */
   useEffect(() => {
     if (!d?.faixas.length) return;
-    const t = window.setInterval(() => setFoco((i) => (i + 1) % d.faixas.length), 6000);
+    const t = window.setInterval(() => { if (!document.hidden) setFoco((i) => (i + 1) % d.faixas.length); }, 6000);
     return () => window.clearInterval(t);
   }, [d?.faixas.length]);
 
@@ -85,8 +85,11 @@ export default function TierHubPanel() {
               <article
                 key={f.tier}
                 className={`hub-carta${i === foco ? " ativa" : ""}`}
-                onMouseEnter={() => setFoco(i)}
+                onFocusCapture={() => setFoco(i)}
               >
+                {/* R3: o destaque por hover fica num invólucro de apresentação; o foco do teclado
+                    (Tab nos links/botões da carta) faz o mesmo via onFocusCapture. */}
+                <div role="presentation" style={{ display: "contents" }} onMouseEnter={() => setFoco(i)}>
                 {/* ⚠️ AS DUAS ARTES, LADO A LADO. Cada faixa vende DOIS
                     produtos: o passe (NFT do deus, compra única, 36 meses de premium) e a
                     Hird (o guerreiro que serve aquele deus, mensal). Mostrar
@@ -132,6 +135,7 @@ export default function TierHubPanel() {
                   {f.cortesia > 0 && (
                     <span className="hub-cortesia">+{f.cortesia} cortesia</span>
                   )}
+                </div>
                 </div>
               </article>
             ))}

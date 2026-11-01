@@ -1,5 +1,7 @@
 "use client";
 
+import { ativavel } from "../ativavel";
+
 import { useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 import { useAutoRefresh } from "../useAutoRefresh";
@@ -37,11 +39,24 @@ export default function MarginPanel() {
   const save = async (key: string) => {
     const n = Number(draft.replace(",", "."));
     if (!Number.isFinite(n) || n < 0) return;
-    await fetch("/admin/api/margin", {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ key, usd: n }),
-    }).catch(() => {});
-    setEdit(null); setDraft(""); await load();
+    // ⚠️ Antes: `.catch(() => {})` sem `res.ok` — gravação recusada sumia e o
+    // valor velho voltava na tela sem aviso (R3, P1-14). Agora a falha é dita.
+    try {
+      const res = await fetch("/admin/api/margin", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key, usd: n }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({})) as { porque?: string; error?: string };
+        setErr(`NÃO gravou ${key}: ${j.porque ?? j.error ?? `HTTP ${res.status}`}`);
+        return;
+      }
+      setEdit(null); setDraft("");
+    } catch (e) {
+      setErr(`NÃO gravou ${key}: ${String(e).slice(0, 120)}`);
+      return;
+    }
+    await load();
   };
 
   const row = (key: string, label: string, value: number, meta?: string, stale?: boolean) => (
@@ -52,14 +67,14 @@ export default function MarginPanel() {
       </span>
       {edit === key ? (
         <>
-          <input value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus
+          <input aria-label="Novo valor do parâmetro de margem" value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus
             onKeyDown={(e) => { if (e.key === "Enter") save(key); if (e.key === "Escape") setEdit(null); }}
             style={{ width: 70, fontSize: 12, padding: "1px 4px", background: "var(--adm-bg)", color: "var(--adm-cyan)",
               border: "1px solid var(--adm-cyan)", borderRadius: 2, fontFamily: "monospace" }} />
           <button onClick={() => save(key)} style={{ fontSize: 11, color: "var(--adm-green)", background: "none", border: "none", cursor: "pointer" }}>✓</button>
         </>
       ) : (
-        <span onClick={() => { setEdit(key); setDraft(String(value)); }}
+        <span {...ativavel(() => { setEdit(key); setDraft(String(value)); }, { rotulo: `editar ${key}` })}
           title="toque p/ editar"
           style={{ color: "var(--adm-ink-2)", fontVariantNumeric: "tabular-nums", cursor: "pointer", borderBottom: "1px dotted var(--adm-ink-4)" }}>
           {usd(value)}

@@ -1,5 +1,9 @@
 "use client";
 
+import { useAutoRefresh } from "../useAutoRefresh";
+
+import { ativavel } from "../ativavel";
+
 import { Fragment, useCallback, useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
@@ -132,6 +136,7 @@ export default function PaperPanel() {
   const [recapMotivo, setRecapMotivo] = useState("");
   const [recapando, setRecapando] = useState(false);
   const [recapErro, setRecapErro] = useState<string | null>(null);
+  const [repairErro, setRepairErro] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -159,18 +164,21 @@ export default function PaperPanel() {
     } catch { /* a seção some, o painel continua */ }
   }, []);
 
-  useEffect(() => {
-    load(); loadRepair(); loadRecap();
-    const t = setInterval(load, realtime?.status === "live" ? 60_000 : 90_000);
-    return () => clearInterval(t);
-  }, [load, loadRepair, loadRecap, realtime?.status]);
+  // R3: o livro sonda com pausa de aba; reparo/recap só na montagem (são consultas de ação).
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 60_000 });
+  useEffect(() => { loadRepair(); loadRecap(); }, [loadRepair, loadRecap]);
 
   async function runRepair() {
-    setRepairing(true);
+    setRepairing(true); setRepairErro(null);
     try {
+      // ⚠️ Antes a falha sumia (`if (res.ok)` sem `else`): o operador apertava,
+      // nada mudava, e nada dizia por quê. Agora o porquê aparece ao lado do botão.
       const res = await fetch("/admin/api/paper-repair", { method: "POST" });
-      if (res.ok) { await load(); await loadRepair(); }
-    } catch { /* estado antigo permanece */ } finally { setRepairing(false); }
+      const json = await res.json().catch(() => ({})) as { porque?: string; error?: string; failed?: string[] };
+      if (!res.ok) setRepairErro(json.porque ?? json.error ?? `HTTP ${res.status}`);
+      else if ((json.failed ?? []).length > 0) setRepairErro(`parcial — falharam: ${(json.failed ?? []).join(", ")}`);
+      await load(); await loadRepair();
+    } catch (e) { setRepairErro(String(e).slice(0, 160)); } finally { setRepairing(false); }
   }
 
   async function runRecap() {
@@ -183,8 +191,8 @@ export default function PaperPanel() {
           reason: recapMotivo,
         }),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? res.status);
+      const json = await res.json().catch(() => ({})) as { porque?: string; error?: string };
+      if (!res.ok) { await load(); await loadRecap(); throw new Error(json.porque ?? json.error ?? String(res.status)); }
       setRecapMotivo("");
       await load(); await loadRepair(); await loadRecap();
     } catch (e) { setRecapErro(String(e)); } finally { setRecapando(false); }
@@ -200,9 +208,14 @@ export default function PaperPanel() {
   const totalRet = data && data.totals.startingUsd > 0 ? (data.totals.equity / data.totals.startingUsd - 1) * 100 : 0;
 
   return (
-    <TerminalPanel id="paper" title="PAPER · GATE.IO" subtitle="③ SÓ AS CARTEIRAS, sem ranking — unidade: patrimônio em USDT" icon="📈" source="supabase/paper_accounts">
+    <TerminalPanel id="paper" title="PAPER · GATE.IO" subtitle="③ SÓ AS CARTEIRAS, sem ranking — unidade: patrimônio em USDT" icon="📈" source="supabase/paper_accounts" secondsAgo={secondsAgo} refreshing={refreshing} onRefresh={forceRefresh}>
       {loading && <div className="adm-shimmer" style={{ height: 140 }} />}
       {error   && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>}
+
+      {/* Falha do reparo FORA dos blocos condicionais: o reparo é disparado de dois
+          botões (caixa e contador) e, depois dele, o bloco do caixa pode sumir —
+          o porquê não pode sumir junto (revisão adversarial). */}
+      {repairErro && <div role="alert" style={{ color: "var(--adm-red)", fontSize: 11, marginBottom: 8 }}>✗ reparo: {repairErro}</div>}
 
       {/* O ROMBO QUE SOBROU. O bug do débito-sem-posição foi corrigido em 01/08,
           mas correção não devolve dinheiro: uma mesa com $51 de $1.000 não abre
@@ -498,7 +511,7 @@ export default function PaperPanel() {
                 const isOpen = open === r.source;
                 return (
                   <Fragment key={r.source}>
-                    <tr style={{ cursor: "pointer" }} onClick={() => setOpen(isOpen ? null : r.source)}>
+                    <tr style={{ cursor: "pointer" }} {...ativavel(() => setOpen(isOpen ? null : r.source), { papel: null, expandido: isOpen })}>
                       <td>{MEDAL[i] ?? `#${i + 1}`}</td>
                       {/* ⚠️ O MOTIVO DO SILÊNCIO VIAJA COM O NOME, não atrás de
                           um clique. A pergunta "todos os agentes estão rodando

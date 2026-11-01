@@ -1,8 +1,11 @@
 "use client";
 
+import { ativavel } from "../ativavel";
+
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { sampleLabel, shouldTint, NOISE_THRESHOLD } from "@/lib/admin/sample";
 import TerminalPanel from "../TerminalPanel";
+import { useAutoRefresh } from "../useAutoRefresh";
 import { porQueEfetivoMenor } from "@/lib/zion/amostra-efetiva";
 import { corDoPnl, corDoResultado, legendaDoResultado } from "@/lib/admin/cor-resultado";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
@@ -227,17 +230,13 @@ export default function TournamentPanel() {
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   }, [days]);
 
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 120_000);
-    return () => clearInterval(t);
-  }, [load, realtime?.status]);
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 120_000 });
 
   const ranked = (data?.agents ?? []).filter((a) => a.resolved > 0);
   const waiting = (data?.agents ?? []).filter((a) => a.resolved === 0);
 
   return (
-    <TerminalPanel id="tournament" title="TOURNAMENT" subtitle="① COMPARA mesas — unidade: % líquido POR TRADE" icon="♛" source="supabase/zion_suggestions">
+    <TerminalPanel id="tournament" title="TOURNAMENT" subtitle="① COMPARA mesas — unidade: % líquido POR TRADE" icon="♛" source="supabase/zion_suggestions" fetchedAt={data ? (data as { fetchedAt?: string }).fetchedAt ?? null : undefined} refreshing={refreshing} onRefresh={forceRefresh}>
       {loading && <div className="adm-shimmer" style={{ height: 120 }} />}
       {error   && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>}
 
@@ -346,7 +345,7 @@ export default function TournamentPanel() {
                 const isOpen = open === a.source;
                 return (
                   <Fragment key={a.source}>
-                    <tr style={{ cursor: "pointer" }} onClick={() => setOpen(isOpen ? null : a.source)}>
+                    <tr style={{ cursor: "pointer" }} {...ativavel(() => setOpen(isOpen ? null : a.source), { papel: null, expandido: isOpen })}>
                       <td>{MEDAL[i] ?? `#${i + 1}`}</td>
                       <td style={{ color: kindColor(a.kind), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>{a.name}</td>
                       <td style={{ color: netColor(a.expectancyNet), fontVariantNumeric: "tabular-nums" }}>{pct(a.expectancyNet)}</td>

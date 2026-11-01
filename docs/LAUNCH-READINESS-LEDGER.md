@@ -1486,3 +1486,53 @@ CI oficial no SHA: run 40207596026 success. Desvios: arneses SQL (sem SQL no del
 **RELEASE_CANDIDATE C1c (25/10/2026):** autorização escrita do dono nesta conversa — "Autorizo produção (Recomendado)" —
 para `CERTIFIED_FEATURE_SHA=cb8b9ac` (atestação `5749418`). Marcado em `docs/RELEASE-CHAIN.md` (seção C1c) por um commit
 só de docs. Deploy: CI verde no commit do RC → `main` por fast-forward → produção. Rollback `dpl_DTzQ9Xy56yZroT1N5XBR8WuW3cAJ`.
+
+## ADMIN-COMMAND-CENTER-2-20261025 — modernização corporativa do Admin (25/10/2026)
+CURRENT_DEVELOPMENT. PHASE_BASE_SHA=10ebd12721f7d20b83a366cdb87a9a0dc1a53f2e (tree f7c83c619acc6ae1c40c98d1779bae342670e3da,
+= `main` = produção `dpl_7KTQpQSh3BWYzrVJsb22TH5n7zdR`). Branch nova `claude/admin-command-center-2-20261025`.
+Pedido do dono (25/10): executar o plano R0–R5 do handoff `ZSWAP-ADMIN-COMMAND-CENTER-HANDOFF-2026-10-25.md` (íntegro em
+`docs/PLANO-ADMIN-COMMAND-CENTER-2-20261025.md`) numa missão contínua, com commits, testes e PR. Autorizado: leitura do
+estado real do GitHub, do Supabase (catálogo/agregados, só leitura) e da documentação; trabalho local; PR. NÃO autorizado:
+produção, migrations no banco hospedado, variáveis Vercel, desativar acesso admin existente, sistemas financeiros.
+Linha de base medida: 66 `src/app/admin/api/**/route.ts`, 57 `*Panel.tsx`, migrations até 0078.
+
+**Resultado do ciclo (01/11/2026).** Commits `ec63cb9..01cc53f` na branch (13 de código/docs + este registro). R0 DONE
+(kill switches tri-estado com CAS; trilha durável `comandoAuditado` em todo comando sensível; P0 de pilotos do autopilot;
+verdade em `/finance`, `/command`, `/health`, `/logs`, `/admins`, RECEITA); R2 DONE em `legacy` (`autorizarAdmin` nos 79
+handlers + páginas; catálogo RBAC = matriz; completude por handler); R3 parcial (fronteira de erro, ⌘K, mobile, P1 de
+segurança); R4 local (0079–0082 + teste 26); R1 base desligada (0083 `admin_private` + primitivas; login/MFA BLOQUEADO
+por IdP/contas); R5 observação. Revisão adversarial em duas rodadas com verificador cético por achado: 9→8 confirmados
+(`679fdfb`) e 28→18 confirmados (`01cc53f`), todos corrigidos com testes. **RECERT(C1 `01cc53f`) = FAIL** só no
+`09-audit-gate` (advisories novos de `decode-uri-component`/`follow-redirects` na pilha da carteira, publicados depois de
+25/10; lockfile intocado nesta fase — o portão falha igual em `main`); demais passos PASS (5395 testes ×2, build,
+segredos; suíte SQL local 23/23 + 23b/24b). Evidência fora do repo `recert-01cc53f-20261101T005448Z`, MANIFEST
+`b4c99599…07cd39`. Sem produção, sem migration hospedada, sem Vercel. PR rascunho aberto para `main` (não mergear).
+Pendente do dono: D-DEP-1 (C1b), D-AUD-1, e a autorização única (IdP, contas, MFA, migrations no hospedado com backup
+validado, variáveis Vercel, merge/deploy) — ver `docs/PLANO-ADMIN-COMMAND-CENTER-2-20261025.md`, "Resultado do ciclo".
+
+## ADMIN-CC2 — C1b `bb8d838`: RECERT PASS (01/11/2026)
+
+**Decisões do dono (31/10):** D-DEP-1 = override `follow-redirects` ^1.16.2 + exceção estreita **R-05**
+(`decode-uri-component` via `query-string@7`/WalletConnect; a 0.5.1 é ESM-only e o consumidor faz `require`);
+D-AUD-1 = comando PROTETOR executa sem trilha com alerta alto; autorizações (a) IdP + 2 contas, (b) migrations hospedadas
+com backup, (c) Vercel, (d) merge/deploy.
+
+**Entregue (commits sobre `000db6a`):** `9e80577` deps · `c2f7e4e` D-AUD-1 · `b1fbdc3` P1 operations/ledger/stats ·
+`15b5df7` a11y (0 violações; 4 regras jsx-a11y como erro no Admin), polling com pausa de aba, frescor por `fetchedAt`,
+lab sem escrita inútil · `eff66d7` migrations 0084–0087 (M5, só local) · `d9043ee` R1 (PKCE no servidor, TOTP aal2,
+sessões, step-up, break-glass, identidades; DESLIGADO em legacy) · `3a7a61f`/`bccd501`/`bb8d838` revisão adversarial.
+
+**Revisão adversarial (rodada 3, delta `01cc53f..d9043ee`):** revisor independente, 13 achados; verificador cético
+sobre os sutis. Corrigidos 12 com teste de regressão (convite com uuid vazio, dono sombreado em `dual`, break-glass sem
+reconferir modo/carteira e podendo DESLIGAR interruptor, re-convite preso, rota de identidades exposta sem R1, autoria
+falsa, identidade errada com auto-link, claim de tenant ausente aprovando, corrida no contador de TOTP, cadastro repetido do
+TOTP, logout parcial, polling sem escopo). Aceito: cookie roubado pode forçar bloqueio de MFA do dono (DoS, revisor).
+
+**RECERT(C1b) = PASS** — `CERTIFIED_FEATURE_SHA=bb8d838fb480d42c41b2b32530b7179dc2479855`, evidência `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/evidence/recert-bb8d838-20261101T084659Z`, MANIFEST `40982af0b8a97efcea1d8e898307035045e4b477e503b1fda38b035f32eb4fcd`.
+
+**Backup:** dump lógico do hospedado tentado em 31/10 FALHOU (papel temporário da CLI expirou antes do `pg_dump`); nada
+foi aplicado. Backups físicos diários da plataforma existem (último 31/10 08:58 UTC). Antes das migrations: novo dump +
+restauração validada.
+
+**BLOQUEADO (depende do dono):** IdP Google/Entra e contas reais com TOTP; o CHECK da 0083 exige **3 identidades** para
+conceder `superadmin` (aprovador ≠ concedente ≠ alvo); `corp` só depois de `dual` com essas contas.

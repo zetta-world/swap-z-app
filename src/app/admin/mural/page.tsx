@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarPaginaAdmin } from "@/lib/admin/authz";
 import MuralView from "@/components/admin/mural/MuralView";
 
 export const metadata = { title: "Mural · Z-SWAP" };
@@ -12,11 +12,11 @@ export const dynamic = "force-dynamic";
  * para ser vista de três metros por alguém que não vai interagir com ela. São
  * usos diferentes o bastante para não caberem no mesmo layout.
  *
- * ⚠️ E ELA PASSA PELO `requireAdmin` COMO QUALQUER OUTRA. É a tela mais
+ * ⚠️ E ELA PASSA PELO PONTO ÚNICO (`autorizarPaginaAdmin`, que chama `requireAdmin`) COMO QUALQUER OUTRA. É a tela mais
  * tentadora do painel para deixar aberta ao público — mostra dinheiro, fluxo e
  * origem de acesso. Nada aqui é menos sensível por ser bonito.
  */
 export default async function MuralPage() {
-  await requireAdmin();
+  await autorizarPaginaAdmin("mural");
   return <MuralView />;
 }

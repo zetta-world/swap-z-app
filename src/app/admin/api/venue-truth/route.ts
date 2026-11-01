@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getMultiExchangeSpot, CEX_TRACKED_SYMBOLS, type CexSpotSource } from "@/lib/api/cex-spot";
 import { measureVenues, measureSymbols, truthVerdict, type VenueQuote } from "@/lib/zion/venue-truth";
 import { spreadWindow } from "@/lib/zion/arbiter";
@@ -52,7 +52,7 @@ const EXCLUDE_VENUES = (process.env.VENUE_TRUTH_EXCLUDE ?? "coinbase")
   .split(",").map((s) => s.trim()).filter(Boolean);
 
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.venue.truth");
   const t0 = Date.now();
 
   const simbolos = [...CEX_TRACKED_SYMBOLS];

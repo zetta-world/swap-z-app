@@ -157,7 +157,8 @@ begin
       from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = f;
     assert not ok_anon and not ok_auth, 'T23.50 ' || f || ': anon/authenticated NÃO executam';
     assert ok_srv, 'T23.51 ' || f || ': service_role executa';
-    assert sd and sp @> array['search_path=public'], 'T23.52 ' || f || ': definer + search_path fixo';
+    -- 0081 (R4/M4): `public, pg_temp` — temporário buscado por ÚLTIMO, não primeiro.
+    assert sd and sp @> array['search_path=public, pg_temp'], 'T23.52 ' || f || ': definer + search_path fixo (pg_temp por último)';
   end loop;
   assert (select relrowsecurity from pg_class where oid = 'public.bancada_arrendamento'::regclass), 'T23.53 RLS ligada';
   assert not has_table_privilege('anon', 'public.bancada_arrendamento', 'select')

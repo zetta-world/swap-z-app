@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import {
   reconcileWallets, planRepair, planRealizedRepair, repairWallets, lastRepair, realizedDrifts,
 } from "@/lib/paper/reconcile";
+import { comandoAuditado, avisoDeAuditoria, PORQUE_AUDITORIA_INDISPONIVEL } from "@/lib/admin/auditoria-duravel";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export const dynamic = "force-dynamic";
  * passaria a esconder exatamente o que foi construído para revelar.
  */
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("paper.repair.plan");
   const all = await reconcileWallets();
   return NextResponse.json({
     plan: planRepair(all),
@@ -59,9 +60,28 @@ export async function GET(): Promise<NextResponse> {
 }
 
 export async function POST(): Promise<NextResponse> {
-  await requireAdmin();
-  const { repaired, realizedFixed, failed } = await repairWallets();
+  const { wallet: ator } = await autorizarAdmin("paper.repair.execute");
+  // ⚠️ REESCREVE CAIXA E CONTADOR DAS MESAS: sem intenção gravada, não roda.
+  type Reparo = Awaited<ReturnType<typeof repairWallets>>;
+  const r = await comandoAuditado<Reparo>({
+    acao: "paper.repair", ator,
+    executar: async () => {
+      const x = await repairWallets();
+      return x.failed.length === 0 ? { ok: true, valor: x } : { ok: false, codigo: "parcial", valor: x, detalhe: x.failed.join(",").slice(0, 200) };
+    },
+  });
+  if (r.estado === "recusado" || r.estado === "repetido") {
+    return NextResponse.json({ error: "auditoria_indisponivel", porque: PORQUE_AUDITORIA_INDISPONIVEL }, { status: 503 });
+  }
+  if (!r.valor) {
+    return NextResponse.json({
+      error: r.estado === "falhou" ? r.codigo : "estado_incerto", ...avisoDeAuditoria(r.auditoria),
+      porque: "o reparo lançou exceção — rode o GET (plano) de novo antes de repetir",
+    }, { status: 500 });
+  }
+  const { repaired, realizedFixed, failed } = r.valor;
   return NextResponse.json({
+    ...avisoDeAuditoria(r.auditoria),
     ok: failed.length === 0,
     repaired,
     /**

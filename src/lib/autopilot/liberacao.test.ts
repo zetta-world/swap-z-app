@@ -44,7 +44,10 @@ vi.mock("@/lib/supabase/server", () => ({
         in: async () => resposta,
         eq: () => ({ maybeSingle: async () => respostaPilotos }),
       }),
-      upsert: async (linha: Record<string, unknown>) => { upserts.push(linha); return { error: null }; },
+      upsert: async (linha: Record<string, unknown> | Record<string, unknown>[]) => {
+        (Array.isArray(linha) ? linha : [linha]).forEach((l) => upserts.push(l));
+        return { error: null };
+      },
     }),
   }),
 }));

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { lerTodasPorChave } from "@/lib/supabase/paginar";
 import { TIER_FEE_BPS, receitaUsd, REGRA_TAXA_SOLANA } from "@/lib/tier/fees";
@@ -49,7 +49,7 @@ const PLANOS: Tier[] = ["free", "pro", "trader", "pilot"];
 const COBRAM: readonly string[] = ["dex_swap", "dex_bridge"];
 
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("finance.revenue.read");
   const db = getSupabaseAdmin();
 
   let real = { operacoes: 0, volumeUsd: 0, desde: null as string | null, ate: null as string | null };

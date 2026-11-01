@@ -466,3 +466,28 @@ migration no delta ✓; (5) nenhum `OPEN_BLOCKER` no escopo ✓; (6) gates de ex
 dono, 25/10, nesta conversa — "Autorizo produção (Recomendado)" para `cb8b9ac` ✓. Condição antes do merge: CI verde no
 SHA deste commit. Stop: build/deploy com erro, runtime errors novos, `/api/quote` Solana quebrada, log
 `[jupiter] {"tipo":"blockhash","origem":"jupiter"}` recorrente. Rollback: `dpl_DTzQ9Xy56yZroT1N5XBR8WuW3cAJ` (`0430644`).
+
+## Registro — Admin Command Center 2.0, C1 `01cc53f` (01/11/2026)
+
+NÃO é `RELEASE_CANDIDATE`. C1 = `01cc53fa567f3879d7a598e9cf2f915485eb77f8` (tree `e3fc331a93f889bc6c45d13dc03b948a1af3a839`),
+descende de `10ebd12` (= `main`). **RECERT(C1) = FAIL** no `09-audit-gate` (advisories novos `decode-uri-component` ≤0.5.0
+e `follow-redirects` 1.16.0–1.16.1, transitivos da carteira; lockfile inalterado no delta); demais passos rc=0. Evidência
+`recert-01cc53f-20261101T005448Z`, MANIFEST `b4c99599…07cd39`. Delta inclui migrations **0079–0083** (só repo; aplicação no
+hospedado exige backup validado + autorização). Próximo: decisão D-DEP-1 → C1b → recert completa de C1b → só então,
+com autorização do dono, marcação `RELEASE_CANDIDATE`.
+
+
+## Atualização — Admin Command Center 2.0, C1b `bb8d838` (01/11/2026)
+
+RELEASE_CANDIDATE = THIS_RELEASE_CANDIDATE_COMMIT (C2, docs-only, filho de `bb8d838fb480d42c41b2b32530b7179dc2479855`).
+CERTIFIED_FEATURE_SHA = `bb8d838fb480d42c41b2b32530b7179dc2479855` (tree `8ff063c07ef13175670bd0b917f151687f7b9e7b`), descende de `10ebd12` (= `main`).
+RECERT(C1b) = **PASS** — evidência `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/evidence/recert-bb8d838-20261101T084659Z`, `MANIFEST.sha256` sha256 `40982af0b8a97efcea1d8e898307035045e4b477e503b1fda38b035f32eb4fcd`:
+npm ci · type-check · lint 0 erros · vitest 358 arquivos / 5481 testes ×2 · solana 242 · build · audit-gate OK (R-04 + R-05,
+NÃO corrigidas) · 0 segredo no delta `10ebd12..C1b` · SQL cadeia 0001→0087 como `postgres` em supabase/postgres
+17.6.1.127: 24/24 + concorrência 23b/24b.
+Delta sobre C1 `01cc53f`: deps (D-DEP-1), D-AUD-1, P1 dos painéis, a11y/polling, migrations **0084–0087** (M5), R1 atrás de
+flag, revisão adversarial rodada 3 (13 achados; 12 corrigidos, 1 aceito). Autorização: dono, 31/10 (D-DEP-1, D-AUD-1 e
+(a)–(d) "pode fazer tudo até finalizar"). Deploy em `ADMIN_AUTH_MODE` **ausente** (= legacy). Migrations 0079–0087 no
+hospedado: passo separado, uma por vez, com backup lógico validado antes.
+Rollback de código: deploy de produção anterior (`10ebd12`). Rollback de banco: grants do cabeçalho de cada migration;
+0083 → `drop schema admin_private cascade` (vazio até R1).

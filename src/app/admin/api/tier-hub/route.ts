@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import { PLAN_TIERS, FOUNDERS_PRICE_STATUS, type FoundersPriceStatus } from "@/lib/pricing/plans";
@@ -41,7 +41,7 @@ export interface FaixaHub {
 }
 
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("finance.tiers.read");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "sem banco" }, { status: 503 });
 

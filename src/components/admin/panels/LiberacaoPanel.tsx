@@ -25,6 +25,9 @@ interface Estado {
   minMotivo: number;
   verdes:   Verde[];
   pilotos:  Piloto[];
+  /** false = a leitura da lista FALHOU: `pilotos` vazio NÃO quer dizer "nenhum". */
+  pilotosLidos?: boolean;
+  pilotosErro?:  string;
 }
 
 const CAUSA_TEXTO: Record<Estado["causa"], string> = {
@@ -37,6 +40,13 @@ const CAUSA_TEXTO: Record<Estado["causa"], string> = {
 export default function LiberacaoPanel() {
   const [data,   setData]   = useState<Estado | null>(null);
   const [erro,   setErro]   = useState<string | null>(null);
+  /**
+   * Recusa de COMANDO, separada do erro de leitura: `carregar()` limpa `erro` a
+   * cada GET que dá certo e apagava, no mesmo instante, o porquê de um POST
+   * recusado (409 "outro admin mudou", 503 sem trilha…) — revisão adversarial.
+   * Só some no próximo comando ou num sucesso.
+   */
+  const [erroComando, setErroComando] = useState<string | null>(null);
   const [motivo, setMotivo] = useState("");
   const [busy,   setBusy]   = useState(false);
   const [novoPiloto, setNovoPiloto] = useState("");
@@ -54,17 +64,19 @@ export default function LiberacaoPanel() {
   useEffect(() => { void carregar(); }, [carregar]);
 
   const alternar = useCallback(async (liberar: boolean) => {
-    setBusy(true);
+    setBusy(true); setErroComando(null);
     try {
       const res = await fetch("/admin/api/autopilot-liberacao", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ liberar, motivo }),
       });
-      const body = await res.json() as { error?: string };
-      if (!res.ok) { setErro(body.error ?? `HTTP ${res.status}`); return; }
+      const body = await res.json().catch(() => ({})) as { error?: string; porque?: string };
+      if (!res.ok) { await carregar(); setErroComando(body.porque ?? body.error ?? `HTTP ${res.status}`); return; }
       setMotivo("");
       await carregar();
+    } catch (e) {
+      setErroComando(`o comando NÃO foi confirmado: ${String(e).slice(0, 120)}`);
     } finally { setBusy(false); }
   }, [motivo, carregar]);
 
@@ -72,17 +84,19 @@ export default function LiberacaoPanel() {
   const curto = motivo.trim().length < min;
 
   const mexerPiloto = async (corpo: Record<string, string>) => {
-    setBusy(true);
+    setBusy(true); setErroComando(null);
     try {
       const res = await fetch("/admin/api/autopilot-liberacao", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(corpo),
       });
-      const b = await res.json() as { error?: string };
-      if (!res.ok) { setErro(b.error ?? `HTTP ${res.status}`); return; }
+      const b = await res.json().catch(() => ({})) as { error?: string; porque?: string };
+      if (!res.ok) { await carregar(); setErroComando(b.porque ?? b.error ?? `HTTP ${res.status}`); return; }
       setNovoPiloto(""); setNotaPiloto("");
       await carregar();
+    } catch (e) {
+      setErroComando(`o comando NÃO foi confirmado: ${String(e).slice(0, 120)}`);
     } finally { setBusy(false); }
   };
 
@@ -95,7 +109,8 @@ export default function LiberacaoPanel() {
       source="admin_kv/autopilot_cex_liberado"
       onRefresh={carregar}
     >
-      {erro && <div style={{ color: "var(--adm-red)", fontSize: 12 }}>{erro}</div>}
+      {erro && <div role="alert" style={{ color: "var(--adm-red)", fontSize: 12 }}>{erro}</div>}
+      {erroComando && <div role="alert" style={{ color: "var(--adm-red)", fontSize: 12 }}>✗ {erroComando}</div>}
       {!data && !erro && <div className="adm-shimmer" style={{ height: 60 }} />}
 
       {data && (
@@ -169,7 +184,7 @@ export default function LiberacaoPanel() {
             <>
               {/* ⚠️ Fechar NÃO exige justificativa: atrito na direção segura seria
                   atrito no lugar errado, exatamente quando se quer desligar rápido. */}
-              <input
+              <input aria-label="Motivo do fechamento da automação (opcional)"
                 value={motivo}
                 onChange={(e) => setMotivo(e.target.value)}
                 placeholder="motivo do fechamento (opcional)"
@@ -191,7 +206,7 @@ export default function LiberacaoPanel() {
           {/* ─── PILOTOS: quem roda com a automação fechada ─────────────── */}
           <div style={{ marginTop: 12, borderTop: "1px solid var(--adm-border)", paddingTop: 8 }}>
             <div style={{ fontSize: 11, color: "var(--adm-ink-3)", marginBottom: 4 }}>
-              <b>CARTEIRAS PILOTO ({data.pilotos.length})</b> — rodam a automação mesmo
+              <b>CARTEIRAS PILOTO ({data.pilotosLidos === false ? "?" : data.pilotos.length})</b> — rodam a automação mesmo
               fechada, para teste com dinheiro real
             </div>
             {/* ⚠️ A CONSEQUÊNCIA VEM ANTES DA LISTA. */}
@@ -206,7 +221,13 @@ export default function LiberacaoPanel() {
               <code> ADMIN_WALLETS</code> (ambiente, exige redeploy) já é piloto e não
               precisa ser listada.
             </div>
-            {data.pilotos.length === 0 && (
+            {data.pilotosLidos === false && (
+              <div role="alert" style={{ fontSize: 11, color: "var(--adm-amber)", marginBottom: 5 }}>
+                ⚠ LISTA DESCONHECIDA — não consegui ler os pilotos ({data.pilotosErro ?? "erro"}). Isto NÃO
+                quer dizer que não há nenhum; autorizar/remover fica recusado até uma leitura dar certo.
+              </div>
+            )}
+            {data.pilotosLidos !== false && data.pilotos.length === 0 && (
               <div style={{ fontSize: 11, color: "var(--adm-ink-4)", marginBottom: 5 }}>
                 nenhuma carteira autorizada além do <code>ADMIN_WALLETS</code>
               </div>
@@ -225,7 +246,7 @@ export default function LiberacaoPanel() {
                 >revogar</button>
               </div>
             ))}
-            <input
+            <input aria-label="Carteira a autorizar como piloto"
               value={novoPiloto}
               onChange={(e) => setNovoPiloto(e.target.value)}
               placeholder="0x… carteira a autorizar"
@@ -235,7 +256,7 @@ export default function LiberacaoPanel() {
                 borderRadius: 3, color: "var(--adm-ink-2)", fontSize: 12, fontFamily: "inherit",
               }}
             />
-            <input
+            <input aria-label="Justificativa para autorizar o piloto"
               value={notaPiloto}
               onChange={(e) => setNotaPiloto(e.target.value)}
               placeholder={`por que esta carteira (mínimo ${min} caracteres)`}
@@ -247,7 +268,7 @@ export default function LiberacaoPanel() {
             />
             <button
               className="adm-btn" style={{ marginTop: 5 }}
-              disabled={busy || novoPiloto.trim().length < 8 || notaPiloto.trim().length < min}
+              disabled={busy || data.pilotosLidos === false || novoPiloto.trim().length < 8 || notaPiloto.trim().length < min}
               onClick={() => void mexerPiloto({ piloto: novoPiloto, motivo: notaPiloto })}
             >
               {notaPiloto.trim().length < min

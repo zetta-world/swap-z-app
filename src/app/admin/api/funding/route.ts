@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { CEX_TRACKED_SYMBOLS } from "@/lib/api/cex-spot";
 import {
   fundingStats, fundingVerdict, fundingCounts, fundingCorrelation,
@@ -362,7 +362,7 @@ async function fetchFunding(
 }
 
 export async function POST(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.study.funding");
   const t0 = Date.now();
 
   const falhou = async (motivo: string, detalhe?: string) => {

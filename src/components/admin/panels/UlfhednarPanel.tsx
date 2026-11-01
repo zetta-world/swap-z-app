@@ -108,10 +108,10 @@ export default function UlfhednarPanel() {
           </button>
         ))}
       </div>
-      <input value={assunto} onChange={(e) => setAssunto(e.target.value)} placeholder="assunto"
+      <input aria-label="Assunto da mensagem" value={assunto} onChange={(e) => setAssunto(e.target.value)} placeholder="assunto"
         style={{ width: "100%", fontSize: 12, fontFamily: "monospace", padding: "5px 8px", marginBottom: 4,
           background: "var(--adm-bg-raise)", border: "1px solid var(--adm-border)", borderRadius: 3, color: "var(--adm-ink)" }} />
-      <textarea value={corpo} onChange={(e) => setCorpo(e.target.value)} rows={3} placeholder="a pergunta"
+      <textarea aria-label="Corpo da mensagem" value={corpo} onChange={(e) => setCorpo(e.target.value)} rows={3} placeholder="a pergunta"
         style={{ width: "100%", fontSize: 12, fontFamily: "monospace", padding: "5px 8px", marginBottom: 6, resize: "vertical",
           background: "var(--adm-bg-raise)", border: "1px solid var(--adm-border)", borderRadius: 3, color: "var(--adm-ink)" }} />
       <button className="adm-btn" onClick={() => void enviar()} disabled={enviando || !assunto.trim() || !corpo.trim()}

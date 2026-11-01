@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { STATUS_SEM_PRECO } from "@/lib/zion/backtest";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import { nEfetivo, porQueCoorteMenor, type TradeCorrelacionavel } from "@/lib/zion/amostra-efetiva";
@@ -96,7 +96,7 @@ function paperCurve(startingUsd: number, pts: Array<{ t: number; pnl: number }>,
  *  tournament model / radar) scored head-to-head on the SAME market, ranked by
  *  NET expectancy. This is the leaderboard that decides which brain wins. */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.tournament.read");
   // Time window (27/07) — see the note in admin/api/backtest: the live round
   // holds several config eras, and a lifetime average hides whether a fix
   // worked. Suggestions cut by created_at (the config that produced the

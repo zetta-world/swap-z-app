@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { comandoAuditado, PORQUE_AUDITORIA_INDISPONIVEL } from "@/lib/admin/auditoria-duravel";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import {
@@ -38,7 +39,7 @@ const EVENTOS_DE_TRABALHO = [
 interface EventoRow { event_type: string; metadata: Record<string, unknown> | null; created_at: string }
 
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("agents.mailbox.read");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 
@@ -92,7 +93,9 @@ export async function GET(): Promise<NextResponse> {
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
-  await requireAdmin();
+  // `de: "dono"` é o PAPEL no protocolo do mural; quem escreveu de fato vai no
+  // evento (`ator`) — com mais de um admin, "dono" sozinho não diz quem foi.
+  const { wallet: ator } = await autorizarAdmin("agents.mailbox.write");
   const body = await req.json().catch(() => ({})) as Record<string, unknown>;
 
   const para = String(body.para ?? "");
@@ -105,7 +108,22 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "assunto_ou_corpo_vazio" }, { status: 400 });
   }
 
-  const r = await escreverMensagem({ de: "dono", para, assunto, corpo });
+  /**
+   * ⚠️ A matriz marca isto como `duravel_fail_closed` e a rota só tinha
+   * `recordEvent` (que engole erro) — revisão adversarial. Instrução a um agente
+   * é comando: quem mandou, para quem e o quê ficam na trilha ANTES de gravar.
+   */
+  const cmd = await comandoAuditado<true>({
+    acao: "agents.mailbox.write", ator, alvo: para, dados: { assunto },
+    executar: async () => {
+      const w = await escreverMensagem({ de: "dono", para, assunto, corpo });
+      return w.ok ? { ok: true, valor: true } : { ok: false, codigo: "nao_gravou", detalhe: String(w.erro ?? "").slice(0, 160) };
+    },
+  });
+  if (cmd.estado === "recusado" || cmd.estado === "repetido") {
+    return NextResponse.json({ error: "auditoria_indisponivel", porque: PORQUE_AUDITORIA_INDISPONIVEL }, { status: 503 });
+  }
+  const r = cmd.estado === "executado" ? { ok: true as const } : { ok: false as const, erro: cmd.detalhe ?? cmd.codigo };
   if (!r.ok) {
     // ⚠️ Pergunta que o dono acha que fez e não existe é pior que erro na cara
     // dele. Mesma lição do autopilot: o cliente resolve com `{ error }`.
@@ -113,6 +131,6 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
   // ⚠️ AGUARDADO: na Vercel a função congela depois da resposta e o insert se
   // perde. A trava `event-durability` pegou isto — a mesma classe do dia.
-  await recordEvent("ulfhednar_pergunta", { meta: { para, assunto } });
+  await recordEvent("ulfhednar_pergunta", { meta: { para, assunto, ator } });
   return NextResponse.json({ ok: true });
 }

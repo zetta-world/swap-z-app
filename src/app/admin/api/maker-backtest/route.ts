@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { fetchTimedCandles } from "@/lib/api/market-indicators";
 import { simulateMakerCycle, summarizeMaker, MAKER_FEE_PCT, type MakerCycle } from "@/lib/zion/maker";
 import { recordEvent } from "@/lib/admin/track";
@@ -54,7 +54,7 @@ const BARRAS = Number(process.env.MAKER_BT_BARS ?? 1000);
 const PASSO = Number(process.env.MAKER_BT_STEP ?? 10);
 
 export async function POST(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.maker.run");
   const t0 = Date.now();
 
   const falhou = async (motivo: string, detalhe?: string) => {

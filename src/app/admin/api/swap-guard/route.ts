@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { JUPITER_ALLOWED_PROGRAMS, verifyJupiterTransaction, extractProgramIds } from "@/lib/swap/solana-guard";
 import { fetchJupiterFirm, JUPITER_SOL_MINT } from "@/lib/api/jupiter";
@@ -21,7 +21,7 @@ type Row = {
 };
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("security.swap_guard.read");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 
@@ -136,7 +136,7 @@ const PROBE_TAKER = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"; // conta con
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 
 export async function POST(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("security.swap_guard.probe");
   const probes: Array<Record<string, unknown>> = [];
 
   // Dois pares: SOL→USDC (envolve wrap/unwrap de SOL, o caminho com MAIS

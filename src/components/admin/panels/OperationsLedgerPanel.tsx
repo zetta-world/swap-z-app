@@ -1,71 +1,89 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
-import { useAdminRealtime } from "../AdminRealtimeProvider";
+import { useAutoRefresh } from "../useAutoRefresh";
+import type { RefreshScope } from "../AdminRealtimeProvider";
+import AvisoDeFonte from "../AvisoDeFonte";
 import { corDoPnl } from "@/lib/admin/cor-resultado";
+import { exibirMetrica, mensagemDeFalha, type OperationalMetric } from "@/lib/admin/metrica";
 
 type Recent = {
   wallet_address: string | null; kind: string; pair: string | null; side: string | null;
   volume_usd: number | null; pnl_usd: number | null; status: string; created_at: string;
 };
+type Agregado = { totalVolume: number; totalPnl: number; byKind: Record<string, { count: number; volume: number; pnl: number }> };
 type Ledger = {
-  total: number; totalVolume: number; totalPnl: number;
-  byKind: Record<string, { count: number; volume: number; pnl: number }>;
-  recent: Recent[];
+  total: OperationalMetric<number>;
+  agregado: OperationalMetric<Agregado>;
+  recent: Recent[] | null;
+  recentMetrica: OperationalMetric<null>;
+  fetchedAt: string;
 };
+
+/**
+ * Nenhum ping do tempo real fala de operações/posições: sem escopo, TODO ping (audit, tier…) disparava
+ * uma leitura paginada completa (revisão adversarial). Só o intervalo, como antes.
+ */
+const SEM_PING: RefreshScope[] = [];
 
 const usd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
 
+/**
+ * ⚠️ R3/P1-11: o total (contagem exata) e as somas (sobre todas as linhas) chegam como métricas;
+ * falha = "—" + INDISPONÍVEL, nunca "No operations recorded yet.". Erro de rede ZERA o dado.
+ */
 export default function OperationsLedgerPanel() {
   const [data, setData] = useState<Ledger | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"overview" | "feed">("overview");
-  const realtime = useAdminRealtime();
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/admin/api/ledger");
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? res.status);
+      const res = await fetch("/admin/api/ledger", { cache: "no-store" });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) { setData(null); setError(mensagemDeFalha(res.status, json)); return; }
       setData(json); setError(null);
-    } catch (e) { setError(String(e)); } finally { setLoading(false); }
+    } catch (e) { setData(null); setError(String(e)); }
   }, []);
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 60_000, scopes: SEM_PING });
+  const loading = !data && !error;
 
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 60_000);
-    return () => clearInterval(t);
-  }, [load, realtime?.status]);
+  const ag = data?.agregado.value ?? null;
+  const vol = data ? exibirMetrica(data.agregado, (v) => usd(v.totalVolume)) : null;
+  const pnl = data ? exibirMetrica(data.agregado, (v) => `${v.totalPnl > 0 ? "+" : ""}${usd(v.totalPnl)}`) : null;
+  const tot = data ? exibirMetrica(data.total, (v) => String(v)) : null;
 
   return (
-    <TerminalPanel id="ops-ledger" title="OPERATIONS" subtitle="every client trade · volume · P&L" icon="≣" source="supabase/operations">
-      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+    <TerminalPanel id="ops-ledger" title="OPERATIONS" subtitle="every client trade · volume · P&L (declarados)" icon="≣" source="supabase/operations"
+      secondsAgo={data ? secondsAgo : undefined} refreshing={refreshing} onRefresh={forceRefresh}>
+      <div role="tablist" style={{ display: "flex", gap: 6, marginBottom: 12 }}>
         {(["overview", "feed"] as const).map((t) => (
-          <button key={t} className={`adm-toggle ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>
+          <button key={t} type="button" role="tab" aria-selected={tab === t} className={`adm-toggle ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>
             {t.toUpperCase()}
           </button>
         ))}
       </div>
 
       {loading && <div className="adm-shimmer" style={{ height: 100 }} />}
-      {error   && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>}
+      {error   && <div role="alert" style={{ color: "var(--adm-red)", fontSize: 13 }}>{error} — isto NÃO é "nenhuma operação".</div>}
 
       {data && tab === "overview" && (
         <div>
+          <AvisoDeFonte m={data.total} rotulo="contagem" />
+          {data.agregado.state !== "ok" && <AvisoDeFonte m={data.agregado} rotulo="somas" />}
           <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-            <Stat label="OPERATIONS" value={String(data.total)} color="var(--adm-cyan)" />
-            <Stat label="VOLUME" value={usd(data.totalVolume)} color="var(--adm-ink)" />
-            <Stat label="REALIZED P&L" value={`${data.totalPnl > 0 ? "+" : ""}${usd(data.totalPnl)}`} color={corDoPnl(data.totalPnl)} />
+            <Stat label="OPERATIONS" value={tot!.texto} color={tot!.cor ?? "var(--adm-cyan)"} />
+            <Stat label="VOLUME" value={vol!.texto} color={vol!.cor ?? "var(--adm-ink)"} />
+            <Stat label="REALIZED P&L" value={pnl!.texto} color={pnl!.cor ?? (ag ? corDoPnl(ag.totalPnl) : "var(--adm-ink-3)")} />
           </div>
-          {Object.keys(data.byKind).length === 0 ? (
+          {ag == null ? null : Object.keys(ag.byKind).length === 0 ? (
             <div style={{ color: "var(--adm-ink-3)", fontSize: 13 }}>No operations recorded yet.</div>
           ) : (
             <table className="adm-table">
               <thead><tr><th>KIND</th><th>N</th><th>VOLUME</th><th>P&L</th></tr></thead>
               <tbody>
-                {Object.entries(data.byKind).sort((a, b) => b[1].count - a[1].count).map(([kind, v]) => (
+                {Object.entries(ag.byKind).sort((a, b) => b[1].count - a[1].count).map(([kind, v]) => (
                   <tr key={kind}>
                     <td style={{ color: "var(--adm-cyan)", fontFamily: "monospace" }}>{kind}</td>
                     <td>{v.count}</td>
@@ -81,7 +99,9 @@ export default function OperationsLedgerPanel() {
 
       {data && tab === "feed" && (
         <div className="adm-scroll" style={{ maxHeight: 300 }}>
-          {data.recent.length === 0 ? (
+          {data.recent == null ? (
+            <AvisoDeFonte m={data.recentMetrica} rotulo="recentes" />
+          ) : data.recent.length === 0 ? (
             <div style={{ color: "var(--adm-ink-3)", fontSize: 13 }}>No operations yet.</div>
           ) : data.recent.map((r, i) => (
             <div key={i} style={{ display: "flex", gap: 8, padding: "4px 0", borderBottom: "1px solid var(--adm-border)", fontSize: 12, alignItems: "center" }}>

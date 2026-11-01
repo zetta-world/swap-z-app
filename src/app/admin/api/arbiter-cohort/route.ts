@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 import { ARBITER2_PROFILES } from "@/lib/zion/arbiter2";
@@ -26,7 +26,7 @@ const SIZE_USD = Number(process.env.ARB2_SIZE_USD ?? 50);
 const ROUTE_RE = /arb2 ([a-z]+)→([a-z]+)/i;
 
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.arbiter.cohort");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 

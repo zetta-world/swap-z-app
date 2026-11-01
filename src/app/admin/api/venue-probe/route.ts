@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { CEX_TRACKED_SYMBOLS } from "@/lib/api/cex-spot";
 import { fetchObservedVenues, DECLINED_VENUES, OBSERVED_VENUES } from "@/lib/api/cex-spot-extra";
 import { recordEvent } from "@/lib/admin/track";
@@ -41,7 +41,7 @@ export const maxDuration = 60;
  */
 
 export async function POST(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.venue.probe");
   const t0 = Date.now();
 
   const simbolos = [...CEX_TRACKED_SYMBOLS];

@@ -1,5 +1,7 @@
 "use client";
 
+import { ativavel } from "../ativavel";
+
 import { useEffect, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 
@@ -15,7 +17,7 @@ function Copyable({ label, value }: { label: string; value: string }) {
     <div style={{ marginBottom: 8 }}>
       <div style={{ fontSize: 11, color: "var(--adm-ink-4)", letterSpacing: "0.08em", marginBottom: 2 }}>{label}</div>
       <div
-        onClick={() => { navigator.clipboard?.writeText(value).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1200); }); }}
+        {...ativavel(() => { navigator.clipboard?.writeText(value).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1200); }); }, { rotulo: "copiar endereço" })}
         style={{ cursor: "pointer", fontFamily: "monospace", fontSize: 12, color: "var(--adm-cyan)", wordBreak: "break-all",
           padding: "6px 8px", background: "rgba(0 229 255 / 0.04)", border: "1px solid rgba(0 229 255 / 0.15)", borderRadius: 2 }}
       >
@@ -32,22 +34,37 @@ export default function SwapAllowlistPanel() {
   const [probeMsg, setProbeMsg] = useState<string | null>(null);
   const [probeErrs, setProbeErrs] = useState<string[]>([]);
 
-  const reload = () => fetch("/admin/api/swap-allowlist").then((r) => r.json()).then((j) => { setData(j); setLoaded(true); }).catch(() => setLoaded(true));
+  /**
+   * ⚠️ `res.ok` CONFERIDO (R3, P1-5). Sem ele, corpo de erro virava `data` e a
+   * tela dizia "allowlist DESLIGADA" (estado de segurança inventado) — ou, com
+   * 503 JSON, `data.enforcing` indefinido derrubava a grade inteira. Falha de
+   * leitura = DESCONHECIDO, e nenhum veredito é desenhado.
+   */
+  const [erro, setErro] = useState<string | null>(null);
+  const reload = () => fetch("/admin/api/swap-allowlist")
+    .then(async (r) => {
+      const j = await r.json().catch(() => null) as (Resp & { error?: string }) | null;
+      if (!r.ok || !j || !j.enforcing) { setData(null); setErro(j?.error ?? `HTTP ${r.status}`); }
+      else { setData(j); setErro(null); }
+      setLoaded(true);
+    })
+    .catch((e) => { setData(null); setErro(String(e).slice(0, 120)); setLoaded(true); });
   useEffect(() => { reload(); }, []);
 
   const autoPopulate = async () => {
     setProbing(true); setProbeMsg(null);
     try {
       const r = await fetch("/admin/api/swap-allowlist", { method: "POST" });
-      const j = await r.json();
-      setProbeMsg(`✓ ${(j.probed ?? []).length} coletadas${(j.errors ?? []).length ? ` · ${j.errors.length} falharam` : ""}`);
+      const j = await r.json().catch(() => ({})) as { probed?: unknown[]; errors?: string[]; error?: string };
+      if (!r.ok) { setProbeMsg(`✗ coleta recusada (${j.error ?? `HTTP ${r.status}`}) — nada foi coletado`); return; }
+      setProbeMsg(`✓ ${(j.probed ?? []).length} coletadas${(j.errors ?? []).length ? ` · ${(j.errors ?? []).length} falharam` : ""}`);
       setProbeErrs(j.errors ?? []);
       await reload();
     } catch { setProbeMsg("falha ao coletar — tente de novo"); }
     finally { setProbing(false); }
   };
 
-  const enforcing = data?.enforcing.targets || data?.enforcing.spenders;
+  const enforcing = data?.enforcing?.targets || data?.enforcing?.spenders;
 
   /**
    * ⚠️ A COBERTURA E POR CADEIA, e o aviso de topo escondia isso.
@@ -66,11 +83,16 @@ export default function SwapAllowlistPanel() {
 
   return (
     <TerminalPanel id="swap-allowlist" title="SWAP ALLOWLIST" subtitle="observe → verifique → fixe (anti-dreno)" icon="⛨" source="platform_events/swap_intent">
-      <div style={{ fontSize: 12, color: enforcing ? "var(--adm-green)" : "var(--adm-amber)", marginBottom: 8, letterSpacing: "0.06em" }}>
+      {erro && (
+        <div role="alert" style={{ fontSize: 12, color: "var(--adm-red)", marginBottom: 8 }}>
+          ⚠ ESTADO DESCONHECIDO — não consegui ler a allowlist ({erro}). Isto NÃO quer dizer que ela está desligada.
+        </div>
+      )}
+      {!erro && data && <div style={{ fontSize: 12, color: enforcing ? "var(--adm-green)" : "var(--adm-amber)", marginBottom: 8, letterSpacing: "0.06em" }}>
         {enforcing
           ? `✓ ENFORCING em ${vigiadas.size} cadeia(s): ${[...vigiadas].join(", ") || "—"}`
           : "⚠ OBSERVANDO — allowlist DESLIGADA. Colete, verifique no explorer e cole as envs abaixo na Vercel + redeploy."}
-      </div>
+      </div>}
 
       {/* ⚠️ Cadeia com tráfego observado e SEM lista = trava inerte ali. */}
       {enforcing && observadasSemLista.length > 0 && (

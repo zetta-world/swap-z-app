@@ -100,7 +100,10 @@ describe("nenhuma leitura pode truncar em silêncio", () => {
     const faltando = leituras().filter((l) => {
       if (!CRESCEM.includes(l.tabela)) return false;
       // Paginada: percorre tudo, por construção.
-      if (/\.range\(|selectAllRows/.test(l.janela) || /selectAllRows/.test(l.antes)) return false;
+      // `lerTodasPorChave`/`lerTodasAsPaginas` (supabase/paginar.ts) também: percorrem tudo e
+      // DECLARAM o corte (`truncado`) — Admin CC 2.0.
+      if (/\.range\(|selectAllRows|lerTodas(?:PorChave|AsPaginas)/.test(l.janela)
+          || /selectAllRows|lerTodas(?:PorChave|AsPaginas)/.test(l.antes)) return false;
       // Apontada: uma linha específica não tem o que truncar.
       if (/maybeSingle\(\)|\.single\(\)|\.eq\("id"|\.eq\("key"|\.in\("key"/.test(l.janela)) return false;
       // Declarada: o recorte é intencional e o motivo está escrito.

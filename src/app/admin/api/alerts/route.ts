@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { alertConfigured } from "@/lib/admin/track";
 
@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 /** Alert config status + recent alert history (logged regardless of whether
  *  Telegram is wired up). */
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("ops.alerts.read");
   const db = getSupabaseAdmin();
   const recent = db
     // leitura-limitada: os 40 alertas mais recentes para a tela. Alerta velho

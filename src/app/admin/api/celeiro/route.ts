@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { AGENTES, FAIXAS, ROTULO_DA_FAIXA, oControle, agentesDaFaixa } from "@/lib/celeiro/agentes";
 import { taxaPorPerna } from "@/lib/celeiro/taxas";
@@ -73,7 +73,7 @@ interface LinhaFluxo {
 
 export async function GET() {
   /**
-   * ⚠️ `requireAdmin()` NÃO DEVOLVE RESPOSTA DE ERRO — ele lança `notFound()`
+   * ⚠️ `requireAdmin()` (hoje `autorizarAdmin`) NÃO DEVOLVE RESPOSTA DE ERRO — ele lança `notFound()`
    * quando nega, e devolve `{ wallet }` quando aprova.
    *
    * A primeira versão daqui fazia `const negado = await requireAdmin(); if
@@ -85,7 +85,7 @@ export async function GET() {
    * de um build — `tsc --noEmit` sozinho passa batido. É o mesmo padrão que o
    * torneio usa desde sempre: chamar e ignorar o retorno.
    */
-  await requireAdmin();
+  await autorizarAdmin("lab.celeiro.read");
 
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ erro: "sem banco" }, { status: 503 });

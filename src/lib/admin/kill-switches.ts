@@ -39,9 +39,16 @@
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { logSecurity } from "@/lib/admin/track";
+import { comTeto } from "@/lib/admin/auditoria-duravel";
+import {
+  PLATFORM_KILL_KEYS, MAPA_INTERRUPTORES,
+  type PlatformKillKey, type ChaveDeInterruptor, type DirecaoNaFalha,
+} from "@/lib/admin/gate-keys";
 
-export const PLATFORM_KILL_KEYS = ["disable_swap", "disable_cex", "maintenance_mode"] as const;
-export type PlatformKillKey = (typeof PLATFORM_KILL_KEYS)[number];
+// As chaves moram em `gate-keys.ts` (módulo puro) para os painéis client
+// derivarem da mesma fonte. Reexportadas para quem já importa daqui.
+export { PLATFORM_KILL_KEYS };
+export type { PlatformKillKey };
 
 export interface EstadoKillSwitches {
   disable_swap:     boolean;
@@ -120,4 +127,99 @@ export async function checarKillSwitches(
   return tipo === "dinheiro_sai"
     ? decidirCaminhoDeDinheiro(estado, quais)
     : decidirCaminhoConfirmado(estado, quais);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * A LEITURA DO PAINEL — tri-estado, com teto de tempo (ADM-004).
+ *
+ * ⚠️⚠️ `GET /admin/api/killswitch` devolvia 200 `{ switches: {} }` com a nota
+ * "admin_kv not yet migrated" em QUALQUER erro de banco — tabela ausente,
+ * permissão negada, timeout. Um painel desenhava os três interruptores OFF e o
+ * outro desenhava os dezenove gates ON: "não consegui ler" virava "está tudo
+ * desligado / tudo rodando", no momento exato em que alguém abre o painel
+ * para desligar algo.
+ *
+ * Esta leitura é SÓ do painel. Os consumidores de dinheiro continuam com
+ * `lerKillSwitches`/`getFlywheelGates` e a direção de falha deles — nada aqui
+ * muda política de dinheiro.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+/** Mesmo orçamento de `GATE_KV_TIMEOUT_MS`: com o banco fora, a leitura levava ~20 s para falhar. */
+export const KILL_LEITURA_TIMEOUT_MS = 3_000;
+
+export type CodigoLeituraKill = "db_indisponivel" | "leitura_falhou" | "tempo_esgotado" | "excecao";
+
+export interface LinhaKv { value: string; updated_at: string | null }
+
+export type LeituraInterruptores =
+  | { lido: true; asOf: string; linhas: Map<string, LinhaKv> }
+  | { lido: false; asOf: string; errorCode: CodigoLeituraKill };
+
+/** Lê as chaves pedidas. NUNCA lança; qualquer falha (inclusive o relógio) é `lido: false`. */
+export async function lerInterruptores(
+  chaves: readonly string[], tetoMs: number = KILL_LEITURA_TIMEOUT_MS,
+): Promise<LeituraInterruptores> {
+  const asOf = new Date().toISOString();
+  const leitura = (async (): Promise<LeituraInterruptores> => {
+    try {
+      const db = getSupabaseAdmin();
+      if (!db) return { lido: false, asOf, errorCode: "db_indisponivel" };
+      const { data, error } = await db
+        .from("admin_kv").select("key, value, updated_at").in("key", [...chaves]);
+      if (error) return { lido: false, asOf, errorCode: "leitura_falhou" };
+      const linhas = new Map<string, LinhaKv>();
+      for (const r of data ?? []) {
+        linhas.set(r.key, { value: typeof r.value === "string" ? r.value : String(r.value), updated_at: r.updated_at ?? null });
+      }
+      return { lido: true, asOf, linhas };
+    } catch {
+      return { lido: false, asOf, errorCode: "excecao" };
+    }
+  })();
+  return comTeto(leitura, tetoMs, { lido: false, asOf, errorCode: "tempo_esgotado" });
+}
+
+/** O estado de UMA linha lida. Sem linha = desligado (seed da 0006; gate ausente = rodando). */
+export type EstadoPersistido = "on" | "off" | "invalido";
+
+export function estadoDoValor(valor: string | null): EstadoPersistido {
+  if (valor === null) return "off";
+  if (valor === "true") return "on";
+  if (valor === "false") return "off";
+  // `"TRUE"`, `"1"`, lixo: os consumidores comparam `=== "true"`, então isto
+  // FUNCIONA como desligado — mas o painel não pode fingir que leu um `false`.
+  return "invalido";
+}
+
+export type EstadoInterruptor = EstadoPersistido | "desconhecido";
+
+export interface InterruptorObservado {
+  chave:          ChaveDeInterruptor;
+  /** `desconhecido` = a leitura falhou; `invalido` = valor fora de "true"/"false". */
+  estado:         EstadoInterruptor;
+  /** O valor bruto gravado. `null` = sem linha (ou leitura falhou). */
+  persistido:     string | null;
+  atualizadoEm:   string | null;
+  direcaoNaFalha: DirecaoNaFalha;
+  consumidores:   string[];
+}
+
+/** Decisão pura: leitura → estado de cada chave. Leitura falha → TODAS desconhecidas, nunca OFF. */
+export function observarInterruptores(
+  l: LeituraInterruptores, chaves: readonly ChaveDeInterruptor[],
+): Record<string, InterruptorObservado> {
+  const out: Record<string, InterruptorObservado> = {};
+  for (const chave of chaves) {
+    const mapa = MAPA_INTERRUPTORES[chave];
+    const linha = l.lido ? l.linhas.get(chave) ?? null : null;
+    out[chave] = {
+      chave,
+      estado: l.lido ? estadoDoValor(linha ? linha.value : null) : "desconhecido",
+      persistido: linha ? linha.value : null,
+      atualizadoEm: linha ? linha.updated_at : null,
+      direcaoNaFalha: mapa.direcaoNaFalha,
+      consumidores: mapa.consumidores,
+    };
+  }
+  return out;
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { fetchPerpBook, PERP_VENUES } from "@/lib/api/cex-perp";
 import { censusSymbol, censusVerdict, type BookRead, type SymbolCensus } from "@/lib/zion/depth-census";
 import { recordEvent } from "@/lib/admin/track";
@@ -35,7 +35,7 @@ const MAJORS = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "LINK", "AVAX"
 const CONTROLE = ["MANA", "RUNE", "SAND", "GRT"];
 
 export async function POST(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("lab.census.perp");
   const t0 = Date.now();
 
   const falhou = async (motivo: string, detalhe?: string) => {

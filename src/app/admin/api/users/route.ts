@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
 
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
  * they actually browsed.
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("users.profile.read");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 

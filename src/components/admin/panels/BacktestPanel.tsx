@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { DESKS } from "@/lib/zion/desks";
 import TerminalPanel from "../TerminalPanel";
+import { useAutoRefresh } from "../useAutoRefresh";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
 
 type Recent = {
@@ -93,14 +94,10 @@ export default function BacktestPanel() {
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   }, [source, days]);
 
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 120_000);
-    return () => clearInterval(t);
-  }, [load, realtime?.status]);
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 120_000 });
 
   return (
-    <TerminalPanel id="backtest" title="BACKTEST" subtitle="ZION win-rate · expectancy" icon="◇" source="supabase/zion_suggestions">
+    <TerminalPanel id="backtest" title="BACKTEST" subtitle="ZION win-rate · expectancy" icon="◇" source="supabase/zion_suggestions" secondsAgo={secondsAgo} refreshing={refreshing} onRefresh={forceRefresh}>
       <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
         {(["stats", "feed"] as const).map((t) => (
           <button key={t} className={`adm-toggle ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>

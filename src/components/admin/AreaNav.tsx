@@ -36,6 +36,7 @@ export default function AreaNav() {
       }}
     >
       <Link href="/admin" className={`adm-toggle ${path === "/admin" ? "active" : ""}`}
+            aria-current={path === "/admin" ? "page" : undefined}
             style={{ textDecoration: "none" }}>
         ⌂ INÍCIO
       </Link>
@@ -48,6 +49,8 @@ export default function AreaNav() {
           href={`/admin/area/${a.id}`}
           title={a.pergunta}
           className={`adm-toggle ${atual === a.id ? "active" : ""}`}
+          // R3: leitor de tela anuncia a área atual (a cor sozinha não diz nada a quem não vê).
+          aria-current={atual === a.id ? "page" : undefined}
           style={{ textDecoration: "none" }}
         >
           {a.icon} {a.label}

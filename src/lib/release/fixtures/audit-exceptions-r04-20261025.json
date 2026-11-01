@@ -1,0 +1,247 @@
+{
+  "versao": 1,
+  "status": "TEMPORARIA",
+  "revisar_antes_do_rc": true,
+  "decisao": "dono, 2026-10-25: R-04 aprovada na conversa da fase PHANTOM-LIGHTHOUSE-V2 (\"Aprovo a R-04\") — exceção TEMPORÁRIA e estreita para o advisory zod; R-03 (braces) retirada porque o npm deixou de reportá-la (braces 3.0.3 continua instalado: NÃO é correção). Ver docs/R03-AUDIT-EXCEPTION.md.",
+  "criado_em": "2026-10-25",
+  "lockfile_sha256_na_criacao": "75f6bd2ba0f2336054707a94b917f50e87a05d6af38eaf1e3c3402f86b2e9af8",
+  "historico": "R-03 (braces GHSA-vfj7-8cjw-p6xm, 04/10–25/10): conteúdo congelado em src/lib/release/fixtures/audit-exceptions-r03-20261007.json",
+  "excecoes": [
+    {
+      "id": "R-04",
+      "advisory": {
+        "source": 1243066,
+        "name": "zod",
+        "severity": "high",
+        "range": "<4.6.6",
+        "url": "https://github.com/advisories/GHSA-mrhx-c7xc-m3w5"
+      },
+      "corrigido": false,
+      "por_que": "zod <4.6.6 (consumo de memória ao validar coleções grandes com restrição). A linha 3.x inteira está na faixa; correção só no 4.6.6+, major para quem depende de zod 3. Nenhum código do app (src/, scripts/) importa zod. Caminhos (npm ls zod): viem → abitype; wagmi → @wagmi/connectors → reown/walletconnect/coinbase/porto (navegador); @vercel/functions → @vercel/oidc → @vercel/cli-config (servidor, zod 4.1.11); eslint-config-next → eslint-plugin-react-hooks (só lint, fora da cadeia do audit); @anthropic-ai/sdk declara zod como peer OPCIONAL e só o usa em helpers/zod, que o app não importa. A cópia zod 4.4.3 sob @wagmi/connectors (via porto, ^4.1.5) pode subir para 4.6.7 sem major — pendente para a revisão antes do RC (se subir, a lista de nós desta cadeia muda). Avaliação de alcance, não prova: por isso TEMPORÁRIA, revista antes de cada RC; migrar para zod 4 é fase própria.",
+      "cadeia": [
+        {
+          "name": "@coinbase/cdp-sdk",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@coinbase/cdp-sdk"
+          ],
+          "via": [
+            "abitype",
+            "zod"
+          ]
+        },
+        {
+          "name": "@reown/appkit",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@reown/appkit"
+          ],
+          "via": [
+            "@reown/appkit-controllers",
+            "@reown/appkit-pay",
+            "@reown/appkit-scaffold-ui",
+            "@reown/appkit-ui",
+            "@reown/appkit-utils",
+            "@reown/appkit-wallet",
+            "@walletconnect/universal-provider"
+          ]
+        },
+        {
+          "name": "@reown/appkit-controllers",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@reown/appkit-controllers"
+          ],
+          "via": [
+            "@reown/appkit-wallet",
+            "@walletconnect/universal-provider"
+          ]
+        },
+        {
+          "name": "@reown/appkit-pay",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@reown/appkit-pay"
+          ],
+          "via": [
+            "@reown/appkit-controllers",
+            "@reown/appkit-ui",
+            "@reown/appkit-utils"
+          ]
+        },
+        {
+          "name": "@reown/appkit-scaffold-ui",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@reown/appkit-scaffold-ui"
+          ],
+          "via": [
+            "@reown/appkit-controllers",
+            "@reown/appkit-ui",
+            "@reown/appkit-utils",
+            "@reown/appkit-wallet"
+          ]
+        },
+        {
+          "name": "@reown/appkit-ui",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@reown/appkit-ui"
+          ],
+          "via": [
+            "@reown/appkit-controllers",
+            "@reown/appkit-wallet"
+          ]
+        },
+        {
+          "name": "@reown/appkit-utils",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@reown/appkit-utils"
+          ],
+          "via": [
+            "@reown/appkit-controllers",
+            "@reown/appkit-wallet",
+            "@walletconnect/universal-provider"
+          ]
+        },
+        {
+          "name": "@reown/appkit-wallet",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@reown/appkit-wallet"
+          ],
+          "via": [
+            "zod"
+          ]
+        },
+        {
+          "name": "@vercel/cli-config",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@vercel/cli-config"
+          ],
+          "via": [
+            "zod"
+          ]
+        },
+        {
+          "name": "@vercel/functions",
+          "severity": "high",
+          "isDirect": true,
+          "nodes": [
+            "node_modules/@vercel/functions"
+          ],
+          "via": [
+            "@vercel/oidc"
+          ]
+        },
+        {
+          "name": "@vercel/oidc",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@vercel/oidc"
+          ],
+          "via": [
+            "@vercel/cli-config"
+          ]
+        },
+        {
+          "name": "@wagmi/connectors",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@wagmi/connectors"
+          ],
+          "via": [
+            "@gemini-wallet/core",
+            "@metamask/sdk",
+            "@walletconnect/ethereum-provider"
+          ]
+        },
+        {
+          "name": "@walletconnect/ethereum-provider",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@walletconnect/ethereum-provider"
+          ],
+          "via": [
+            "@reown/appkit",
+            "@walletconnect/sign-client",
+            "@walletconnect/universal-provider",
+            "@walletconnect/utils"
+          ]
+        },
+        {
+          "name": "@walletconnect/utils",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@reown/appkit-controllers/node_modules/@walletconnect/utils",
+            "node_modules/@reown/appkit-utils/node_modules/@walletconnect/utils",
+            "node_modules/@reown/appkit/node_modules/@walletconnect/utils",
+            "node_modules/@walletconnect/utils"
+          ],
+          "via": [
+            "query-string",
+            "viem"
+          ]
+        },
+        {
+          "name": "abitype",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@coinbase/cdp-sdk/node_modules/abitype",
+            "node_modules/@reown/appkit-controllers/node_modules/abitype",
+            "node_modules/@reown/appkit-utils/node_modules/abitype",
+            "node_modules/@reown/appkit/node_modules/abitype",
+            "node_modules/@walletconnect/utils/node_modules/abitype"
+          ],
+          "via": [
+            "zod"
+          ]
+        },
+        {
+          "name": "viem",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@reown/appkit-controllers/node_modules/@walletconnect/utils/node_modules/viem",
+            "node_modules/@reown/appkit-utils/node_modules/@walletconnect/utils/node_modules/viem",
+            "node_modules/@reown/appkit/node_modules/@walletconnect/utils/node_modules/viem",
+            "node_modules/@walletconnect/utils/node_modules/viem"
+          ],
+          "via": [
+            "abitype"
+          ]
+        },
+        {
+          "name": "zod",
+          "severity": "high",
+          "isDirect": false,
+          "nodes": [
+            "node_modules/@reown/appkit-wallet/node_modules/zod",
+            "node_modules/@vercel/cli-config/node_modules/zod",
+            "node_modules/@wagmi/connectors/node_modules/zod",
+            "node_modules/zod"
+          ],
+          "via": [
+            "advisory:1243066"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { falhaDaTela } from "@/lib/admin/metrica";
 import TerminalPanel from "../TerminalPanel";
 import { useAutoRefresh } from "../useAutoRefresh";
 
@@ -86,8 +87,18 @@ export default function ReceitaPanel() {
     >
       {erro && <div style={{ color: "var(--adm-red)", fontSize: 12 }}>{erro}</div>}
       {!data && !erro && <div className="adm-shimmer" style={{ height: 60 }} />}
+      {/* ⚠️ ADM-014: a rota sempre mandou `falha` e a tela nunca leu — banco fora
+          aparecia como "$0 arrecadado · 0 operações". Com a fonte principal
+          caída, NENHUM número é mostrado: zero lido e zero inventado não se
+          distinguem a olho. */}
+      {data && falhaDaTela(data) && (
+        <div role="alert" style={{ color: "var(--adm-red)", fontSize: 12, lineHeight: 1.6 }}>
+          <b>INDISPONÍVEL</b> — não consegui ler as operações ({falhaDaTela(data)}). Os valores
+          desta tela NÃO são zero; são desconhecidos até uma leitura dar certo.
+        </div>
+      )}
 
-      {data && (
+      {data && !falhaDaTela(data) && (
         <>
           {/* ── ARRECADADO — dinheiro que MUDOU DE MÃOS (Fase 11) ──────
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { ativavel } from "../ativavel";
+
 import { useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 import { sampleLabel, shouldTint } from "@/lib/admin/sample";
@@ -151,7 +153,7 @@ export default function PlaybookBacktestPanel() {
             <div key={s.playbook} style={{ borderTop: "1px solid var(--adm-border)", padding: "5px 0" }}>
               <div
                 style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 13, cursor: "pointer" }}
-                onClick={() => setOpen(open === s.playbook ? null : s.playbook)}
+                {...ativavel(() => setOpen(open === s.playbook ? null : s.playbook), { expandido: open === s.playbook })}
               >
                 <span style={{ flex: 1, color: "var(--adm-ink-2)" }}>{s.label}</span>
                 <span style={{ color: "var(--adm-ink-4)", fontSize: 11, width: 74, textAlign: "right" }}>

@@ -78,4 +78,19 @@ export default [
       "react-hooks/immutability": "warn",
     },
   },
+  {
+    /**
+     * ⚠️ ACESSIBILIDADE DO ADMIN — R3 (Admin CC 2.0, 31/10/2026). Ligadas SÓ depois de zerar as
+     * violações medidas (18 no Admin, + 6 linhas de tabela clicáveis fora destas regras), para que
+     * a dívida não volte: clicável sem teclado, elemento estático com handler e campo sem rótulo
+     * passam a ser ERRO no código do Admin. O resto do app fica de fora até ter a mesma limpeza.
+     */
+    files: ["src/components/admin/**/*.{ts,tsx}", "src/app/admin/**/*.{ts,tsx}"],
+    rules: {
+      "jsx-a11y/click-events-have-key-events": "error",
+      "jsx-a11y/no-static-element-interactions": "error",
+      "jsx-a11y/no-noninteractive-element-interactions": "error",
+      "jsx-a11y/label-has-associated-control": ["error", { assert: "either", depth: 3 }],
+    },
+  },
 ];

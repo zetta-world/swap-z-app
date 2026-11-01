@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { PANELS } from "./panel-map";
+import FronteiraDePainel from "./FronteiraDePainel";
 import { MODULE_BY_ID, type ModuleId } from "@/lib/admin/modules";
 import { areaDoModulo } from "@/lib/admin/areas";
 
@@ -63,5 +64,5 @@ export default function PainelSozinho({ id }: { id: ModuleId }) {
    * mesma caixa para uma tabela de sete colunas e para um número solto. Aqui o
    * painel recebe a largura disponível e decide sozinho o que fazer com ela.
    */
-  return <div style={{ width: "100%" }}>{conteudo}</div>;
+  return <div style={{ width: "100%" }}><FronteiraDePainel id={id}>{conteudo}</FronteiraDePainel></div>;
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { planRecap, recapitalize, lastRecap } from "@/lib/paper/recapitalize";
+import { comandoAuditado, avisoDeAuditoria, PORQUE_AUDITORIA_INDISPONIVEL } from "@/lib/admin/auditoria-duravel";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,7 +19,7 @@ export const dynamic = "force-dynamic";
  * POST executa, exige MOTIVO escrito, e deixa marco.
  */
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("paper.recap.plan");
   return NextResponse.json({
     plan: await planRecap(),
     last: await lastRecap(),
@@ -26,7 +27,7 @@ export async function GET(): Promise<NextResponse> {
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
-  await requireAdmin();
+  const { wallet: ator } = await autorizarAdmin("paper.recap.execute");
   let body: { sources?: string[]; reason?: string };
   try { body = await req.json(); } catch { body = {}; }
 
@@ -44,10 +45,35 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  try {
-    const entries = await recapitalize(sources, reason);
-    return NextResponse.json({ ok: true, entries, last: await lastRecap() });
-  } catch (e) {
-    return NextResponse.json({ error: String(e).slice(0, 300) }, { status: 500 });
+  // ⚠️ RESETA CAPITAL DAS MESAS: sem intenção gravada (quem/quais/por quê), não roda.
+  type Resultado = Awaited<ReturnType<typeof recapitalize>>;
+  const r = await comandoAuditado<Resultado>({
+    acao: "paper.recap", ator, alvo: sources.map(String).join(",").slice(0, 200),
+    dados: { sources: sources.map(String), reason: reason.slice(0, 500) },
+    executar: async () => {
+      const x = await recapitalize(sources, reason);
+      // `executado` só se TODAS as mesas pedidas foram recapitalizadas E o marco gravou.
+      const falhas = x.entries.filter((e) => !e.ok);
+      if (x.entries.length === 0) return { ok: false, codigo: "nada_recapitalizado", valor: x };
+      if (falhas.length > 0 || !x.marcoGravado) {
+        return {
+          ok: false, codigo: "parcial", valor: x,
+          detalhe: [...falhas.map((e) => `${e.source}:${e.erro}`), ...(x.marcoGravado ? [] : ["marco_nao_gravado"])].join(",").slice(0, 200),
+        };
+      }
+      return { ok: true, valor: x };
+    },
+  });
+  if (r.estado === "recusado" || r.estado === "repetido") {
+    return NextResponse.json({ error: "auditoria_indisponivel", porque: PORQUE_AUDITORIA_INDISPONIVEL }, { status: 503 });
   }
+  if (r.estado === "falhou") {
+    return NextResponse.json({
+      error: r.codigo, detalhe: r.detalhe, entries: r.valor?.entries ?? [], ...avisoDeAuditoria(r.auditoria),
+      porque: r.codigo === "nada_recapitalizado"
+        ? "NADA foi recapitalizado: nenhuma das mesas pedidas está no plano"
+        : "a recapitalização NÃO terminou em todas as mesas — veja `entries` e releia o plano (GET) antes de repetir",
+    }, { status: r.codigo === "nada_recapitalizado" ? 400 : 500 });
+  }
+  return NextResponse.json({ ok: true, entries: r.valor.entries, last: await lastRecap(), ...avisoDeAuditoria(r.auditoria) });
 }

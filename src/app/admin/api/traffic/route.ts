@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireAdmin, envAdminWallets } from "@/lib/admin/require";
+import { envAdminWallets } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ export const dynamic = "force-dynamic";
 interface Meta { cid?: string; country?: string; city?: string; lat?: number; lon?: number; device?: string; referrer?: string; bot?: boolean; browser?: string; os?: string }
 
 export async function GET(): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("analytics.traffic.read");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 

@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { mensagemDeFalha } from "@/lib/admin/metrica";
 import TerminalPanel from "../TerminalPanel";
+import { useAutoRefresh } from "../useAutoRefresh";
 import { useAdminRealtime } from "../AdminRealtimeProvider";
 
 type Row = { event_type: string; metadata: Record<string, unknown> | null; created_at: string };
 type Logs = {
-  errors24h: number; security24h: number; high24h: number;
+  errors24h: number; security24h: number; high24h: number; truncado24h?: boolean;
   topKinds: { kind: string; count: number }[];
   recent: Row[];
 };
@@ -25,17 +27,15 @@ export default function LogsSecurityPanel() {
   const load = useCallback(async () => {
     try {
       const res = await fetch("/admin/api/logs");
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? res.status);
+      const json = await res.json().catch(() => null);
+      // ⚠️ Falha some com o número velho: contagem de segurança desatualizada
+      // ao lado de um erro é lida como atual (R3, P1-6).
+      if (!res.ok) { setData(null); setError(mensagemDeFalha(res.status, json)); return; }
       setData(json); setError(null);
-    } catch (e) { setError(String(e)); } finally { setLoading(false); }
+    } catch (e) { setData(null); setError(String(e)); } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 45_000);
-    return () => clearInterval(t);
-  }, [load, realtime?.status]);
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 45_000 });
 
   useEffect(() => {
     if (!realtime) return;
@@ -43,7 +43,7 @@ export default function LogsSecurityPanel() {
   }, [realtime, load]);
 
   return (
-    <TerminalPanel id="logs-security" title="LOGS & SECURITY" subtitle="errors · abuse · intrusion attempts" icon="⚠" source="supabase/platform_events">
+    <TerminalPanel id="logs-security" title="LOGS & SECURITY" subtitle="errors · abuse · intrusion attempts" icon="⚠" source="supabase/platform_events" secondsAgo={secondsAgo} refreshing={refreshing} onRefresh={forceRefresh}>
       <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
         {(["overview", "feed"] as const).map((t) => (
           <button key={t} className={`adm-toggle ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>
@@ -62,6 +62,11 @@ export default function LogsSecurityPanel() {
             <Stat label="SECURITY 24H" value={data.security24h} color="var(--adm-cyan)" />
             <Stat label="HIGH SEV" value={data.high24h} color={data.high24h > 0 ? "var(--adm-red)" : "var(--adm-ink-3)"} />
           </div>
+          {data.truncado24h && (
+            <div role="status" style={{ color: "var(--adm-amber)", fontSize: 12, marginBottom: 6 }}>
+              AMOSTRA — mais de 1.000 eventos em 24h: as contagens acima são exatas; o top de tipos abaixo é de uma amostra.
+            </div>
+          )}
           {data.topKinds.length === 0 ? (
             <div style={{ color: "var(--adm-ink-3)", fontSize: 13 }}>No errors or security events in 24h. ✓</div>
           ) : (

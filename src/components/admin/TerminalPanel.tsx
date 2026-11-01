@@ -1,6 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { idadeEmSegundos, rotuloDeFrescor } from "@/lib/admin/frescor";
 import type { ModuleId } from "@/lib/admin/modules";
 import { useAdminLayout } from "@/lib/store/admin-layout";
 
@@ -11,19 +12,33 @@ type Props = {
   icon:        string;
   source?:     string;
   secondsAgo?: number;
+  /**
+   * R3: quando o dado foi LIDO no servidor (o `fetchedAt` da resposta). Tem precedência sobre
+   * `secondsAgo`: o rótulo diz a idade do DADO, não da última tentativa. `null` = sem dado.
+   */
+  fetchedAt?:  string | null;
   refreshing?: boolean;
   onRefresh?:  () => void;
   children:    ReactNode;
 };
 
 export default function TerminalPanel({
-  id, title, subtitle, icon, source, secondsAgo, refreshing, onRefresh, children,
+  id, title, subtitle, icon, source, secondsAgo, fetchedAt, refreshing, onRefresh, children,
 }: Props) {
   const { toggleModule } = useAdminLayout();
+  const [agora, setAgora] = useState(() => Date.now());
+  const usaFetchedAt = fetchedAt !== undefined;
+  useEffect(() => {
+    if (!usaFetchedAt) return;
+    const t = setInterval(() => { if (!document.hidden) setAgora(Date.now()); }, 1000);
+    return () => clearInterval(t);
+  }, [usaFetchedAt]);
 
-  const freshLabel = secondsAgo !== undefined
-    ? secondsAgo < 5 ? "just now" : `${secondsAgo}s ago`
-    : undefined;
+  const freshLabel = usaFetchedAt
+    ? rotuloDeFrescor(idadeEmSegundos(fetchedAt, agora)) ?? "sem dado"
+    : secondsAgo !== undefined
+      ? rotuloDeFrescor(secondsAgo) ?? undefined
+      : undefined;
 
   return (
     <div className="adm-panel">
@@ -41,7 +56,8 @@ export default function TerminalPanel({
         </div>
 
         <span className="adm-panel-icon" aria-hidden>{icon}</span>
-        <span className="adm-panel-title">{title}</span>
+        {/* h2 (R3): leitor de tela navega pelos painéis por cabeçalho; o visual é o mesmo. */}
+        <h2 className="adm-panel-title" style={{ margin: 0 }}>{title}</h2>
         <span className="adm-panel-subtitle">{subtitle}</span>
 
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
@@ -51,7 +67,7 @@ export default function TerminalPanel({
             </span>
           )}
           {freshLabel && (
-            <span style={{
+            <span title={usaFetchedAt && fetchedAt ? `dado lido em ${fetchedAt}` : undefined} style={{
               fontSize: 11,
               color: refreshing ? "var(--adm-green)" : "var(--adm-ink-4)",
               letterSpacing: "0.1em",

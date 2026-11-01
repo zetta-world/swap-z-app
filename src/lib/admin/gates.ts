@@ -54,6 +54,8 @@
  */
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { FLYWHEEL_GATE_KEYS, type FlywheelGateKey } from "@/lib/admin/gate-keys";
+import { logSecurity } from "@/lib/admin/track";
+import { rateLimit } from "@/lib/rate-limit";
 
 // As chaves e a classificação de gasto moram em `gate-keys.ts` — módulo puro,
 // sem import de servidor, para que o painel de admin (client) derive da MESMA
@@ -64,18 +66,61 @@ export type { FlywheelGateKey } from "@/lib/admin/gate-keys";
 
 export type FlywheelGates = Record<FlywheelGateKey, boolean>;
 
-export async function getFlywheelGates(): Promise<FlywheelGates> {
+export interface LeituraGates {
+  gates: FlywheelGates;
+  /** A leitura funcionou? `false` = os gates abaixo são o PADRÃO (tudo rodando), não o banco. */
+  lido:  boolean;
+  erro?: "db_indisponivel" | "leitura_falhou" | "excecao";
+}
+
+/**
+ * Lê os gates e DIZ se leu. Nunca lança.
+ *
+ * ⚠️ A falha continua abrindo (tudo rodando) — essa é a política de hoje para
+ * todos os consumidores, e mudá-la para `pause_dca`/`pause_zion` é decisão do
+ * dono (D-KS-1, D-KS-2). O que muda é que a falha deixa de ser MUDA: antes o
+ * `{ error }` nem era lido e "ninguém pausou" ficava idêntico a "não consegui
+ * olhar".
+ */
+export async function lerFlywheelGates(): Promise<LeituraGates> {
   // Derivado, não digitado — mesma razão de `gate-keys.ts`: uma mesa nova cuja
   // chave ficasse de fora deste literal ficaria SEMPRE lida como `undefined`,
   // ou seja, rodando, mesmo com o operador tendo desligado no painel.
   const gates = Object.fromEntries(FLYWHEEL_GATE_KEYS.map((k) => [k, false])) as FlywheelGates;
   const db = getSupabaseAdmin();
-  if (!db) return gates;
+  if (!db) return { gates, lido: false, erro: "db_indisponivel" };
   try {
-    const { data } = await db.from("admin_kv").select("key, value").in("key", FLYWHEEL_GATE_KEYS);
+    const { data, error } = await db.from("admin_kv").select("key, value").in("key", FLYWHEEL_GATE_KEYS);
+    if (error) return { gates, lido: false, erro: "leitura_falhou" };
     for (const r of data ?? []) {
       if ((FLYWHEEL_GATE_KEYS as string[]).includes(r.key)) gates[r.key as FlywheelGateKey] = r.value === "true";
     }
-  } catch { /* table may not exist yet — all gates stay false (running) */ }
-  return gates;
+    return { gates, lido: true };
+  } catch {
+    return { gates, lido: false, erro: "excecao" };
+  }
+}
+
+/**
+ * O leitor dos consumidores — mesma forma e mesma direção de sempre (falha =
+ * tudo rodando), agora com sinal.
+ *
+ * ⚠️ O EVENTO TEM FREIO: `/api/zion` lê os gates a CADA requisição de usuário;
+ * sem o freio, um `admin_kv` ilegível viraria um evento de segurança por
+ * pergunta. Um por minuto por instância basta para o alerta existir.
+ */
+export async function getFlywheelGates(): Promise<FlywheelGates> {
+  const l = await lerFlywheelGates();
+  if (!l.lido) {
+    // O sinal nunca derruba o consumidor: ele não lançava antes e não lança agora.
+    try {
+      if (rateLimit("gates_leitura_falhou", { windowMs: 60_000, max: 1 }).ok) {
+        logSecurity("flywheel_gates_leitura_falhou", {
+          erro: l.erro,
+          efeito: "todos os gates lidos como RODANDO (pause_dca e pause_zion inclusive)",
+        }, "high");
+      }
+    } catch { /* ver acima */ }
+  }
+  return l.gates;
 }

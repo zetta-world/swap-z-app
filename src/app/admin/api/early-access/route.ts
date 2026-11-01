@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin/require";
+import { autorizarAdmin } from "@/lib/admin/authz";
 import { listar, detalhe, metricas } from "@/lib/early-access/store";
 import { lerGateEarlyAccess } from "@/lib/early-access/gate";
 import { lerFiltros } from "@/lib/early-access/filtros";
@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  await requireAdmin();
+  await autorizarAdmin("users.early_access.read");
   const p = req.nextUrl.searchParams;
 
   const id = p.get("id");

@@ -128,7 +128,8 @@ export const MIN_MOTIVO = 15;
 
 export interface ResultadoRegistro {
   ok:      boolean;
-  erro?:   "motivo_curto" | "db_indisponivel";
+  /** `escrita_falhou`: o banco recusou — NADA mudou (as duas chaves vão numa escrita só). */
+  erro?:   "motivo_curto" | "db_indisponivel" | "escrita_falhou";
 }
 
 /**
@@ -155,17 +156,18 @@ export async function registrarLiberacao(
   if (!db) return { ok: false, erro: "db_indisponivel" };
 
   const agora = new Date().toISOString();
-  await db.from("admin_kv").upsert(
+  /**
+   * ⚠️ UMA ESCRITA SÓ, CONFERIDA (Admin CC 2.0, 25/10). Eram dois upserts sem ler
+   * `{ error }`: o painel dizia "liberado" com o banco recusando, ou ficava o
+   * estado novo ao lado da justificativa VELHA — texto convincente descrevendo o
+   * que já não vale. Um upsert de duas linhas é um único comando no Postgres:
+   * grava as duas ou nenhuma.
+   */
+  const { error } = await db.from("admin_kv").upsert([
     { key: CHAVE_LIBERACAO, value: String(liberar), updated_at: agora },
-    { onConflict: "key" },
-  );
-  await db.from("admin_kv").upsert(
-    // Ao fechar, o motivo do fechamento substitui o da abertura — mas o campo
-    // nunca fica com a justificativa VELHA ao lado de um estado novo, que seria
-    // a pior das leituras: texto convincente descrevendo o que já não vale.
     { key: CHAVE_MOTIVO, value: texto.slice(0, 500) || "(sem motivo declarado)", updated_at: agora },
-    { onConflict: "key" },
-  );
+  ], { onConflict: "key" });
+  if (error) return { ok: false, erro: "escrita_falhou" };
   return { ok: true };
 }
 
@@ -217,14 +219,73 @@ export async function lerPilotos(produto: "autopilot" | "dca" = "autopilot"): Pr
   } catch { return []; }
 }
 
-export async function gravarPilotos(lista: Piloto[]): Promise<boolean> {
+/**
+ * Leitura CONFERIDA para o caminho do ADMIN (quem vai REESCREVER a lista).
+ *
+ * ⚠️ `lerPilotos` devolve `[]` em qualquer falha — certo para a TRAVA (fecha), e
+ * desastroso para quem lê-modifica-grava: o POST do painel regravava a lista só
+ * com a carteira nova, APAGANDO os outros pilotos numa leitura que falhou. Aqui
+ * "sem linha" (lista vazia de verdade) e "não consegui ler" são coisas diferentes,
+ * e o valor bruto volta para a gravação condicional.
+ */
+/** Versão da linha lida: o compare-and-set é por `updated_at`, não pelo valor. */
+export interface VersaoPilotos { existe: boolean; updatedAt: string | null }
+
+export type LeituraPilotos =
+  | { ok: true; lista: Piloto[]; bruto: string | null; versao: VersaoPilotos }
+  | { ok: false; erro: "db_indisponivel" | "leitura_falhou" | "valor_ilegivel" };
+
+export async function lerPilotosConferido(): Promise<LeituraPilotos> {
   const db = getSupabaseAdmin();
-  if (!db) return false;
-  await db.from("admin_kv").upsert(
-    { key: CHAVE_PILOTOS, value: JSON.stringify(lista.slice(0, 50)), updated_at: new Date().toISOString() },
-    { onConflict: "key" },
-  );
-  return true;
+  if (!db) return { ok: false, erro: "db_indisponivel" };
+  try {
+    const { data, error } = await db.from("admin_kv").select("value, updated_at").eq("key", CHAVE_PILOTOS).maybeSingle();
+    if (error) return { ok: false, erro: "leitura_falhou" };
+    const versao: VersaoPilotos = { existe: !!data, updatedAt: data?.updated_at ?? null };
+    if (!data?.value) return { ok: true, lista: [], bruto: null, versao };
+    const bruto = JSON.parse(data.value) as unknown;
+    if (!Array.isArray(bruto)) return { ok: false, erro: "valor_ilegivel" };
+    const lista = bruto
+      .filter((p): p is Piloto => !!p && typeof (p as Piloto).wallet === "string" && (p as Piloto).wallet.length > 0)
+      .map((p) => ({ wallet: p.wallet.toLowerCase(), nota: String(p.nota ?? ""), at: String(p.at ?? "") }));
+    return { ok: true, lista, bruto: data.value, versao };
+  } catch {
+    return { ok: false, erro: "valor_ilegivel" };
+  }
+}
+
+/**
+ * Grava a lista CONFERINDO a escrita e com compare-and-set: só grava se a linha
+ * ainda estiver na VERSÃO lida (`updated_at`), ou ainda não existir se não
+ * existia. `conflito` = outro admin mudou a lista entre a leitura e a gravação —
+ * nada é sobrescrito.
+ *
+ * ⚠️ POR `updated_at`, NÃO POR `value` (revisão adversarial): `.eq("value", …)`
+ * punha a lista inteira (até 50 × nota de 300) na URL do PostgREST; passando do
+ * limite do gateway, autorizar e REMOVER piloto falhavam sempre — e remover quem
+ * opera dinheiro real ficava impossível pelo painel.
+ */
+export async function gravarPilotos(
+  lista: Piloto[], anterior?: VersaoPilotos,
+): Promise<{ ok: true } | { ok: false; erro: "db_indisponivel" | "escrita_falhou" | "conflito" }> {
+  const db = getSupabaseAdmin();
+  if (!db) return { ok: false, erro: "db_indisponivel" };
+  const value = JSON.stringify(lista.slice(0, 50));
+  // updated_at NOVO e diferente do lido (mesmo milissegundo → +1 ms): a versão sempre avança.
+  let t = Date.now();
+  if (anterior?.updatedAt && Date.parse(anterior.updatedAt) >= t) t = Date.parse(anterior.updatedAt) + 1;
+  const updated_at = new Date(t).toISOString();
+  const escrita = anterior === undefined
+    ? db.from("admin_kv").upsert({ key: CHAVE_PILOTOS, value, updated_at }, { onConflict: "key" }).select("key")
+    : !anterior.existe
+      ? db.from("admin_kv").upsert({ key: CHAVE_PILOTOS, value, updated_at }, { onConflict: "key", ignoreDuplicates: true }).select("key")
+      : anterior.updatedAt == null
+        ? db.from("admin_kv").update({ value, updated_at }).eq("key", CHAVE_PILOTOS).is("updated_at", null).select("key")
+        : db.from("admin_kv").update({ value, updated_at }).eq("key", CHAVE_PILOTOS).eq("updated_at", anterior.updatedAt).select("key");
+  const { data, error } = await escrita;
+  if (error) return { ok: false, erro: "escrita_falhou" };
+  if (anterior !== undefined && (data ?? []).length === 0) return { ok: false, erro: "conflito" };
+  return { ok: true };
 }
 
 export type CausaAutomacao = CausaLiberacao | "piloto_autorizado";
