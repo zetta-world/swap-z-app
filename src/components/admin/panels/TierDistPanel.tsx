@@ -2,6 +2,7 @@
 
 import TerminalPanel from "../TerminalPanel";
 import { useAdminStats } from "../useAdminStats";
+import AvisoDeFonte from "../AvisoDeFonte";
 
 const TIER_ORDER = ["free", "pro", "trader", "pilot"];
 const TIER_COLOR: Record<string, string> = {
@@ -32,10 +33,13 @@ export default function TierDistPanel() {
         <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{state.message}</div>
       )}
       {state.status === "ok" && (() => {
-        const dist = state.data.tiers.distribution;
+        const m = state.data.tiers.distribution;
+        if (m.value == null) return <AvisoDeFonte m={m} rotulo="planos" />;
+        const dist = m.value;
         const total = Object.values(dist).reduce((a, b) => a + b, 0) || 1;
         return (
           <>
+            <AvisoDeFonte m={m} rotulo="planos" />
             {TIER_ORDER.map((tier) => {
               const count = dist[tier] ?? 0;
               const pct   = Math.round(count / total * 100);
@@ -65,7 +69,7 @@ export default function TierDistPanel() {
               );
             })}
             <div style={{ fontSize: 11, color: "var(--adm-ink-3)", marginTop: 8 }}>
-              Recent wallets only — tier_cache rows with unexpired entries.
+              Todas as linhas de tier_cache (plano DECLARADO em cache; a validade não é filtrada aqui).
             </div>
           </>
         );

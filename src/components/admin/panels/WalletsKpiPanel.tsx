@@ -2,6 +2,7 @@
 
 import TerminalPanel from "../TerminalPanel";
 import { useAdminStats } from "../useAdminStats";
+import StatMetrica from "../StatMetrica";
 
 export default function WalletsKpiPanel() {
   const state = useAdminStats();
@@ -29,28 +30,16 @@ export default function WalletsKpiPanel() {
       )}
       {state.status === "ok" && (() => {
         const { total, active7d, active30d, chainSplit } = state.data.wallets;
-        const evm  = chainSplit["evm"]    ?? 0;
-        const sol  = chainSplit["solana"] ?? 0;
+        const t = total.value, a7 = active7d.value;
+        const split = chainSplit.value;
         return (
           <>
-            <div className="adm-stat">
-              <span className="adm-stat-label">TOTAL SIGNUPS</span>
-              <span className="adm-stat-value">{total.toLocaleString()}</span>
-            </div>
-            <div className="adm-stat">
-              <span className="adm-stat-label">ACTIVE 7D</span>
-              <span className="adm-stat-value green">{active7d.toLocaleString()}</span>
-              <span className="adm-stat-sub">{total > 0 ? `${Math.round(active7d / total * 100)}%` : "—"}</span>
-            </div>
-            <div className="adm-stat">
-              <span className="adm-stat-label">ACTIVE 30D</span>
-              <span className="adm-stat-value green">{active30d.toLocaleString()}</span>
-            </div>
-            <div className="adm-stat">
-              <span className="adm-stat-label">EVM / SOLANA</span>
-              <span className="adm-stat-value cyan">{evm.toLocaleString()}</span>
-              <span className="adm-stat-sub">/ {sol.toLocaleString()}</span>
-            </div>
+            <StatMetrica rotulo="TOTAL SIGNUPS" m={total} formatar={(v) => v.toLocaleString()} />
+            <StatMetrica rotulo="ACTIVE 7D" m={active7d} formatar={(v) => v.toLocaleString()} cor="green"
+              sub={t != null && a7 != null && t > 0 ? `${Math.round(a7 / t * 100)}%` : "—"} />
+            <StatMetrica rotulo="ACTIVE 30D" m={active30d} formatar={(v) => v.toLocaleString()} cor="green" />
+            <StatMetrica rotulo="EVM / SOLANA" m={chainSplit} formatar={(v) => (v["evm"] ?? 0).toLocaleString()} cor="cyan"
+              sub={split ? `/ ${(split["solana"] ?? 0).toLocaleString()}` : undefined} />
           </>
         );
       })()}

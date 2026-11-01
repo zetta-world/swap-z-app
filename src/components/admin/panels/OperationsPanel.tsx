@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
-import { useAdminRealtime } from "../AdminRealtimeProvider";
+import { useAutoRefresh } from "../useAutoRefresh";
+import AvisoDeFonte from "../AvisoDeFonte";
+import { exibirMetrica, mensagemDeFalha, type OperationalMetric } from "@/lib/admin/metrica";
 
 type Position = {
   base: string; pair: string; base_amount: number; cost_usd: number;
@@ -14,7 +16,12 @@ type Run = {
   order_type: string | null; notional_usd: number | null;
   status: string; reason: string | null; exchange_id: string;
 };
-type Ops = { positions: Position[]; runs: Run[]; openExposure: number };
+type Ops = {
+  positions: Position[]; positionsTotal: number;
+  runs: Run[] | null; runsMetrica: OperationalMetric<number>;
+  openExposure: number | null; openExposureMetrica: OperationalMetric<number>;
+  fetchedAt: string;
+};
 
 function runColor(s: string): string {
   if (s === "fired" || s === "settled")  return "var(--adm-green)";
@@ -23,46 +30,48 @@ function runColor(s: string): string {
   return "var(--adm-ink-2)";
 }
 
+/**
+ * ⚠️ R3/P1-10: a exposição é a soma de TODAS as posições abertas (a lista mostra as 50 mais
+ * recentes); leitura que falha = INDISPONÍVEL, nunca "No open autopilot positions." + $0.
+ */
 export default function OperationsPanel() {
   const [data, setData] = useState<Ops | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"positions" | "runs">("positions");
-  const realtime = useAdminRealtime();
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/admin/api/operations");
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? res.status);
+      const res = await fetch("/admin/api/operations", { cache: "no-store" });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) { setData(null); setError(`${mensagemDeFalha(res.status, json)} — isto NÃO é "nenhuma posição".`); return; }
       setData(json); setError(null);
-    } catch (e) { setError(String(e)); } finally { setLoading(false); }
+    } catch (e) { setData(null); setError(String(e)); }
   }, []);
-
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 30_000);
-    return () => clearInterval(t);
-  }, [load, realtime?.status]);
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 30_000 });
+  const loading = !data && !error;
+  const exp = data ? exibirMetrica(data.openExposureMetrica, (v) => `$${Math.round(v).toLocaleString()}`) : null;
 
   return (
-    <TerminalPanel id="live-ops" title="LIVE OPS" subtitle="open positions · run feed" icon="⊠" source="supabase/autopilot_positions+runs">
+    <TerminalPanel id="live-ops" title="LIVE OPS" subtitle="open positions · run feed" icon="⊠" source="supabase/autopilot_positions+runs"
+      secondsAgo={data ? secondsAgo : undefined} refreshing={refreshing} onRefresh={forceRefresh}>
       <div style={{ display: "flex", gap: 6, marginBottom: 12, alignItems: "center" }}>
         {(["positions", "runs"] as const).map((t) => (
-          <button key={t} className={`adm-toggle ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>
+          <button key={t} type="button" aria-pressed={tab === t} className={`adm-toggle ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>
             {t.toUpperCase()}
           </button>
         ))}
         <div style={{ flex: 1 }} />
-        {data && (
-          <span style={{ fontSize: 12, color: "var(--adm-ink-3)" }}>
-            exposure <span style={{ color: "var(--adm-ink)", fontVariantNumeric: "tabular-nums" }}>${Math.round(data.openExposure).toLocaleString()}</span>
+        {data && exp && (
+          <span title={exp.dica} style={{ fontSize: 12, color: "var(--adm-ink-3)" }}>
+            exposure <span style={{ color: exp.cor ?? "var(--adm-ink)", fontVariantNumeric: "tabular-nums" }}>{exp.texto}</span>
+            {exp.selo && <span style={{ color: exp.cor ?? undefined }}> {exp.selo}</span>}
+            {data.positionsTotal > data.positions.length && <span> · {data.positionsTotal} abertas (lista: {data.positions.length})</span>}
           </span>
         )}
       </div>
 
       {loading && <div className="adm-shimmer" style={{ height: 100 }} />}
-      {error   && <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>}
+      {error   && <div role="alert" style={{ color: "var(--adm-red)", fontSize: 13 }}>{error}</div>}
 
       {data && tab === "positions" && (
         data.positions.length === 0 ? (
@@ -87,7 +96,9 @@ export default function OperationsPanel() {
 
       {data && tab === "runs" && (
         <div className="adm-scroll" style={{ maxHeight: 280 }}>
-          {data.runs.length === 0 ? (
+          {data.runs == null ? (
+            <AvisoDeFonte m={data.runsMetrica} rotulo="execuções" />
+          ) : data.runs.length === 0 ? (
             <div style={{ color: "var(--adm-ink-3)", fontSize: 13 }}>No autopilot runs yet.</div>
           ) : data.runs.map((r, i) => (
             <div key={i} style={{ display: "flex", gap: 8, padding: "4px 0", borderBottom: "1px solid var(--adm-border)", fontSize: 12, alignItems: "center" }}>

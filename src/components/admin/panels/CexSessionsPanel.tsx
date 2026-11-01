@@ -2,6 +2,7 @@
 
 import TerminalPanel from "../TerminalPanel";
 import { useAdminStats } from "../useAdminStats";
+import AvisoDeFonte from "../AvisoDeFonte";
 
 export default function CexSessionsPanel() {
   const state = useAdminStats();
@@ -24,7 +25,10 @@ export default function CexSessionsPanel() {
         <div style={{ color: "var(--adm-red)", fontSize: 13 }}>{state.message}</div>
       )}
       {state.status === "ok" && (() => {
-        const byEx = state.data.cex.byExchange;
+        const m = state.data.cex.byExchange;
+        // ⚠️ Leitura que falhou NÃO é "nenhuma sessão": esconderia uma sessão ATIVA (P1-16).
+        if (m.value == null) return <AvisoDeFonte m={m} rotulo="sessões" />;
+        const byEx = m.value;
         const keys = Object.keys(byEx).sort();
         if (keys.length === 0) {
           return (
@@ -34,6 +38,8 @@ export default function CexSessionsPanel() {
           );
         }
         return (
+          <>
+          {m.state !== "ok" && <AvisoDeFonte m={m} rotulo="sessões" />}
           <table className="adm-table">
             <thead>
               <tr>
@@ -62,6 +68,7 @@ export default function CexSessionsPanel() {
               })}
             </tbody>
           </table>
+          </>
         );
       })()}
     </TerminalPanel>
