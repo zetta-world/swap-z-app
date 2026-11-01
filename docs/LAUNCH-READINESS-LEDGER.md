@@ -1495,3 +1495,17 @@ Pedido do dono (25/10): executar o plano R0–R5 do handoff `ZSWAP-ADMIN-COMMAND
 estado real do GitHub, do Supabase (catálogo/agregados, só leitura) e da documentação; trabalho local; PR. NÃO autorizado:
 produção, migrations no banco hospedado, variáveis Vercel, desativar acesso admin existente, sistemas financeiros.
 Linha de base medida: 66 `src/app/admin/api/**/route.ts`, 57 `*Panel.tsx`, migrations até 0078.
+
+**Resultado do ciclo (01/11/2026).** Commits `ec63cb9..01cc53f` na branch (13 de código/docs + este registro). R0 DONE
+(kill switches tri-estado com CAS; trilha durável `comandoAuditado` em todo comando sensível; P0 de pilotos do autopilot;
+verdade em `/finance`, `/command`, `/health`, `/logs`, `/admins`, RECEITA); R2 DONE em `legacy` (`autorizarAdmin` nos 79
+handlers + páginas; catálogo RBAC = matriz; completude por handler); R3 parcial (fronteira de erro, ⌘K, mobile, P1 de
+segurança); R4 local (0079–0082 + teste 26); R1 base desligada (0083 `admin_private` + primitivas; login/MFA BLOQUEADO
+por IdP/contas); R5 observação. Revisão adversarial em duas rodadas com verificador cético por achado: 9→8 confirmados
+(`679fdfb`) e 28→18 confirmados (`01cc53f`), todos corrigidos com testes. **RECERT(C1 `01cc53f`) = FAIL** só no
+`09-audit-gate` (advisories novos de `decode-uri-component`/`follow-redirects` na pilha da carteira, publicados depois de
+25/10; lockfile intocado nesta fase — o portão falha igual em `main`); demais passos PASS (5395 testes ×2, build,
+segredos; suíte SQL local 23/23 + 23b/24b). Evidência fora do repo `recert-01cc53f-20261101T005448Z`, MANIFEST
+`b4c99599…07cd39`. Sem produção, sem migration hospedada, sem Vercel. PR rascunho aberto para `main` (não mergear).
+Pendente do dono: D-DEP-1 (C1b), D-AUD-1, e a autorização única (IdP, contas, MFA, migrations no hospedado com backup
+validado, variáveis Vercel, merge/deploy) — ver `docs/PLANO-ADMIN-COMMAND-CENTER-2-20261025.md`, "Resultado do ciclo".

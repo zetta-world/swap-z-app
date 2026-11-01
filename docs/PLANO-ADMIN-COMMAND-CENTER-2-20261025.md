@@ -1,6 +1,6 @@
 # PLANO — Admin Command Center 2.0 (25/10/2026)
 
-Status: 🟡 EM EXECUÇÃO — missão contínua R0–R5 pedida pelo dono em 25/10 (handoff abaixo, íntegro).
+Status: 🟡 CICLO IMPLEMENTADO, RECERT(C1 `01cc53f`) = FAIL só no portão de dependências (advisories novos, fora do delta) — ver "Resultado do ciclo" no fim. Missão R0–R5 pedida pelo dono em 25/10 (handoff abaixo, íntegro).
 PHASE_BASE_SHA: `10ebd12721f7d20b83a366cdb87a9a0dc1a53f2e` (tree `f7c83c619acc6ae1c40c98d1779bae342670e3da`, = `main` = produção).
 Branch: `claude/admin-command-center-2-20261025` (nova, isolada do trabalho Phantom/Lighthouse/blockhash).
 
@@ -484,3 +484,104 @@ O Claude pode propor decisões com trade-offs e implementações parametrizadas 
 A Z-SWAP já possui um Admin amplo. O gargalo não é quantidade de painéis, mas **identidade individual, autorização por tarefa, provas de integridade, mensagens honestas e organização para operação corporativa**. Começar por R0 e segregar o Admin da autenticação de carteira reduz riscos sem jogar fora anos de desenvolvimento. A nova camada de IA deve ser integrada às métricas existentes, e não recriada em paralelo.
 
 **Autoridade operacional:** este é um plano. O Claude pode iniciar imediatamente implementação local e Preview isolado; somente o proprietário autoriza mudanças sensíveis na produção e no banco real. Não transformar este documento num comando para executar migrações por leitura literal.
+
+---
+
+## Resultado do ciclo (registro de FAIL de recertificação — 01/11/2026)
+
+C1 = `01cc53fa567f3879d7a598e9cf2f915485eb77f8` (tree `e3fc331a93f889bc6c45d13dc03b948a1af3a839`), base `10ebd12`
+(= `main` = produção). **RECERT(C1) = FAIL** — §5.2: sem atestação PASS, sem "tentar até passar". Evidência fora do repo
+`recert-01cc53f-20261101T005448Z`, `MANIFEST.sha256` `b4c99599…07cd39`:
+
+| passo | resultado |
+|---|---|
+| npm ci · type-check · lint · build | rc=0 |
+| vitest ×2 (+ solana) | 352 arquivos / **5395** testes ×2 · 242 solana |
+| varredura de segredos (delta `10ebd12..C1`) | rc=0 |
+| **09-audit-gate** | **rc=1** — `npm audit`: critical 0 · high 23 |
+| suíte SQL local (cadeia 0001→0083, PG 16.15, default privileges do Supabase) | 23/23 sem erro · 23b/24b PASS (sha256 do log `c609226d…dd6a0`) |
+
+**Causa do FAIL:** advisories publicados DEPOIS de 25/10 em dependências transitivas da carteira — `decode-uri-component`
+≤0.5.0 (GHSA-qr28-fpjm-wq7f, via WalletConnect → `query-string@7`) e `follow-redirects` 1.16.0–1.16.1
+(GHSA-mrwp-f3q8-3g9p, via `@coinbase/cdp-sdk` → `axios`). **Esta fase não mudou `package.json` nem o lockfile**: o mesmo
+portão falha hoje em `main`/produção. Correção = C1b, que depende de decisão do dono (abaixo). Nada foi para produção:
+sem deploy, sem merge, sem migration no hospedado, sem variável Vercel.
+
+### Estado por frente
+
+| Frente | Estado | O que existe (commit) | O que falta / por quê |
+|---|---|---|---|
+| R0 controles | 🟢 DONE | kill switches tri-estado + CAS + trilha durável (`d715338`); pilotos do autopilot não apagados por leitura falha (`bcc7535`); paper-reset/repair/recap, margin, ledger/export, ulfhednar, audit-bench com `comandoAuditado` e escrita conferida (`2c4f4c7`, `679fdfb`, `01cc53f`) | decisão do dono D-AUD-1 (abaixo) |
+| R0 verdade | 🟢 DONE (P0) · 🟡 P1/P2 parcial | contrato `OperationalMetric` (`metrica.ts`); `/finance`, `/command`, `/health` (ping real), `/logs`, `/admins`, RECEITA (`ed1b952`, `dff0f10`, `4267967`, `679fdfb`) | P1 restantes do inventário de UI: OperationsPanel, OperationsLedgerPanel, Autopilot/CexSessions (`/stats`); P2 (crescimento/laboratório) |
+| R2 RBAC | 🟢 DONE em `legacy` · 🟡 PARCIAL em execução | `autorizarAdmin(ação)` nos 79 handlers + `autorizarPaginaAdmin` (layout/mural); catálogo 8 papéis × 30 permissões = matriz; completude por handler (ADM-011) com mutação conferida (`2784ec2`, `679fdfb`) | recusa POR PAPEL em tempo de execução depende de R1 (não há principal corporativo); em `dual` a recusa é 404, não 403 |
+| R1 identidade | 🟡 PARCIAL · 🔴 BLOQUEADO | schema `admin_private` (0083, local) com invariantes no banco e trilha append-only; primitivas de sessão (`1ffb49a`) | login Google/Microsoft (PKCE), TOTP aal2, telas `/admin-acesso`: dependem de IdP, 2 contas reais e da 0083 no hospedado |
+| R3 UI | 🟡 PARCIAL | fronteira de erro por painel + `admin/error.tsx`; ⌘K navega; grade móvel; foco seguro na confirmação; h2; reduced-motion; P1 de segurança (SwapAllowlist, Whitelist, Margin, Logs, AdminAccess); custo de IA por consumidor (`4267967`, `ed1b952`) | favoritos, filtros na URL, frescor "há Xs", polling com pausa de aba, labels dos 15 campos, `onClick` em não-botão (14), lint jsx-a11y ampliado |
+| R4 banco | 🟡 PARCIAL (local) · 🔴 hospedado BLOQUEADO | 0079 (M1) · 0080 (M3) · 0081 (M4) · 0082 (M2) + teste 26; toda a suíte SQL e as concorrências 23b/24b passam em PG 16.15 com os default privileges do Supabase reproduzidos (`941dc65`) | M5 (fechar SELECT/INSERT/UPDATE/DELETE por grupo G1–G4) não escrito; aplicar no hospedado exige backup validado (R12) + autorização |
+| R5 legado | 🟡 PARCIAL | observação `admin_legacy_admit {fonte, ação}` (não muda decisão; teto 400 ms; dedupe) + `ADMIN_AUTH_MODE`/`ADMIN_LEGACY_SOURCES` prontos (`2784ec2`) | desligar fontes legadas só depois de R1 em produção e 2 corporativos com MFA testados |
+
+### Testes do plano (§10)
+
+| Teste | Estado |
+|---|---|
+| ADM-001 sem sessão → 404 + evento | 🟢 (`autorizacao.test.ts`) |
+| ADM-002 carteira sem fonte admin → 404 | 🟢 em `legacy`/`dual` |
+| ADM-003 auditor no kill switch | 🟡 só catálogo (papel não tem a permissão); em execução depende de R1 |
+| ADM-004 leitura falha ≠ OFF | 🟢 (`interruptores.test.ts`) |
+| ADM-005 sem intenção gravada não executa | 🟢 (`auditoria-duravel.test.ts`, `comandos-sensiveis.test.ts`) |
+| ADM-006/007 custo/receita não viram $0; cache e modelo sem preço contados | 🟢 (`finance-verdade.test.ts`) |
+| ADM-010 TRUNCATE de anon | 🟢 local (teste SQL 26) · hospedado pendente |
+| ADM-011 endpoint novo sem registro → CI falha | 🟢 (`autorizacao.test.ts`) |
+| ADM-014 RECEITA mostra `falha` | 🟢 |
+
+### Revisão adversarial (uma, no fim do ciclo)
+
+Revisor independente sobre `10ebd12..1ffb49a`: 9 achados; verificador cético por achado: **8 confirmados, 1 refutado**
+(#7, mantido como endurecimento). Todos corrigidos em `679fdfb` com `revisao-adversarial.test.ts`. Destaques: `ilike`
+sem escape na revogação de admin (`%`×20 apagava todos os admins) e conceder plano por cima de admin legado (apagava o
+acesso em silêncio); "ALL CLEAR" com eventos high escondidos por amostra de 1.000; recapitalização dizendo `executado`
+com escrita recusada. Segunda varredura (painéis, rotas de leitura, authz/R1/SQL) sobre `679fdfb`, cada achado julgado por verificador
+cético: **28 achados, 18 confirmados, 10 refutados**; todos os 18 corrigidos em `01cc53f` (C1). Destaques: `/finance` e
+`/command` somavam linha em dobro (offset com escrita concorrente); win-rate do COMMAND sobre recorte de 1.000; CHECK da
+0083 aceitava sessão ativa com `aal` NULL (lógica de três valores); em `dual`, o `env` podia criar `platform_admins` novo e
+o `/tier` podia apagar admin legado por fora das guardas de ADMIN ACCESS; `/health` pendurava com o banco pendurado.
+
+### Decisões pendentes do dono
+
+- **D-DEP-1 (bloqueia a recertificação)** — advisories novos na pilha da carteira. Recomendação: C1b com override
+  `follow-redirects` → `1.16.2` (patch) e exceção ESTREITA R-05 no `audit-exceptions.json` para `decode-uri-component`
+  via `query-string@7`/WalletConnect (a correção 0.5.1 é ESM-only e o consumidor faz `require`; forçar quebra a
+  carteira) até o upgrade da pilha wagmi/WalletConnect, que é trabalho de swap, fora desta missão. Depois: recert completa
+  de C1b. Alternativa: só o override e manter o FAIL até o upgrade.
+
+- **D-AUD-1** — hoje TODO comando sensível é recusado (503) se a intenção não grava na trilha, inclusive os
+  PROTETORES (ligar kill switch, fechar automação, remover piloto). Alternativa: protetor executa mesmo sem trilha e
+  dispara alerta alto. Recomendação: permitir só os protetores, com alerta alto.
+- `admin_legacy_admit` grava em `platform_events` (no máximo 1 por fonte×ator×ação a cada 10 min por instância).
+
+### QA manual (2 identidades, depois da autorização)
+
+1. **Admin A (`ADMIN_WALLETS`)** e **Admin B (`platform_admins`)**, cada um no seu navegador, no preview da branch.
+2. KILL SWITCHES: A liga `disable_swap`; B, sem recarregar, tenta desligar → 409 "outro admin mudou"; B recarrega e
+   desliga → ok. A trilha (`admin_audit_log`) tem `intencao` + `executado` de cada um, com o ator real.
+3. Valor inválido: no banco de preview, `disable_cex = 'TRUE'` → painel mostra "INVÁLIDO — LIGAR?"; ligar grava
+   `true`.
+4. AUTOPILOT: A autoriza piloto P1, B autoriza P2 → lista final tem os dois; com o banco de preview indisponível, a
+   tela mostra LISTA DESCONHECIDA e o botão autorizar fica travado.
+5. ADMIN ACCESS: tentar revogar `%%%%%%%%%%%%%%%%%%%%` → 400; B não consegue revogar a si nem o último admin.
+6. COMMAND/HEALTH/RECEITA/CUSTO DE IA com o banco de preview fora: nenhum "$0"/"ALL CLEAR"/"✓" — só INDISPONÍVEL.
+7. ⌘K: digitar "auditoria" → Enter abre a tela do painel; Shift+Enter liga/desliga na grade.
+8. Celular 360 px: `?all=1` sem scroll lateral.
+9. Export CSV: confere `X-Export-Linhas`/`X-Export-Ate`; o evento `ledger.export` aparece na trilha.
+
+### Rollout e recuperação
+
+| Passo | Ação | Pré-requisito | Volta |
+|---|---|---|---|
+| 1 | merge do PR em `main` + deploy (código, `ADMIN_AUTH_MODE` ausente = `legacy`) | CI verde no SHA; `RELEASE_CANDIDATE` no `RELEASE-CHAIN.md`; autorização | rollback para o deploy atual de produção |
+| 2 | migrations 0079→0082 no hospedado, uma por vez | `pg_dump` + restauração validada; diff de catálogo Q2b/Q3/Q4 antes/depois | os `grant`/`alter default privileges` do cabeçalho de cada migration |
+| 3 | 0083 no hospedado | idem | `drop schema admin_private cascade` (vazio até R1) |
+| 4 | R1: IdP Google/Entra no Supabase Auth, 2 contas, TOTP; `ADMIN_AUTH_MODE=dual` | passos 1–3; runbook §9 do desenho | `ADMIN_AUTH_MODE` ausente (volta a `legacy` no próximo request) |
+| 5 | `corp` | 2 superadmins corporativos com MFA testados; observação R5 sem admissão legada inesperada | `dual` |
+
+**Nunca tranca o dono:** `legacy` é o padrão; `ADMIN_WALLETS` continua admitindo em `legacy`/`dual`; `corp` só depois do
+passo 4.

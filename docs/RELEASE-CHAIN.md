@@ -466,3 +466,13 @@ migration no delta ✓; (5) nenhum `OPEN_BLOCKER` no escopo ✓; (6) gates de ex
 dono, 25/10, nesta conversa — "Autorizo produção (Recomendado)" para `cb8b9ac` ✓. Condição antes do merge: CI verde no
 SHA deste commit. Stop: build/deploy com erro, runtime errors novos, `/api/quote` Solana quebrada, log
 `[jupiter] {"tipo":"blockhash","origem":"jupiter"}` recorrente. Rollback: `dpl_DTzQ9Xy56yZroT1N5XBR8WuW3cAJ` (`0430644`).
+
+## Registro — Admin Command Center 2.0, C1 `01cc53f` (01/11/2026)
+
+NÃO é `RELEASE_CANDIDATE`. C1 = `01cc53fa567f3879d7a598e9cf2f915485eb77f8` (tree `e3fc331a93f889bc6c45d13dc03b948a1af3a839`),
+descende de `10ebd12` (= `main`). **RECERT(C1) = FAIL** no `09-audit-gate` (advisories novos `decode-uri-component` ≤0.5.0
+e `follow-redirects` 1.16.0–1.16.1, transitivos da carteira; lockfile inalterado no delta); demais passos rc=0. Evidência
+`recert-01cc53f-20261101T005448Z`, MANIFEST `b4c99599…07cd39`. Delta inclui migrations **0079–0083** (só repo; aplicação no
+hospedado exige backup validado + autorização). Próximo: decisão D-DEP-1 → C1b → recert completa de C1b → só então,
+com autorização do dono, marcação `RELEASE_CANDIDATE`.
+
