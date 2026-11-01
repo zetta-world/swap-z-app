@@ -287,6 +287,11 @@ export async function lerPrincipal(token: unknown, env: Record<string, string | 
   if (!v.ok) return { ok: false, codigo: "sessao_invalida" };
   if (l.kind === "breakglass") {
     if (!l.breakglass_wallet || !janelaBreakglass(env, agora).aberta) return { ok: false, codigo: "janela_fechada" };
+    // A cada requisição: ainda em `corp` e a carteira ainda em ADMIN_WALLETS (o dono pode tirá-la no meio da janela).
+    const lista = (env.ADMIN_WALLETS ?? "").split(",").map((w) => w.trim().toLowerCase()).filter(Boolean);
+    if ((env.ADMIN_AUTH_MODE ?? "").trim().toLowerCase() !== "corp" || !lista.includes(l.breakglass_wallet.toLowerCase())) {
+      return { ok: false, codigo: "janela_fechada" };
+    }
     void repo.tocarSessao(l.id, agoraIso(agora));
     return { ok: true, principal: { kind: "breakglass", wallet: l.breakglass_wallet, sessionId: l.id, stepUpOk: true } };
   }

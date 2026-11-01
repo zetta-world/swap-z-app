@@ -4,6 +4,7 @@ import { avisoDeAuditoria, comandoAuditado, PORQUE_AUDITORIA_INDISPONIVEL } from
 import { repoCorp } from "@/lib/admin/corp/repo";
 import { novoCodigoDeAtivacao } from "@/lib/admin/corp/fluxo";
 import { PAPEIS, type Papel } from "@/lib/admin/rbac";
+import { lerConfigCorp } from "@/lib/admin/corp/config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,11 +27,18 @@ const PAPEIS_DUPLOS: ReadonlySet<Papel> = new Set(["superadmin", "security_admin
  * `superadmin`/`security_admin` exigem aprovação de outra pessoa → até o fluxo de aprovação existir,
  * só pelo runbook SQL do dono (design §9.5). Concessão exige principal CORPORATIVO (granted_by = identidade).
  */
+/** Sem a configuração R1 (inclui `legacy`), a rota não existe — nem para admin legado (revisão adversarial). */
+const semR1 = () => (lerConfigCorp().ok ? null : new NextResponse(null, { status: 404, headers: SEM_CACHE }));
+
 export async function GET(): Promise<NextResponse> {
   await autorizarAdmin("identity.corp.list");
+  const fechado = semR1();
+  if (fechado) return fechado;
   const r = await repoCorp().listarIdentidades(new Date().toISOString());
   if (!r.ok) return NextResponse.json({ error: "identidades_ilegiveis", state: "unavailable", porque: "não consegui ler admin_private (schema exposto? 0083 aplicada?)" }, { status: 503, headers: SEM_CACHE });
-  return NextResponse.json({ identidades: r.valor, fetchedAt: new Date().toISOString() }, { headers: SEM_CACHE });
+  // Sem `idp_subject`, `auth_user_id`, `mfa_factor_id` nem hash: a tela precisa de quem/estado/papéis, não de identificadores do IdP.
+  const identidades = r.valor.map(({ idp_subject: _s, auth_user_id: _u, mfa_factor_id: _f, activation_code_hash: _h, ...resto }) => resto);
+  return NextResponse.json({ identidades, fetchedAt: new Date().toISOString() }, { headers: SEM_CACHE });
 }
 
 const idDoCorp = (wallet: string) => (wallet.startsWith("corp:") ? wallet.slice(5) : null);
@@ -38,6 +46,8 @@ const uuid = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f-]{3
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const { wallet: ator, fonte } = await autorizarAdmin("identity.corp.write");
+  const fechado = semR1();
+  if (fechado) return fechado;
   const corpo = await req.json().catch(() => null) as Record<string, unknown> | null;
   if (!corpo || typeof corpo.acao !== "string") return NextResponse.json({ error: "invalid_body" }, { status: 400, headers: SEM_CACHE });
   const repo = repoCorp();
@@ -59,7 +69,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       acao: "identity.invite", ator, alvo: `${email.slice(0, 3)}…@${email.split("@")[1]}`, dados: { provider },
       executar: async () => {
         const g = await repo.convidar({ email, provider, issuer, tenant, label: typeof corpo.rotulo === "string" ? corpo.rotulo.slice(0, 80) : null,
-          codigoHash: hash, expira: new Date(Date.now() + ATIVACAO_H * 3600_000).toISOString(), por: eu ?? "" });
+          codigoHash: hash, expira: new Date(Date.now() + ATIVACAO_H * 3600_000).toISOString(), por: eu });
         return g.ok && g.valor ? { ok: true, valor: g.valor } : { ok: false, codigo: "nao_gravou", detalhe: g.ok ? "sem id" : g.erro };
       },
     });
@@ -71,6 +81,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   if (corpo.acao === "revogar") {
     if (!uuid(corpo.id) || typeof corpo.motivo !== "string" || corpo.motivo.trim().length < 5) return recusa("invalid_body", "id e motivo (≥5) obrigatórios");
+    if (!eu && fonte !== "env" && fonte !== "breakglass") return recusa("so_corporativo", "revogar identidade exige identidade corporativa (ou ADMIN_WALLETS / break-glass)", 403);
     if (eu && corpo.id === eu) return recusa("nao_a_si", "ninguém revoga o próprio acesso por aqui", 409);
     const ids = await repo.listarIdentidades(agora);
     if (!ids.ok) return recusa("identidades_ilegiveis", "não consegui conferir os superadmins — NADA foi alterado", 503);
@@ -82,7 +93,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const r = await comandoAuditado({
       acao: "identity.revoke", ator, alvo: alvo.id, dados: { motivo: corpo.motivo.slice(0, 200) }, protetor: true,
       executar: async () => {
-        const g = await repo.revogarIdentidade(alvo.id, eu ?? alvo.id, corpo.motivo as string);
+        const g = await repo.revogarIdentidade(alvo.id, eu, corpo.motivo as string);
         if (!g.ok || !g.valor) return { ok: false, codigo: "nao_gravou" };
         await repo.revogarTodasDaIdentidade(alvo.id, "identidade_revogada", eu);
         return { ok: true, valor: true };
@@ -125,7 +136,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const r = await comandoAuditado({
       acao: "roles.revoke", ator, alvo: atr.id, dados: { papel: atr.role, motivo: corpo.motivo.slice(0, 200) }, protetor: true,
       executar: async () => {
-        const g = await repo.revogarPapel(atr.id, eu ?? dono.id, corpo.motivo as string);
+        const g = await repo.revogarPapel(atr.id, eu, corpo.motivo as string);
         if (!g.ok || !g.valor) return { ok: false, codigo: "nao_gravou" };
         // Troca de papel revoga as sessões do alvo (design §4.4): o papel novo vale no próximo login.
         await repo.revogarTodasDaIdentidade(dono.id, "papel_revogado", eu);

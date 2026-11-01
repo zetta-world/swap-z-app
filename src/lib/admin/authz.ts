@@ -149,7 +149,12 @@ async function decidirCorporativo(
   const { lerConfigCorp } = await import("@/lib/admin/corp/config");
   const cfg = lerConfigCorp();
   if (!cfg.ok) {
-    return negar("admin_corp_config_invalida", { acao, motivo: cfg.motivo, porque: "cookie corporativo presente sem configuração R1 válida" }, "high");
+    // `corp` sem configuração: fecha. `dual`: alerta alto e CAI NO LEGADO — um cookie corporativo
+    // sobrando (chave removida, origem errada) não pode trancar a carteira do dono (revisão adversarial).
+    if (modo === "corp") return negar("admin_corp_config_invalida", { acao, motivo: cfg.motivo }, "high");
+    const { logSecurityAguardado: alerta } = await import("@/lib/admin/auditoria-duravel");
+    await alerta("admin_corp_config_invalida", { acao, motivo: cfg.motivo, porque: "dual: cookie corporativo ignorado, decisão legada" }, "high");
+    return null;
   }
   const { lerPrincipal } = await import("@/lib/admin/corp/fluxo");
   const lido = await lerPrincipal(token);
@@ -158,6 +163,9 @@ async function decidirCorporativo(
     return null;   // dual: cookie velho/inválido não impede a carteira legada
   }
   const p = lido.principal;
+  // `dual`: identidade corporativa ainda SEM papel (convidou a si, papel vem pelo runbook) não sombreia
+  // a carteira legada — cai no legado. Em `corp` não há legado para cair: nega abaixo.
+  if (modo === "dual" && p.kind === "corp" && p.papeis.length === 0) return null;
   const permitido = p.kind === "breakglass"
     ? permissoes.some((x) => PERMISSOES_BREAKGLASS.has(x))
     : algumPapelTem(p.papeis, permissoes);

@@ -107,10 +107,10 @@ export interface RepoCorp {
   revogarTodasDaIdentidade(identityId: string, motivo: string, por: string | null): Promise<R<number>>;
   auditar(l: LinhaAuditoria): Promise<R<boolean>>;
   listarIdentidades(agoraIso: string): Promise<R<IdentidadeComPapeis[]>>;
-  convidar(i: { email: string; provider: "google" | "azure"; issuer: string; tenant: string; label: string | null; codigoHash: Buffer; expira: string; por: string }): Promise<R<string>>;
-  revogarIdentidade(id: string, por: string, motivo: string): Promise<R<boolean>>;
+  convidar(i: { email: string; provider: "google" | "azure"; issuer: string; tenant: string; label: string | null; codigoHash: Buffer; expira: string; por: string | null }): Promise<R<string>>;
+  revogarIdentidade(id: string, por: string | null, motivo: string): Promise<R<boolean>>;
   concederPapel(identityId: string, role: Papel, por: string): Promise<R<string>>;
-  revogarPapel(assignmentId: string, por: string, motivo: string): Promise<R<boolean>>;
+  revogarPapel(assignmentId: string, por: string | null, motivo: string): Promise<R<boolean>>;
   contarSuperadminsAtivos(agoraIso: string): Promise<R<number>>;
 }
 
@@ -151,7 +151,8 @@ const mudou = (d: unknown) => Array.isArray(d) && d.length > 0;
 const papelValido = (r: unknown): r is Papel => typeof r === "string" && (PAPEIS as readonly string[]).includes(r);
 
 export const repoReal: RepoCorp = {
-  identidadePorAuthUser: (uid) => rodar((e) => e.from("admin_identities").select(COLS_IDENT).eq("auth_user_id", uid).maybeSingle(), (d) => (d as Identidade) ?? null),
+  // Revogada não conta: re-convite da mesma pessoa tem de poder vincular de novo (revisão adversarial).
+  identidadePorAuthUser: (uid) => rodar((e) => e.from("admin_identities").select(COLS_IDENT).eq("auth_user_id", uid).neq("status", "revoked").maybeSingle(), (d) => (d as Identidade) ?? null),
   identidadePorId: (id) => rodar((e) => e.from("admin_identities").select(COLS_IDENT).eq("id", id).maybeSingle(), (d) => (d as Identidade) ?? null),
   identidadeConvidada: (email, provider) => rodar((e) => e.from("admin_identities").select(COLS_IDENT)
     .eq("email_normalized", email).eq("provider", provider).eq("status", "invited").is("auth_user_id", null).maybeSingle(), (d) => (d as Identidade) ?? null),
@@ -207,8 +208,11 @@ export const repoReal: RepoCorp = {
     email_normalized: i.email, provider: i.provider, expected_issuer: i.issuer, expected_tenant: i.tenant, display_label: i.label,
     activation_code_hash: hexBytea(i.codigoHash), activation_expires_at: i.expira, invited_by: i.por, status: "invited",
   }).select("id"), (d) => String((d as { id: string }[])[0]?.id ?? "")),
+  // Revogar LIBERA o vínculo (auth_user_id/idp_subject são únicos): sem isto um re-convite ficava preso
+  // para sempre. A identidade anterior fica registrada em admin_audit (ator, alvo, motivo).
   revogarIdentidade: (id, por, motivo) => rodar((e) => e.from("admin_identities").update({
     status: "revoked", revoked_at: new Date().toISOString(), revoked_by: por, reason_code: motivo,
+    auth_user_id: null, idp_subject: null, mfa_factor_id: null,
   }).eq("id", id).neq("status", "revoked").select("id"), mudou),
   concederPapel: (identityId, role, por) => rodar((e) => e.from("admin_role_assignments").insert({ identity_id: identityId, role, granted_by: por }).select("id"),
     (d) => String((d as { id: string }[])[0]?.id ?? "")),
