@@ -221,11 +221,11 @@ describe("dual / corp / inválido", () => {
     expect(s.eventos.map((e) => e.kind)).toContain("admin_modo_invalido");
   });
 
-  it("corp sem R1 implantado → ninguém entra (404 + alerta)", async () => {
+  it("corp sem sessão corporativa → nem a carteira de ADMIN_WALLETS entra (404 + alerta)", async () => {
     vi.stubEnv("ADMIN_AUTH_MODE", "corp");
     s.sessao = { sub: "0xenv" };
     await expect(autorizarAdmin("security.killswitch.read")).rejects.toThrow("NEXT_NOT_FOUND");
-    expect(s.eventos.map((e) => e.kind)).toContain("admin_corp_indisponivel");
+    expect(s.eventos.map((e) => e.kind)).toContain("admin_corp_sem_sessao");
   });
 
   it("dual: fonte fora de ADMIN_LEGACY_SOURCES → 404; dentro → passa", async () => {

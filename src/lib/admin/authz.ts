@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 import { requireAdmin, type FonteLegada } from "@/lib/admin/require";
 import { logSecurityAguardado } from "@/lib/admin/auditoria-duravel";
 import { ACOES, type AcaoId } from "@/lib/admin/acoes";
-import { PERMISSOES_SO_CORPORATIVAS, type Permissao } from "@/lib/admin/rbac";
+import { PERMISSOES_BREAKGLASS, PERMISSOES_SO_CORPORATIVAS, algumPapelTem, type Permissao } from "@/lib/admin/rbac";
+import { COOKIE_ADMIN } from "@/lib/admin/sessao-corporativa";
 
 /**
  * PONTO ÚNICO DE DECISÃO DO ADMIN (R2, Admin CC 2.0) — `autorizarAdmin(ação)`.
@@ -17,48 +18,36 @@ import { PERMISSOES_SO_CORPORATIVAS, type Permissao } from "@/lib/admin/rbac";
  *   · ausente / `legacy` → EXATAMENTE a decisão de hoje (3 fontes legadas). A
  *     única diferença é a observação R5: qual fonte autorizou qual ação
  *     (`admin_legacy_admit`), sem mudar a decisão e sem pendurar a resposta;
- *   · `dual` → só as fontes de `ADMIN_LEGACY_SOURCES` (padrão `env,panel,tier`);
- *     principal legado NÃO recebe identidade/papéis (exceto `env`, o bootstrap
- *     enquanto não há superadmin corporativo — hoje não há tabela de identidade,
- *     logo a contagem é 0). Sessão corporativa ainda NÃO é aceita (R1 desligado);
- *   · `corp` → só sessão corporativa. Enquanto R1 não estiver implantado, isto
- *     FECHA o Admin para todos (404 + alerta alto). Por isso o runbook só manda
- *     ligar `corp` depois de duas contas reais com MFA testadas em `dual`;
+ *   · `dual` → sessão CORPORATIVA válida (R1: Google/Microsoft + TOTP aal2) decide
+ *     POR PAPEL, com step-up nas ações `step_up`; sem ela, só as fontes de
+ *     `ADMIN_LEGACY_SOURCES` (padrão `env,panel,tier`) — principal legado NÃO
+ *     recebe identidade/papéis (exceto `env`, o bootstrap);
+ *   · `corp` → só sessão corporativa (ou break-glass na janela do dono). Sem a
+ *     configuração R1 válida, FECHA o Admin (404 + alerta alto). Por isso o runbook
+ *     só manda ligar `corp` depois de duas contas reais com MFA testadas em `dual`;
  *   · qualquer outro valor → Admin fechado (404) + alerta alto: erro de operador
  *     visível, sem abrir nada.
  *
  * Negação = `notFound()` (404, nunca 403), registrada e AGUARDADA com teto,
- * como em `requireAdmin`. Em `dual` a recusa de permissão também é 404 (o
- * handler não pode devolver Response daqui; anotado como divergência do
- * desenho, que previa 403 para quem já tem sessão).
+ * como em `requireAdmin`. Para o principal corporativo, recusa por papel ou por
+ * step-up também é 404 — e grava `denied` em `admin_audit` (o handler não pode
+ * devolver Response daqui; divergência do desenho §4.7, que previa 403/401:
+ * quem renova o step-up vai a `/admin-acesso/step-up`).
  */
 
-export type ModoAuth = "legacy" | "dual" | "corp";
-const MODOS: readonly ModoAuth[] = ["legacy", "dual", "corp"];
-const FONTES: readonly FonteLegada[] = ["env", "panel", "tier"];
+import { lerModoAuth, fontesLegadasPermitidas, type ModoAuth } from "@/lib/admin/authz-modo";
+export { lerModoAuth, fontesLegadasPermitidas, type ModoAuth, type LeituraModo } from "@/lib/admin/authz-modo";
 
-export type LeituraModo = { ok: true; modo: ModoAuth } | { ok: false; bruto: string };
-
-export function lerModoAuth(env: Record<string, string | undefined> = process.env): LeituraModo {
-  const bruto = env.ADMIN_AUTH_MODE;
-  if (bruto == null || bruto.trim() === "") return { ok: true, modo: "legacy" };
-  const v = bruto.trim().toLowerCase() as ModoAuth;
-  return MODOS.includes(v) ? { ok: true, modo: v } : { ok: false, bruto: bruto.slice(0, 40) };
-}
-
-/** Fontes legadas aceitas em `dual`. Valor ilegível = nenhuma (fecha, não abre). */
-export function fontesLegadasPermitidas(env: Record<string, string | undefined> = process.env): Set<FonteLegada> {
-  const bruto = env.ADMIN_LEGACY_SOURCES;
-  if (bruto == null || bruto.trim() === "") return new Set(FONTES);
-  const pedidas = bruto.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
-  if (pedidas.some((s) => !FONTES.includes(s as FonteLegada))) return new Set();
-  return new Set(pedidas as FonteLegada[]);
-}
+/** Quem foi admitido: uma das fontes legadas, a sessão corporativa (R1) ou o break-glass. */
+export type FonteAdmissao = FonteLegada | "corp" | "breakglass";
 
 export interface Autorizado {
-  /** Compatível com `requireAdmin()`: os handlers que usam o ator seguem iguais. */
+  /**
+   * Compatível com `requireAdmin()`: os handlers que usam o ator seguem iguais. Corporativo =
+   * `corp:<identity_id>`; break-glass = `breakglass:<carteira>` (design §4.7).
+   */
   wallet: string;
-  fonte: FonteLegada;
+  fonte: FonteAdmissao;
   acao: AcaoId;
   modo: ModoAuth;
 }
@@ -66,7 +55,7 @@ export interface Autorizado {
 /** Decisão de PÁGINA (layout, mural): mesmo caminho, rótulo `pagina:<nome>`. */
 export interface PaginaAutorizada {
   wallet: string;
-  fonte: FonteLegada;
+  fonte: FonteAdmissao;
   pagina: string;
   modo: ModoAuth;
 }
@@ -123,7 +112,7 @@ export async function autorizarAdmin(acao: AcaoId): Promise<Autorizado> {
     // Id fora do registro não compila; isto cobre `as never`/JS.
     return negar("admin_acao_desconhecida", { acao: String(acao).slice(0, 80) }, "high");
   }
-  const r = await decidir(acao, def.permissoes);
+  const r = await decidir(acao, def.permissoes, def.mfa === "step_up");
   return { wallet: r.wallet, fonte: r.fonte, acao, modo: r.modo };
 }
 
@@ -134,22 +123,83 @@ export async function autorizarAdmin(acao: AcaoId): Promise<Autorizado> {
  * realtime e o mural. Permissão: `admin.view`.
  */
 export async function autorizarPaginaAdmin(pagina: "shell" | "mural"): Promise<PaginaAutorizada> {
-  const r = await decidir(`pagina:${pagina}`, ["admin.view"]);
+  const r = await decidir(`pagina:${pagina}`, ["admin.view"], false);
   return { wallet: r.wallet, fonte: r.fonte, pagina, modo: r.modo };
 }
 
+/** Cookie da sessão corporativa, se houver. Fora de requisição (testes, build) = nenhum. */
+async function cookieCorporativo(): Promise<string | null> {
+  try {
+    const { cookies } = await import("next/headers");
+    return (await cookies()).get(COOKIE_ADMIN)?.value ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * R1: sessão corporativa (ou break-glass) → decisão POR PAPEL. `null` = não há sessão corporativa
+ * utilizável (o chamador decide o que fazer: `dual` cai no legado, `corp` nega).
+ */
+async function decidirCorporativo(
+  acao: string, permissoes: readonly Permissao[], exigeStepUp: boolean, modo: ModoAuth,
+): Promise<{ wallet: string; fonte: FonteAdmissao; modo: ModoAuth } | null> {
+  const token = await cookieCorporativo();
+  if (!token) return null;
+  const { lerConfigCorp } = await import("@/lib/admin/corp/config");
+  const cfg = lerConfigCorp();
+  if (!cfg.ok) {
+    return negar("admin_corp_config_invalida", { acao, motivo: cfg.motivo, porque: "cookie corporativo presente sem configuração R1 válida" }, "high");
+  }
+  const { lerPrincipal } = await import("@/lib/admin/corp/fluxo");
+  const lido = await lerPrincipal(token);
+  if (!lido.ok) {
+    if (modo === "corp") return negar("admin_corp_sessao_invalida", { acao, codigo: lido.codigo }, lido.codigo === "banco" ? "high" : "med");
+    return null;   // dual: cookie velho/inválido não impede a carteira legada
+  }
+  const p = lido.principal;
+  const permitido = p.kind === "breakglass"
+    ? permissoes.some((x) => PERMISSOES_BREAKGLASS.has(x))
+    : algumPapelTem(p.papeis, permissoes);
+  const quem = p.kind === "breakglass" ? `breakglass:${p.wallet}` : `corp:${p.identityId}`;
+  const negarCorp = async (kind: string, motivo: string): Promise<never> => {
+    try {
+      const { repoCorp } = await import("@/lib/admin/corp/repo");
+      await Promise.race([
+        repoCorp().auditar({
+          request_id: globalThis.crypto.randomUUID(), actor_kind: p.kind === "breakglass" ? "breakglass" : "corp",
+          actor_identity_id: p.kind === "corp" ? p.identityId : null, actor_session_id: p.sessionId,
+          actor_roles: p.kind === "corp" ? [...p.papeis] : [], action: acao, authz_decision: "deny", outcome: "denied", failure_code: motivo,
+        }),
+        new Promise((r) => setTimeout(r, 1_500)),
+      ]);
+    } catch { /* a negação vale com ou sem a linha; o evento abaixo é aguardado */ }
+    return negar(kind, { acao, ator: quem.slice(0, 18), motivo }, "med");
+  };
+  // ADM-003: papel sem a permissão → nega (404) com a trilha `denied` — nada do handler roda.
+  if (!permitido) return negarCorp("admin_rbac_negado", "papel_sem_permissao");
+  if (exigeStepUp && !p.stepUpOk) return negarCorp("admin_step_up_exigido", "step_up_expirado");
+  return { wallet: quem, fonte: p.kind, modo };
+}
+
 async function decidir(
-  acao: string, permissoes: readonly Permissao[],
-): Promise<{ wallet: string; fonte: FonteLegada; modo: ModoAuth }> {
+  acao: string, permissoes: readonly Permissao[], exigeStepUp: boolean,
+): Promise<{ wallet: string; fonte: FonteAdmissao; modo: ModoAuth }> {
   const modo = lerModoAuth();
   if (!modo.ok) {
     return negar("admin_modo_invalido", { bruto: modo.bruto, porque: "ADMIN_AUTH_MODE inválido — Admin fechado" }, "high");
   }
 
+  // R1: em `dual`/`corp` a sessão corporativa, quando existe, decide (RBAC real + step-up).
+  // Em `legacy` (padrão) o cookie corporativo NEM É LIDO: a decisão é byte a byte a de antes.
+  if (modo.modo !== "legacy") {
+    const corp = await decidirCorporativo(acao, permissoes, exigeStepUp, modo.modo);
+    if (corp) return corp;
+  }
+
   if (modo.modo === "corp") {
-    // R1 (sessão corporativa + MFA) ainda não está implantado: nada é aceito.
-    return negar("admin_corp_indisponivel", {
-      acao, porque: "ADMIN_AUTH_MODE=corp sem sessão corporativa implantada (R1)",
+    return negar("admin_corp_sem_sessao", {
+      acao, porque: "ADMIN_AUTH_MODE=corp: só sessão corporativa (ou break-glass) entra",
     }, "high");
   }
 

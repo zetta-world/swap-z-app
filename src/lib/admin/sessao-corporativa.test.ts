@@ -65,10 +65,10 @@ describe("0083 amarrada ao código", () => {
   it("token_hash tem 32 bytes no banco, igual ao hashDoToken", () => {
     expect(sql).toMatch(/token_hash\s+bytea not null unique check \(length\(token_hash\) = 32\)/);
   });
-  it("nenhum código lê admin_private ainda (R1 desligado de verdade)", async () => {
+  it("R1 (31/10): SÓ corp/repo.ts abre o schema admin_private — nenhum outro caminho fala com ele", async () => {
     const { execSync } = await import("node:child_process");
-    const achados = execSync("grep -rln \"admin_private\" src --include=*.ts --include=*.tsx || true", { encoding: "utf8" })
+    const achados = execSync("grep -rlnE \"schema\\(\\s*[\\\"']admin_private\" src --include=*.ts --include=*.tsx || true", { encoding: "utf8" })
       .split("\n").filter((l) => l && !l.endsWith(".test.ts"));
-    expect(achados).toEqual([]);
+    expect(achados).toEqual(["src/lib/admin/corp/repo.ts"]);
   });
 });

@@ -74,3 +74,12 @@ export function papelTem(papel: Papel, p: Permissao): boolean {
 export function algumPapelTem(papeis: readonly Papel[], alternativas: readonly Permissao[]): boolean {
   return papeis.some((r) => alternativas.some((p) => papelTem(r, p)));
 }
+
+/**
+ * BREAK-GLASS (design §6): o que uma sessão de emergência PODE — recuperar acesso e travar o
+ * incidente. NÃO pode: exports, configuração financeira, liberação de automação, instrução a agentes.
+ */
+export const PERMISSOES_BREAKGLASS: ReadonlySet<Permissao> = new Set<Permissao>([
+  "admin.view", "identity.read", "identity.invite", "identity.revoke", "roles.grant", "roles.revoke",
+  "security.read", "security.killswitch.write", "audit.read",
+]);

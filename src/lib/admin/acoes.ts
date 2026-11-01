@@ -34,6 +34,8 @@ export interface Acao {
 
 export const ACOES = {
   "identity.admins.list": { metodo: "GET", rota: "/admin/api/admins", permissoes: ["identity.read"], risco: "read", mfa: "mfa_login", auditoria: "acesso", dados: "identity" },
+  "identity.corp.list": { metodo: "GET", rota: "/admin/api/identidades", permissoes: ["identity.read"], risco: "read", mfa: "mfa_login", auditoria: "acesso", dados: "identity" },
+  "identity.corp.write": { metodo: "POST", rota: "/admin/api/identidades", permissoes: ["identity.invite", "identity.revoke", "roles.grant", "roles.revoke"], risco: "identity", mfa: "step_up", auditoria: "duravel_fail_closed", dados: "identity", subacoes: ["identity.invite", "identity.revoke", "roles.grant", "roles.revoke"] },
   "identity.admins.write": { metodo: "POST", rota: "/admin/api/admins", permissoes: ["identity.invite", "identity.revoke"], risco: "identity", mfa: "step_up", auditoria: "duravel_fail_closed", dados: "identity", subacoes: ["identity.admins.grant", "identity.admins.revoke"] },
   "ai.circuit.read": { metodo: "GET", rota: "/admin/api/ai-circuit", permissoes: ["ai.read"], risco: "read", mfa: "mfa_login", auditoria: "nao", dados: "operational" },
   "ai.circuit.reset": { metodo: "POST", rota: "/admin/api/ai-circuit", permissoes: ["ai.control"], risco: "sensitive_write", mfa: "step_up", auditoria: "duravel_fail_closed", dados: "operational" },

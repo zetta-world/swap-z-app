@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
+import { lerModoAuth } from "@/lib/admin/authz-modo";
 
 /**
  * Edge middleware — roda antes de toda requisição do matcher abaixo.
@@ -39,7 +40,18 @@ import { jwtVerify } from "jose";
  */
 export async function middleware(req: NextRequest): Promise<NextResponse> {
   if (req.nextUrl.pathname.startsWith("/admin")) {
-    const temSessao = await sessaoValida(req);
+    /**
+     * R1 (Admin CC 2.0): em `dual` vale a sessão da carteira OU o cookie corporativo com o FORMATO
+     * certo (`za1_` + 43); em `corp` só o corporativo. A borda não tem banco: confere presença/formato,
+     * e quem decide é `autorizarAdmin` (revogação, papel, MFA). `legacy` (padrão) = exatamente antes.
+     */
+    const modo = lerModoAuth();
+    const corp = /^za1_[A-Za-z0-9_-]{43}$/.test(req.cookies.get(COOKIE_ADMIN)?.value ?? "");
+    // Modo inválido: deixa passar quem tem sessão para o `autorizarAdmin` NEGAR com alerta alto
+    // (fechar aqui em silêncio esconderia o erro de operador).
+    const temSessao = !modo.ok || modo.modo === "legacy" ? await sessaoValida(req)
+      : modo.modo === "corp" ? corp
+      : corp || await sessaoValida(req);
     if (!temSessao) {
       return new NextResponse(null, { status: 404 });
     }
@@ -56,6 +68,8 @@ export const config = {
 const ISSUER   = "z-swap";
 const AUDIENCE = "z-swap-app";
 const COOKIE   = "zswap_session";
+/** Mesmo nome de `sessao-corporativa.ts` (repetido: aquele módulo usa node:crypto, a borda é Edge). */
+const COOKIE_ADMIN = "__Host-zswap_admin";
 
 /**
  * Existe cookie de sessão assinado e válido? Só isso.

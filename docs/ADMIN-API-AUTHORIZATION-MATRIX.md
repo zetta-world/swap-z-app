@@ -2,7 +2,7 @@
 
 Status: 🔴 PROPOSTA — nada disto está aplicado. Hoje **todas** as rotas usam a mesma decisão binária `requireAdmin()` (carteira com sessão + `ADMIN_WALLETS` | `platform_admins` | `tier_cache.source='admin'`). Papéis, MFA e step-up dependem de R1 e de decisões do dono (plano §10).
 
-Gerada de `routes.json` (79 linhas = 66 `route.ts` × métodos exportados) no baseline `ec63cb9` (src = `10ebd12`). Inventário e evidências: `docs/ADMIN-COMMAND-CENTER-INVENTARIO.md` § Rotas /admin/api. Não editar à mão: regenerar do código.
+Gerada de `routes.json` (79 linhas = 66 `route.ts` × métodos exportados; +2 em 31/10: `/admin/api/identidades` GET/POST, R1) no baseline `ec63cb9` (src = `10ebd12`). Inventário e evidências: `docs/ADMIN-COMMAND-CENTER-INVENTARIO.md` § Rotas /admin/api. Não editar à mão: regenerar do código.
 
 ## Legenda
 
@@ -60,6 +60,8 @@ Gerada de `routes.json` (79 linhas = 66 `route.ts` × métodos exportados) no ba
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | `/admin/api/admins` | GET | `identity.admins.list` | `read` | corp_session | mfa_login | `identity.read` · min `security_admin` | identity | R | L: platform_admins, tier_cache | acesso | `mascara_vazio` | nenhum → RL-leitura | caixa.test.ts (fonte), revogar-nao-pode-mentir.test.ts (fonte), plano-nao-e-admin.test.ts (fonte) |
 | `/admin/api/admins` | POST | `identity.admins.grant \| identity.admins.revoke` | `identity` | corp_session | step_up | `identity.invite \| identity.revoke` · min `superadmin` | identity | W | E: platform_admins, tier_cache | duravel_fail_closed | `escrita_conferida` | nenhum → RL-sensivel | caixa.test.ts (fonte), revogar-nao-pode-mentir.test.ts (fonte), plano-nao-e-admin.test.ts (fonte) |
+| `/admin/api/identidades` | GET | `identity.corp.list` | `read` | corp_session | mfa_login | `identity.read` · min `security_admin` | identity | R | L: admin_private.admin_identities, admin_role_assignments | acesso | `503_em_falha` | nenhum → RL-leitura | corp/identidades.test.ts |
+| `/admin/api/identidades` | POST | `identity.invite \| identity.revoke \| roles.grant \| roles.revoke` | `identity` | corp_session | step_up | `identity.invite \| identity.revoke \| roles.grant \| roles.revoke` · min `superadmin` | identity | W | E: admin_private.admin_identities, admin_role_assignments, admin_sessions | duravel_fail_closed | `escrita_conferida` | nenhum → RL-sensivel | corp/identidades.test.ts |
 | `/admin/api/ai-circuit` | GET | `ai.circuit.read` | `read` | corp_session | mfa_login | `ai.read` · min `operations` | operational | R | L: admin_kv | nao | `mascara_zero` | nenhum → RL-leitura | — (só varredura) |
 | `/admin/api/ai-circuit` | POST | `ai.circuit.reset` | `sensitive_write` | corp_session | step_up | `ai.control` · min `operations` | operational | W | E: admin_kv | duravel_fail_closed | `escrita_nao_conferida` | nenhum → RL-sensivel | — (só varredura) |
 | `/admin/api/alert-test` | POST | `ops.alert.test` | `write` | corp_session | mfa_login | `ops.control` · min `operations` | operational | W | E: platform_events · ext: api.telegram.org | telemetria | `n/a` | nenhum → RL-externo | — (só varredura) |

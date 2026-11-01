@@ -567,3 +567,51 @@ Login de carteira dos clientes, W1/W3/W4, swaps, tiers, Founder Pass, CEX/autopi
 - `scratchpad/admin-cc2/auth/db-auth-agregados.json`: as 3 consultas agregadas (sem PII) e a 4ª negada.
 - `node_modules/@supabase/auth-js/dist/main/{GoTrueClient,GoTrueAdminApi}.js` e `lib/types.d.ts` (2.108.0): linhas citadas em §4.1.
 - `node_modules/next/dist/docs/01-app/02-guides/authentication.md:1356-1362` (layout e auth), `…/server-actions.md:82` (checagem de origem só em Server Actions), `…/forbidden.md:4` (`forbidden()`/`unauthorized()` ainda experimentais — não usados aqui).
+
+---
+
+## 13. Implementação (31/10/2026) — R1 no código, DESLIGADO por padrão
+
+Status: 🟡 **código pronto e testado com Supabase Auth/banco falsos**; ativação 🔴 **BLOQUEADA** até IdP configurado
+(§9), 0083 aplicada no hospedado com `admin_private` exposto no Data API, variáveis na Vercel e QA com 2 contas reais.
+
+| peça | arquivo |
+|---|---|
+| configuração (desliga tudo se faltar qualquer peça; `legacy` = desligado) | `src/lib/admin/corp/config.ts` |
+| selo do fluxo PKCE (JWE A256GCM) e refresh token cifrado (AES-256-GCM, AAD = id da sessão) | `src/lib/admin/corp/selo.ts` |
+| cliente Supabase Auth por requisição, em memória (tokens nunca no navegador) | `src/lib/admin/corp/auth-cliente.ts` |
+| repositório `admin_private` (só ele abre o schema — teste) | `src/lib/admin/corp/repo.ts` |
+| fluxo: início, callback + vínculo, MFA (ativação, bloqueio 5/15 min), sessão ativa com id novo, step-up, logout, break-glass, principal | `src/lib/admin/corp/fluxo.ts` |
+| decisão por papel em `dual`/`corp` (ADM-003 em execução) | `src/lib/admin/authz.ts` (`decidirCorporativo`) |
+| rotas | `src/app/api/admin-auth/{start,callback,mfa,step-up,logout,breakglass}` |
+| telas | `src/app/(admin-acesso)/admin-acesso/{,mfa,step-up,sair,breakglass}` |
+| gestão de identidades/papéis (step-up, trilha durável) | `src/app/admin/api/identidades` (+2 linhas na matriz) |
+| borda: `dual` aceita carteira OU cookie `za1_…`; `corp` só o cookie | `src/middleware.ts` |
+| testes | `src/lib/admin/corp/r1.test.ts`, `identidades.test.ts` (mutação: RBAC, step-up e vínculo quebrados são detectados) |
+
+**Divergências do desenho, conscientes:**
+- recusa por papel ou por step-up expirado é **404** (não 403/401): o `autorizarAdmin` não devolve `Response`. A
+  negação grava `denied` em `admin_audit`. Para renovar o step-up: `/admin-acesso/step-up?volta=<painel>`;
+- `admin_approvals` (dupla autorização) **não** foi criado: conceder `superadmin`/`security_admin` pela API devolve
+  409 `dupla_autorizacao`; os dois primeiros superadmins entram pelo SQL abaixo (executado pelo dono, com duas pessoas
+  presentes);
+- a trilha de LOGIN (`admin_audit`) é observação com teto (não derruba a resposta); os comandos do Admin continuam com a
+  trilha durável fail-closed.
+
+**Variáveis (§9.4) + uma nova:** `ADMIN_AUTH_MODE`, `ADMIN_LEGACY_SOURCES`, `ADMIN_SESSION_ENC_KEY` (32 bytes base64),
+`ADMIN_ORIGIN`, `ADMIN_BREAKGLASS_UNTIL`, `ADMIN_IDP_PROVIDERS` (`google,azure`; padrão os dois) e, opcional,
+`ADMIN_GOOGLE_HD` (só dica de domínio na tela do Google).
+
+**Bootstrap dos 2 primeiros superadmins (SQL do dono, depois do 1º login + MFA de AMBOS):**
+
+```sql
+-- 1) as duas identidades já fizeram login + TOTP (status 'active'); confira os ids:
+select id, email_normalized, status from admin_private.admin_identities where status = 'active';
+-- 2) cada um concede ao OUTRO, com a aprovação do outro (o CHECK exige approved_by ≠ granted_by ≠ identity_id):
+insert into admin_private.admin_role_assignments (identity_id, role, granted_by, approved_by)
+values ('<ID_B>', 'superadmin', '<ID_A>', '<ID_C_OU_A_COM_OUTRO_APROVADOR>');
+-- ⚠️ com só duas pessoas, o CHECK (approved_by <> granted_by e <> identity_id) exige uma TERCEIRA identidade
+-- (o security_admin do gate de `corp`, §7) para aprovar cada concessão alta.
+insert into admin_private.admin_audit (request_id, actor_kind, action, authz_decision, outcome)
+values (gen_random_uuid()::text, 'system', 'roles.grant.bootstrap', 'allow', 'succeeded');
+```
