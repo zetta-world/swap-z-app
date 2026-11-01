@@ -1509,3 +1509,30 @@ segredos; suíte SQL local 23/23 + 23b/24b). Evidência fora do repo `recert-01c
 `b4c99599…07cd39`. Sem produção, sem migration hospedada, sem Vercel. PR rascunho aberto para `main` (não mergear).
 Pendente do dono: D-DEP-1 (C1b), D-AUD-1, e a autorização única (IdP, contas, MFA, migrations no hospedado com backup
 validado, variáveis Vercel, merge/deploy) — ver `docs/PLANO-ADMIN-COMMAND-CENTER-2-20261025.md`, "Resultado do ciclo".
+
+## ADMIN-CC2 — C1b `bb8d838`: RECERT PASS (01/11/2026)
+
+**Decisões do dono (31/10):** D-DEP-1 = override `follow-redirects` ^1.16.2 + exceção estreita **R-05**
+(`decode-uri-component` via `query-string@7`/WalletConnect; a 0.5.1 é ESM-only e o consumidor faz `require`);
+D-AUD-1 = comando PROTETOR executa sem trilha com alerta alto; autorizações (a) IdP + 2 contas, (b) migrations hospedadas
+com backup, (c) Vercel, (d) merge/deploy.
+
+**Entregue (commits sobre `000db6a`):** `9e80577` deps · `c2f7e4e` D-AUD-1 · `b1fbdc3` P1 operations/ledger/stats ·
+`15b5df7` a11y (0 violações; 4 regras jsx-a11y como erro no Admin), polling com pausa de aba, frescor por `fetchedAt`,
+lab sem escrita inútil · `eff66d7` migrations 0084–0087 (M5, só local) · `d9043ee` R1 (PKCE no servidor, TOTP aal2,
+sessões, step-up, break-glass, identidades; DESLIGADO em legacy) · `3a7a61f`/`bccd501`/`bb8d838` revisão adversarial.
+
+**Revisão adversarial (rodada 3, delta `01cc53f..d9043ee`):** revisor independente, 13 achados; verificador cético
+sobre os sutis. Corrigidos 12 com teste de regressão (convite com uuid vazio, dono sombreado em `dual`, break-glass sem
+reconferir modo/carteira e podendo DESLIGAR interruptor, re-convite preso, rota de identidades exposta sem R1, autoria
+falsa, identidade errada com auto-link, claim de tenant ausente aprovando, corrida no contador de TOTP, cadastro repetido do
+TOTP, logout parcial, polling sem escopo). Aceito: cookie roubado pode forçar bloqueio de MFA do dono (DoS, revisor).
+
+**RECERT(C1b) = PASS** — `CERTIFIED_FEATURE_SHA=bb8d838fb480d42c41b2b32530b7179dc2479855`, evidência `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/evidence/recert-bb8d838-20261101T084659Z`, MANIFEST `40982af0b8a97efcea1d8e898307035045e4b477e503b1fda38b035f32eb4fcd`.
+
+**Backup:** dump lógico do hospedado tentado em 31/10 FALHOU (papel temporário da CLI expirou antes do `pg_dump`); nada
+foi aplicado. Backups físicos diários da plataforma existem (último 31/10 08:58 UTC). Antes das migrations: novo dump +
+restauração validada.
+
+**BLOQUEADO (depende do dono):** IdP Google/Entra e contas reais com TOTP; o CHECK da 0083 exige **3 identidades** para
+conceder `superadmin` (aprovador ≠ concedente ≠ alvo); `corp` só depois de `dual` com essas contas.

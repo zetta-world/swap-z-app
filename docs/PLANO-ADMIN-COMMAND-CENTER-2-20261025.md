@@ -585,3 +585,20 @@ o `/tier` podia apagar admin legado por fora das guardas de ADMIN ACCESS; `/heal
 
 **Nunca tranca o dono:** `legacy` é o padrão; `ADMIN_WALLETS` continua admitindo em `legacy`/`dual`; `corp` só depois do
 passo 4.
+
+## Resultado do ciclo — C1b (01/11/2026)
+
+`CERTIFIED_FEATURE_SHA=bb8d838fb480d42c41b2b32530b7179dc2479855` — RECERT PASS (evidência
+`zswap-local/evidence/recert-bb8d838-20261101T084659Z`). Decisões D-DEP-1 e D-AUD-1 tomadas e implementadas.
+
+| Frente | Estado | Commit |
+|---|---|---|
+| R0 controles + D-AUD-1 | 🟢 DONE | `c2f7e4e` |
+| R0 verdade (P1 Operations, Ledger, Autopilot/CexSessions via `/stats`) | 🟢 DONE · P2: lab sem escrita inútil DONE; crescimento/laboratório restantes 🟡 | `b1fbdc3`, `15b5df7` |
+| R2 RBAC | 🟢 DONE em legacy/dual/corp (recusa por PAPEL em execução, ADM-003) | `2784ec2`, `d9043ee` |
+| R1 identidade | 🟡 código DONE e testado com mocks · 🔴 ativação BLOQUEADA (IdP + contas reais; 3 identidades para o 1º superadmin) | `d9043ee`, `bb8d838` |
+| R3 UI | 🟢 polling com pausa de aba, frescor, 15 rótulos, 0 violações jsx-a11y (4 regras como erro) · 🟡 favoritos/filtros na URL | `15b5df7` |
+| R4 banco | 🟢 M1–M5 escritas e testadas local (0079–0087) · 🟡 hospedado pendente de backup validado | `941dc65`, `eff66d7` |
+| R5 legado | 🟡 observação pronta; desligar fontes só depois de R1 em produção | — |
+| Dependências | 🟢 `follow-redirects` corrigido; R-05 TEMPORÁRIA (`decode-uri-component`) até upgrade da pilha WalletConnect | `9e80577` |
+

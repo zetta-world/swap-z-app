@@ -12,14 +12,13 @@
 
 ---
 
-## Atualização ADMIN COMMAND CENTER 2.0 (01/11/2026)
+## Atualização ADMIN COMMAND CENTER 2.0 (01/11/2026, C1b)
 
-Produção inalterada por esta fase (`main` = `10ebd12`). Branch `claude/admin-command-center-2-20261025`, C1 `01cc53f`:
-R0/R2 entregues, R1/R3/R4/R5 parciais (detalhe e bloqueios em `docs/PLANO-ADMIN-COMMAND-CENTER-2-20261025.md`, "Resultado
-do ciclo"). **RECERT(C1) = FAIL** só no portão de dependências — advisories NOVOS (`decode-uri-component`,
-`follow-redirects`) na pilha da carteira; o mesmo portão falha hoje em `main`. Migrations 0079–0083 existem só no repo
-(testadas em PG local), **não** no Supabase hospedado. PR rascunho para `main`. Pendente: decisões D-DEP-1 e D-AUD-1 e a
-autorização única do dono (IdP/contas/MFA, migrations hospedadas com backup, Vercel, merge/deploy).
+`CERTIFIED_FEATURE_SHA=bb8d838fb480d42c41b2b32530b7179dc2479855` (RECERT PASS; ledger "ADMIN-CC2 — C1b"). Branch
+`claude/admin-command-center-2-20261025`, PR #451. Produção ainda em `10ebd12` até o merge/deploy autorizado (em
+`ADMIN_AUTH_MODE` ausente = legacy). Migrations 0079–0087 só no repo; no hospedado, uma por vez, depois de dump lógico +
+restauração validada. R1 (login corporativo) implementado e DESLIGADO; ativar depende de IdP + contas reais (3 identidades
+para o 1º superadmin).
 
 ## Atualização C1c — blockhash do servidor (25/10/2026, tarde)
 
