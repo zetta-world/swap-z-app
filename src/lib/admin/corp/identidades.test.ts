@@ -2,7 +2,7 @@
  * R1 — /admin/api/identidades: convite, revogação e papéis com as invariantes do desenho §4.8/§7.
  * Repositório falso; trilha durável mockada (gravando). Nada real.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { createHash } from "node:crypto";
 
@@ -35,7 +35,11 @@ import { GET, POST } from "@/app/admin/api/identidades/route";
 const EU = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const OUTRO = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const post = (b: unknown) => POST(new NextRequest("https://z.test/admin/api/identidades", { method: "POST", body: JSON.stringify(b) }));
+afterEach(() => vi.unstubAllEnvs());
 beforeEach(() => {
+  // A rota só existe com a configuração R1 completa (404 sem ela — teste próprio abaixo).
+  for (const [k, v] of Object.entries({ ADMIN_AUTH_MODE: "dual", ADMIN_SESSION_ENC_KEY: Buffer.alloc(32, 7).toString("base64"),
+    ADMIN_ORIGIN: "https://z.test", SUPABASE_URL: "https://sb.test", SUPABASE_ANON_KEY: "anon" })) vi.stubEnv(k, v);
   s.ator = { wallet: `corp:${EU}`, fonte: "corp" }; s.trilha = []; s.fora = false;
   s.ids = [{ id: EU, status: "active", email_normalized: "eu@e.com" }, { id: OUTRO, status: "active", email_normalized: "outro@e.com" }];
   s.papeis = [{ id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", identity_id: EU, role: "superadmin" }];
@@ -87,5 +91,22 @@ describe("papéis — sem autoelevação, dupla autorização e último superadm
     s.fora = true;
     expect((await post({ acao: "revogar", id: OUTRO, motivo: "teste longo" })).status).toBe(503);
     expect(s.ids.find((i) => i.id === OUTRO)?.status).toBe("active");
+  });
+});
+
+describe("sem R1", () => {
+  it("legacy (sem configuração) → 404 em GET e POST, nem admin legado vê identidades", async () => {
+    vi.stubEnv("ADMIN_AUTH_MODE", "");
+    expect((await GET()).status).toBe(404);
+    expect((await post({ acao: "revogar", id: OUTRO, motivo: "teste longo" })).status).toBe(404);
+  });
+  it("GET não expõe sub, auth_user_id, fator nem hash", async () => {
+    s.ids[0] = { ...s.ids[0], idp_subject: "sub-x", auth_user_id: "uid-x", mfa_factor_id: "f-x", activation_code_hash: "h" };
+    const t = JSON.stringify(await (await GET()).json());
+    for (const x of ["sub-x", "uid-x", "f-x", "activation_code_hash"]) expect(t).not.toContain(x);
+  });
+  it("revogar por legado panel/tier → 403", async () => {
+    s.ator = { wallet: "0xpanel", fonte: "panel" };
+    expect((await post({ acao: "revogar", id: OUTRO, motivo: "teste longo" })).status).toBe(403);
   });
 });

@@ -352,10 +352,18 @@ describe("ADM-012 · break-glass", () => {
     expect(JSON.stringify(b.eventos)).toContain("admin_breakglass_usado");
     if (!ok.ok) return;
     // dentro da janela: trava incidente (kill switch) mas NÃO exporta dinheiro
-    vi.stubEnv("ADMIN_AUTH_MODE", "corp"); vi.stubEnv("ADMIN_BREAKGLASS_UNTIL", futuro);
+    vi.stubEnv("ADMIN_AUTH_MODE", "corp"); vi.stubEnv("ADMIN_BREAKGLASS_UNTIL", futuro); vi.stubEnv("ADMIN_WALLETS", "0xdono");
     b.cookie = ok.tokenAdmin;
     await expect(autorizarAdmin("security.killswitch.set")).resolves.toMatchObject({ fonte: "breakglass" });
     await expect(autorizarAdmin("finance.ledger.export")).rejects.toThrow("NEXT_NOT_FOUND");
+    // carteira tirada de ADMIN_WALLETS no meio da janela → a sessão de emergência morre na hora
+    vi.stubEnv("ADMIN_WALLETS", "0xoutra");
+    await expect(autorizarAdmin("security.killswitch.set")).rejects.toThrow("NEXT_NOT_FOUND");
+    vi.stubEnv("ADMIN_WALLETS", "0xdono");
+    // e voltar a `dual` também a mata (break-glass só existe em `corp`)
+    vi.stubEnv("ADMIN_AUTH_MODE", "dual");
+    await expect(lerPrincipal(ok.tokenAdmin)).resolves.toEqual({ ok: false, codigo: "janela_fechada" });
+    vi.stubEnv("ADMIN_AUTH_MODE", "corp");
     // janela fechada → a sessão de emergência morre na próxima requisição
     vi.stubEnv("ADMIN_BREAKGLASS_UNTIL", "");
     await expect(autorizarAdmin("security.killswitch.set")).rejects.toThrow("NEXT_NOT_FOUND");
