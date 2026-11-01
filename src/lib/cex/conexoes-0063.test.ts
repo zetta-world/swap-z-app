@@ -237,6 +237,9 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
      * ⚠️ ESTADO MEDIDO (21/10, `list_migrations` no Supabase de produção): 0059–0076 FORAM
      * aplicadas em 14/10. A frase antiga "nenhuma foi aplicada" ficou desatualizada.
      */
+    /* E 0084–0087 (Admin CC 2.0, R4/M5, 31/10): fechamento TOTAL das 34 tabelas ainda abertas, uma
+     * migration por grupo (G1 identidade · G2 automação · G3 eventos/IA · G4 laboratório), só
+     * `revoke all … from public, anon, authenticated` — service_role intacto; teste SQL 28. */
     const novas = readdirSync("supabase/migrations")
       .filter((f) => f.endsWith(".sql") && f.slice(0, 4) > "0062")
       .sort();
@@ -262,6 +265,10 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
       "0081_search_path_com_pg_temp.sql",
       "0082_default_privileges_fechados.sql",
       "0083_admin_private_identidade_rbac.sql",
+      "0084_acl_m5_g1_identidade.sql",
+      "0085_acl_m5_g2_automacao.sql",
+      "0086_acl_m5_g3_eventos_ia.sql",
+      "0087_acl_m5_g4_laboratorio.sql",
     ]);
   });
 });
