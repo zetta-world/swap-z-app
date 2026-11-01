@@ -1,4 +1,20 @@
-# R-03 → R-04 — EXCEÇÃO ESTREITA E TEMPORÁRIA DO `npm audit` · 🟡 R-04 EM USO · revisão obrigatória antes do RC
+# R-03 → R-04 → R-05 — EXCEÇÕES ESTREITAS E TEMPORÁRIAS DO `npm audit` · 🟡 R-04 + R-05 EM USO · revisão obrigatória antes do RC
+
+## R-05 (decode-uri-component) — EM USO desde 31/10/2026 · follow-redirects CORRIGIDO
+
+> **Decisão do dono (31/10/2026, missão Admin CC 2.0 continuação, D-DEP-1):** "Override + exceção R-05".
+
+| | |
+|---|---|
+| advisory | `decode-uri-component` ≤0.5.0 — GHSA-qr28-fpjm-wq7f (source 1243857), high |
+| caminho único | `wagmi` → `@wagmi/connectors` → `@walletconnect/ethereum-provider` → `@walletconnect/utils` (+ cópias sob `@reown/appkit*` / `@walletconnect/universal-provider`) → `query-string@7.1.3` → `decode-uri-component@0.2.2` |
+| por que não corrigir agora | a 0.5.1 é ESM-only (`"type": "module"`); `query-string@7` é CommonJS e faz `require('decode-uri-component')` e chama o retorno como função — com a 0.5.1 o `require` devolveria o objeto do módulo e a conexão WalletConnect quebraria |
+| alcance | só o navegador (conector WalletConnect/EVM); nenhum código do app importa `decode-uri-component` nem `query-string` |
+| correção real | upgrade da pilha wagmi/@walletconnect para versão sem `query-string@7` — fase própria de carteira/swap |
+| cadeia registrada | só os 5 pacotes novos: `@walletconnect/core`, `@walletconnect/sign-client`, `@walletconnect/universal-provider`, `decode-uri-component`, `query-string`; a cadeia da R-04 ficou intacta |
+| corrigido de verdade junto | `follow-redirects` 1.16.1 → **1.16.2** (GHSA-mrwp-f3q8-3g9p) por override `^1.16.2`; some do relatório |
+| prova | `src/lib/release/audit-gate.test.ts` (bloco R-05, fixture `fixtures/npm-audit-r05-20261031.json` = `npm audit --json` real do lock); a R-04 foi congelada em `fixtures/audit-exceptions-r04-20261025.json` |
+
 
 ## R-04 (zod) — EM USO desde 25/10/2026 · R-03 RETIRADA
 
