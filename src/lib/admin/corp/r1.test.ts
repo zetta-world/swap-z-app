@@ -56,16 +56,17 @@ function repoFalso(): RepoCorp {
 // ── Supabase Auth falso ──────────────────────────────────────────────────────
 const a = vi.hoisted(() => ({
   usuario: null as null | { authUserId: string; email: string | null; emailVerificado: boolean; provedor: string | null; sujeito: string | null; issuer: string | null; tenant: string | null },
-  codigoTotp: "123456", aal: "aal2", signOuts: 0, verificador: "verif-1", refreshValido: true,
+  codigoTotp: "123456", aal: "aal2", signOuts: 0, verificador: "verif-1", refreshValido: true, palpites: 0, multiplas: false,
 }));
 function authFalso(): ClienteAuthCorp {
   return {
     iniciarOAuth: async ({ provedor, redirectTo }) => ({ url: `https://sb.test/auth/v1/authorize?provider=${provedor}&redirect_to=${encodeURIComponent(redirectTo)}`, verificador: a.verificador }),
-    trocarCodigo: async (code, verificador) => (code === "codigo-bom" && verificador === a.verificador && a.usuario
-      ? { tokens: { accessToken: "at-1", refreshToken: "rt-1" }, usuario: a.usuario } : null),
+    trocarCodigo: async (code, verificador, provedor) => (code === "codigo-bom" && verificador === a.verificador && a.usuario
+      ? { tokens: { accessToken: "at-1", refreshToken: "rt-1" }, usuario: { ...a.usuario,
+          multiplasIdentidades: a.multiplas, provedor: a.usuario.provedor === provedor ? provedor : a.usuario.provedor } } : null),
     restaurar: async (rt) => (a.refreshValido && rt.startsWith("rt-") ? { accessToken: "at-2", refreshToken: `rt-${Math.random()}` } : null),
     matricularTotp: async () => ({ factorId: "11111111-1111-4111-8111-111111111111", qrSvg: "data:image/svg+xml;utf-8,<svg/>", uri: "otpauth://totp/x" }),
-    desafiarEVerificar: async (_f, c) => (c === a.codigoTotp ? { accessToken: "at-mfa", refreshToken: "rt-mfa" } : null),
+    desafiarEVerificar: async (_f, c) => { a.palpites++; await new Promise((r) => setTimeout(r, 1)); return c === a.codigoTotp ? { accessToken: "at-mfa", refreshToken: "rt-mfa" } : null; },
     claims: async (): Promise<ClaimsMfa> => ({ aal: a.aal, sessionId: "s", metodos: [{ metodo: "totp", quando: Math.floor(Date.now() / 1000) }] }),
   };
 }
@@ -125,7 +126,7 @@ async function sessaoAtiva(papeis: Papel[]) {
 
 beforeEach(() => {
   b.ids = []; b.sessoes = []; b.papeis = []; b.auditoria = []; b.fora = false; b.eventos = []; b.cookie = null; b.sessaoCarteira = null;
-  a.usuario = null; a.codigoTotp = "123456"; a.aal = "aal2"; a.signOuts = 0; a.refreshValido = true;
+  a.usuario = null; a.codigoTotp = "123456"; a.aal = "aal2"; a.signOuts = 0; a.refreshValido = true; a.palpites = 0; a.multiplas = false;
   definirFabricaAuth(() => authFalso());
   definirRepoCorp(repoFalso());
   for (const [k, v] of Object.entries(ENV_CORP)) vi.stubEnv(k, v);
@@ -249,7 +250,7 @@ describe("MFA · ativação, força bruta, aal2 e rotação (A-FIX)", () => {
     await iniciarMfa(cfg(), cb.tokenPre, codigo);
     const r: unknown[] = [];
     for (let i = 0; i < 5; i++) r.push(await verificarMfa(cfg(), cb.tokenPre, "000000"));
-    expect(r.slice(0, 4).every((x) => (x as { codigo: string }).codigo === "codigo_invalido")).toBe(true);
+    expect(r.slice(0, 4).map((x) => (x as { codigo: string }).codigo)).toEqual(Array(4).fill("codigo_invalido"));
     expect(r[4]).toEqual({ ok: false, codigo: "bloqueado" });
     expect(JSON.stringify(b.eventos)).toContain("admin_mfa_bloqueado");
     expect(await verificarMfa(cfg(), cb.tokenPre, "123456")).toEqual({ ok: false, codigo: "bloqueado" });
@@ -393,5 +394,54 @@ describe("A-CSRF e 404 das rotas", () => {
     const r = await GET(new NextRequest("https://z.test/api/admin-auth/callback?code=x&f=y", { headers: { cookie: "__Host-zswap_admin_flow=lixo" } }));
     expect(r.status).toBe(302);
     expect(r.headers.get("set-cookie") ?? "").toMatch(/__Host-zswap_admin_flow=;.*Max-Age=0/i);
+  });
+});
+
+describe("revisão adversarial rodada 3 — regressões", () => {
+  it("⚠️ R1-IDENT0: conta com MAIS DE UMA identidade (auto-link) → recusada", async () => {
+    convidar();
+    a.multiplas = true;
+    expect(await loginAteMfa()).toEqual({ ok: false, codigo: "vinculo_divergente" });
+  });
+  it("⚠️ R1-IDENT0: login que voltou de OUTRO provedor que o pedido → recusado", async () => {
+    convidar();
+    a.usuario = { authUserId: "u", email: "ana@empresa.com", emailVerificado: true, provedor: "azure", sujeito: "s", issuer: ISS, tenant: "empresa.com" };
+    const ini = await iniciarLogin(cfg(), "google", "/admin"); if (!ini.ok) throw new Error();
+    const f = new URL(new URL(ini.url).searchParams.get("redirect_to")!).searchParams.get("f");
+    expect(await concluirCallback(cfg(), { code: "codigo-bom", f, erroIdp: null, cookieFluxo: ini.cookieFluxo })).toEqual({ ok: false, codigo: "vinculo_divergente" });
+  });
+  it("⚠️ R1-TENANT-NULO: convite com tenant esperado e claim AUSENTE (conta Google pessoal) → recusado", async () => {
+    convidar();
+    a.usuario = { authUserId: "u", email: "ana@empresa.com", emailVerificado: true, provedor: "google", sujeito: "s", issuer: ISS, tenant: null };
+    const ini = await iniciarLogin(cfg(), "google", "/admin"); if (!ini.ok) throw new Error();
+    const f = new URL(new URL(ini.url).searchParams.get("redirect_to")!).searchParams.get("f");
+    expect(await concluirCallback(cfg(), { code: "codigo-bom", f, erroIdp: null, cookieFluxo: ini.cookieFluxo })).toEqual({ ok: false, codigo: "emissor_divergente" });
+  });
+  it("⚠️ R1-MFA-CAS: 10 palpites SIMULTÂNEOS → no máximo 5 códigos testados, e bloqueio", async () => {
+    const { codigo } = convidar();
+    const cb = await loginAteMfa(); if (!cb.ok) throw new Error();
+    await iniciarMfa(cfg(), cb.tokenPre, codigo);
+    a.palpites = 0;
+    const r = await Promise.all(Array.from({ length: 10 }, () => verificarMfa(cfg(), cb.tokenPre, "000000")));
+    expect(a.palpites).toBeLessThanOrEqual(5);
+    expect(r.every((x) => !x.ok)).toBe(true);
+    expect(await verificarMfa(cfg(), cb.tokenPre, "123456")).toEqual({ ok: false, codigo: "bloqueado" });
+  });
+  it("acerto depois de erros zera o contador (o reservado não vira bloqueio de quem acertou)", async () => {
+    const { id, codigo } = convidar();
+    const cb = await loginAteMfa(); if (!cb.ok) throw new Error();
+    await iniciarMfa(cfg(), cb.tokenPre, codigo);
+    await verificarMfa(cfg(), cb.tokenPre, "000000");
+    expect((await verificarMfa(cfg(), cb.tokenPre, "123456")).ok).toBe(true);
+    expect(b.ids.find((i) => i.id === id)?.failed_mfa_count).toBe(0);
+  });
+  it("R1-LOGOUT-PARCIAL: logout revoga a sessão do Admin E a pré-MFA deste navegador, e encerra a do Supabase", async () => {
+    const { token } = await sessaoAtiva(["auditor"]);
+    convidar("pre@empresa.com");
+    const cb = await loginAteMfa("pre@empresa.com"); if (!cb.ok) throw new Error();
+    a.signOuts = 0;
+    await logout(token, cb.tokenPre, cfg());
+    expect(b.sessoes.filter((x) => !x.revoked_at)).toHaveLength(0);
+    expect(a.signOuts).toBeGreaterThanOrEqual(1);
   });
 });

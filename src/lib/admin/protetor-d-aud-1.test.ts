@@ -8,11 +8,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const s = vi.hoisted(() => ({
+  fonte: "env" as string,
   trilhaFora: true, kv: new Map<string, string>(), eventos: [] as unknown[],
   pilotos: [{ wallet: "0xpiloto000000000000000000000000000000001", nota: "n", at: "t" }],
   gravouPilotos: null as unknown, liberacao: null as boolean | null,
 }));
-vi.mock("@/lib/admin/authz", () => ({ autorizarAdmin: async () => ({ wallet: "0xadmin" }) }));
+vi.mock("@/lib/admin/authz", () => ({ autorizarAdmin: async () => ({ wallet: "0xadmin", fonte: s.fonte }) }));
 vi.mock("@/lib/admin/realtime", () => ({ broadcastAdminRefresh: () => {} }));
 vi.mock("@/lib/admin/track", () => ({
   logSecurity: () => {}, notifyTelegram: () => {},
@@ -58,7 +59,7 @@ import { POST as postKill } from "@/app/admin/api/killswitch/route";
 import { POST as postLib } from "@/app/admin/api/autopilot-liberacao/route";
 
 const req = (url: string, body: unknown) => new NextRequest(url, { method: "POST", body: JSON.stringify(body) });
-beforeEach(() => { s.trilhaFora = true; s.kv = new Map([["disable_swap", "false"]]); s.eventos = []; s.gravouPilotos = null; s.liberacao = null; });
+beforeEach(() => { s.fonte = "env"; s.trilhaFora = true; s.kv = new Map([["disable_swap", "false"]]); s.eventos = []; s.gravouPilotos = null; s.liberacao = null; });
 
 describe("D-AUD-1 · kill switch / gate com a trilha fora", () => {
   it("LIGAR (protetor) → executa: grava true, 200, `intencao_nao_gravada`, alerta alto", async () => {
@@ -108,5 +109,17 @@ describe("D-AUD-1 · automação com a trilha fora", () => {
     s.liberacao = null;
     expect((await postLib(req("http://x/admin/api/autopilot-liberacao", { liberar: true, motivo: "abrir para teste real" }))).status).toBe(503);
     expect(s.liberacao).toBeNull();
+  });
+});
+
+describe("R1-BG-DESTRAVA · break-glass só LIGA interruptor", () => {
+  it("break-glass desligando → 403 e NADA muda; ligando → executa", async () => {
+    s.fonte = "breakglass"; s.trilhaFora = false;
+    s.kv.set("disable_swap", "true");
+    const r = await postKill(req("http://x/admin/api/killswitch", { key: "disable_swap", enabled: false, esperado: true }));
+    expect(r.status).toBe(403);
+    expect(s.kv.get("disable_swap")).toBe("true");
+    s.kv.set("disable_cex", "false");
+    expect((await postKill(req("http://x/admin/api/killswitch", { key: "disable_cex", enabled: true, esperado: false }))).status).toBe(200);
   });
 });

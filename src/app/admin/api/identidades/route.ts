@@ -93,10 +93,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const r = await comandoAuditado({
       acao: "identity.revoke", ator, alvo: alvo.id, dados: { motivo: corpo.motivo.slice(0, 200) }, protetor: true,
       executar: async () => {
+        const uid = alvo.auth_user_id;   // lido ANTES: a revogação libera o vínculo
         const g = await repo.revogarIdentidade(alvo.id, eu, corpo.motivo as string);
         if (!g.ok || !g.valor) return { ok: false, codigo: "nao_gravou" };
         await repo.revogarTodasDaIdentidade(alvo.id, "identidade_revogada", eu);
-        return { ok: true, valor: true };
+        // Desprovisionamento (design §4.4): o Supabase não emite sessão nova para quem foi revogado.
+        let supabase = "sem_usuario";
+        if (uid) {
+          try {
+            const { getSupabaseAdmin } = await import("@/lib/supabase/server");
+            const r2 = await getSupabaseAdmin()?.auth.admin.updateUserById(uid, { ban_duration: "876000h" });
+            supabase = r2 && !r2.error ? "banido" : "ban_falhou";
+          } catch { supabase = "ban_falhou"; }
+        }
+        return { ok: true, valor: true, depois: { status: "revoked", supabase } };
       },
     });
     if (r.estado === "recusado") return recusa("auditoria_indisponivel", PORQUE_AUDITORIA_INDISPONIVEL, 503);

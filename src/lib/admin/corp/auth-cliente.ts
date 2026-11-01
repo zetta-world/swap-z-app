@@ -13,6 +13,8 @@ import type { ConfigCorp, Provedor } from "./config";
  */
 export interface UsuarioIdp {
   authUserId: string;
+  /** Conta com mais de uma identidade (ou nenhuma do provedor pedido): recusada no vínculo. */
+  multiplasIdentidades?: boolean;
   email: string | null;
   emailVerificado: boolean;
   provedor: string | null;
@@ -27,7 +29,12 @@ export interface ClaimsMfa { aal: string | null; metodos: { metodo: string; quan
 
 export interface ClienteAuthCorp {
   iniciarOAuth(p: { provedor: Provedor; redirectTo: string; queryParams: Record<string, string> }): Promise<{ url: string; verificador: string } | null>;
-  trocarCodigo(code: string, verificador: string): Promise<{ tokens: Tokens; usuario: UsuarioIdp } | null>;
+  /**
+   * ⚠️ O usuário só vale se o `auth.users` tiver EXATAMENTE uma identidade, e do `provedor` pedido
+   * (revisão adversarial): com auto-link de e-mail, `identities[0]` podia ser outra (google) enquanto o
+   * login veio do azure — e o `code_challenge` visível permitiria trocar o provedor no `/authorize`.
+   */
+  trocarCodigo(code: string, verificador: string, provedor: Provedor): Promise<{ tokens: Tokens; usuario: UsuarioIdp } | null>;
   restaurar(refreshToken: string): Promise<Tokens | null>;
   /** Exige `restaurar` antes (o cliente precisa estar com a sessão do usuário). */
   matricularTotp(nome: string): Promise<{ factorId: string; qrSvg: string; uri: string } | null>;
@@ -64,18 +71,20 @@ function criarReal(cfg: ConfigCorp): ClienteAuthCorp {
       if (error || !data?.url || !verificador) return null;
       return { url: data.url, verificador };
     },
-    async trocarCodigo(code, verificador) {
+    async trocarCodigo(code, verificador, provedor) {
       memoria.set(CHAVE_VERIFICADOR, verificador);
       const { data, error } = await cliente.auth.exchangeCodeForSession(code);
       const tokens = tokensDe(data?.session);
       const u = data?.user;
       if (error || !tokens || !u) return null;
-      const ident = (u.identities ?? [])[0];
+      const todas = u.identities ?? [];
+      const ident = todas.length === 1 && todas[0].provider === provedor ? todas[0] : undefined;
       const idData = (ident?.identity_data ?? {}) as Record<string, unknown>;
       return {
         tokens,
         usuario: {
           authUserId: u.id,
+          multiplasIdentidades: todas.length !== 1,
           email: u.email ?? null,
           emailVerificado: Boolean(u.email_confirmed_at),
           provedor: ident?.provider ?? null,
@@ -92,7 +101,9 @@ function criarReal(cfg: ConfigCorp): ClienteAuthCorp {
       return error ? null : tokensDe(data?.session);
     },
     async matricularTotp(nome) {
-      const { data, error } = await cliente.auth.mfa.enroll({ factorType: "totp", friendlyName: nome, issuer: "Z-SWAP Admin" });
+      // Nome ÚNICO por tentativa: o GoTrue recusa friendlyName repetido, e reabrir a tela de ativação
+      // prendia a pessoa num fator não verificado (revisão adversarial).
+      const { data, error } = await cliente.auth.mfa.enroll({ factorType: "totp", friendlyName: `${nome}-${Date.now().toString(36)}`, issuer: "Z-SWAP Admin" });
       if (error || !data || data.type !== "totp") return null;
       return { factorId: data.id, qrSvg: data.totp.qr_code, uri: data.totp.uri };
     },

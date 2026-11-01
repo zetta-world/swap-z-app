@@ -80,10 +80,11 @@ export async function concluirCallback(cfg: ConfigCorp, p: { code: string | null
   if (p.erroIdp || !p.code) return negar("idp_erro", "login.callback");
 
   const auth = clienteAuthCorp(cfg);
-  const troca = await auth.trocarCodigo(p.code, fluxo.verificador);
+  const troca = await auth.trocarCodigo(p.code, fluxo.verificador, fluxo.provedor);
   if (!troca) return negar("troca_falhou", "login.callback");
   const u = troca.usuario;
   const sair = async () => { await sairGlobalBestEffort(troca.tokens.accessToken); };
+  if (u.multiplasIdentidades || u.provedor !== fluxo.provedor) { await sair(); return negar("vinculo_divergente", "login.callback"); }
 
   const repo = repoCorp();
   let ident: Identidade | null;
@@ -101,10 +102,12 @@ export async function concluirCallback(cfg: ConfigCorp, p: { code: string | null
     const conv = await repo.identidadeConvidada(u.email.trim().toLowerCase(), fluxo.provedor);
     if (!conv.ok) { await sair(); return negar("banco", "login.callback"); }
     if (!conv.valor || u.provedor !== fluxo.provedor || !u.sujeito) { await sair(); return negar("identidade_desconhecida", "login.callback", { target_ref_redacted: redigir(u.email) }); }
-    if (u.issuer && conv.valor.expected_issuer && u.issuer !== conv.valor.expected_issuer) {
+    // ⚠️ Claim AUSENTE não aprova (revisão adversarial): conta Google pessoal com o e-mail corporativo não
+    // tem `hd`. Esperado gravado no convite = a claim tem de VIR e ser igual.
+    if (conv.valor.expected_issuer && u.issuer !== conv.valor.expected_issuer) {
       await sair(); return negar("emissor_divergente", "login.callback", { actor_identity_id: conv.valor.id });
     }
-    if (u.tenant && conv.valor.expected_tenant && u.tenant !== conv.valor.expected_tenant) {
+    if (conv.valor.expected_tenant && u.tenant !== conv.valor.expected_tenant) {
       await sair(); return negar("emissor_divergente", "login.callback", { actor_identity_id: conv.valor.id });
     }
     const v = await repo.vincular(conv.valor.id, u.authUserId, u.sujeito);
@@ -192,7 +195,38 @@ export async function iniciarMfa(cfg: ConfigCorp, tokenPre: unknown, codigoAtiva
   return { ok: true, precisaAtivacao: true, qrSvg: m.qrSvg, uri: m.uri };
 }
 
-/** Falha de código: conta NO BANCO (compare-and-set); não conseguir contar = recusa (falha fechada). */
+/**
+ * ⚠️ RESERVA A TENTATIVA ANTES DE TESTAR O CÓDIGO (revisão adversarial). Contar só DEPOIS de errar,
+ * com compare-and-set sobre o valor lido no começo, deixava N pedidos simultâneos testarem N palpites
+ * e contarem um. Agora cada palpite precisa GANHAR um incremento (CAS em laço, relendo); quem não
+ * ganha não testa. No acerto, o contador volta a zero. Não conseguir reservar = recusa (falha fechada).
+ */
+async function reservarTentativa(identId: string): Promise<{ ok: true; ident: Identidade; usadas: number } | Falha> {
+  const repo = repoCorp();
+  for (let i = 0; i < 4; i++) {
+    const r = await repo.identidadePorId(identId);
+    if (!r.ok || !r.valor) return negar("banco", "login.mfa", { actor_identity_id: identId, failure_code: "reserva_ilegivel" });
+    const ident = r.valor;
+    if (bloqueada(ident)) return negar("bloqueado", "login.mfa", { actor_identity_id: ident.id });
+    const n = ident.failed_mfa_count ?? 0;
+    const bloquear = n + 1 >= MAX_FALHAS_MFA ? agoraIso(Date.now() + BLOQUEIO_MFA_S * 1000) : null;
+    const g = await repo.registrarFalhaMfa(ident.id, n, bloquear);
+    if (!g.ok) return negar("banco", "login.mfa", { actor_identity_id: ident.id, failure_code: "reserva_nao_gravou" });
+    if (g.valor) {
+      if (bloquear) {
+        try {
+          const { logSecurityAguardado } = await import("@/lib/admin/auditoria-duravel");
+          await logSecurityAguardado("admin_mfa_bloqueado", { identidade: ident.id.slice(0, 8) }, "high");
+        } catch { /* alerta é sinal; o bloqueio já está gravado */ }
+      }
+      return { ok: true, ident, usadas: n + 1 };   // `n` capturado ANTES do incremento
+    }
+    // outro pedido ganhou este incremento: relê e tenta o próximo
+  }
+  return negar("banco", "login.mfa", { actor_identity_id: identId, failure_code: "reserva_disputada" });
+}
+
+/** Mantida para o formato inválido (não chega a testar o código, mas consome a tentativa). */
 async function contarFalha(ident: Identidade): Promise<Falha> {
   const n = ident.failed_mfa_count ?? 0;
   const bloquear = n + 1 >= MAX_FALHAS_MFA ? agoraIso(Date.now() + BLOQUEIO_MFA_S * 1000) : null;
@@ -240,10 +274,12 @@ export async function verificarMfa(cfg: ConfigCorp, tokenPre: unknown, codigo: u
   if (bloqueada(ident)) return negar("bloqueado", "login.mfa", { actor_identity_id: ident.id });
   if (!ident.mfa_factor_id) return negar("sem_fator", "login.mfa", { actor_identity_id: ident.id });
   if (typeof codigo !== "string" || !/^\d{6}$/.test(codigo.trim())) return contarFalha(ident);
+  const res = await reservarTentativa(ident.id);
+  if (!res.ok) return res;
   const r = await restaurarSupabase(cfg, s);
   if (!r) return negar("refresh_invalido", "login.mfa", { actor_identity_id: ident.id });
   const t = await r.auth.desafiarEVerificar(ident.mfa_factor_id, codigo.trim());
-  if (!t) return contarFalha(ident);
+  if (!t) return negar(res.usadas >= MAX_FALHAS_MFA ? "bloqueado" : "codigo_invalido", "login.mfa", { actor_identity_id: ident.id });
   const prova = provaDeMfa(await r.auth.claims(t.accessToken), Math.floor(Date.now() / 1000));
   if (!prova.ok) return negar("mfa_sem_prova", "login.mfa", { actor_identity_id: ident.id });
   const repo = repoCorp();
@@ -321,11 +357,13 @@ export async function stepUp(cfg: ConfigCorp, tokenAdmin: unknown, codigo: unkno
   if (bloqueada(ident)) return negar("bloqueado", "stepup", { actor_identity_id: ident.id });
   if (!ident.mfa_factor_id) return negar("sem_fator", "stepup", { actor_identity_id: ident.id });
   if (typeof codigo !== "string" || !/^\d{6}$/.test(codigo.trim())) return contarFalha(ident);
+  const res = await reservarTentativa(ident.id);
+  if (!res.ok) return res;
   const r = await restaurarSupabase(cfg, l);
   // Refresh inutilizável (revogado no Supabase) → step-up exige login completo de novo.
   if (!r) return negar("refresh_invalido", "stepup", { actor_identity_id: ident.id });
   const t = await r.auth.desafiarEVerificar(ident.mfa_factor_id, codigo.trim());
-  if (!t) return contarFalha(ident);
+  if (!t) return negar(res.usadas >= MAX_FALHAS_MFA ? "bloqueado" : "codigo_invalido", "stepup", { actor_identity_id: ident.id });
   const prova = provaDeMfa(await r.auth.claims(t.accessToken), Math.floor(Date.now() / 1000));
   if (!prova.ok) return negar("mfa_sem_prova", "stepup", { actor_identity_id: ident.id });
   await repo.zerarFalhasMfa(ident.id);
@@ -335,16 +373,29 @@ export async function stepUp(cfg: ConfigCorp, tokenAdmin: unknown, codigo: unkno
   return { ok: true, tokenAdmin: ativa.token };
 }
 
-export async function logout(token: unknown): Promise<{ ok: boolean }> {
-  if (!formatoDeTokenValido(token)) return { ok: true };
+/**
+ * Logout COMPLETO (revisão adversarial): revoga a sessão do Admin E a pré-MFA deste navegador, e
+ * encerra a sessão do Supabase (`signOut` global com o refresh decifrado, best-effort e auditado).
+ */
+export async function logout(token: unknown, tokenPre?: unknown, cfg?: ConfigCorp): Promise<{ ok: boolean }> {
   const repo = repoCorp();
-  const s = await repo.sessaoPorHash(hashDoToken(token));
-  if (!s.ok) return { ok: false };
-  if (!s.valor) return { ok: true };
-  const r = await repo.revogarSessao(s.valor.id, "logout", s.valor.identity_id);
-  await auditar({ request_id: randomUUID(), actor_kind: s.valor.kind, actor_identity_id: s.valor.identity_id, actor_session_id: s.valor.id,
-    action: "logout", authz_decision: "allow", outcome: r.ok ? "succeeded" : "failed" });
-  return { ok: r.ok };
+  let ok = true;
+  for (const [t, motivo] of [[token, "logout"], [tokenPre, "logout_pre"]] as const) {
+    if (!formatoDeTokenValido(t)) continue;
+    const s = await repo.sessaoPorHash(hashDoToken(t));
+    if (!s.ok) { ok = false; continue; }
+    if (!s.valor || s.valor.revoked_at) continue;
+    const r = await repo.revogarSessao(s.valor.id, motivo, s.valor.identity_id);
+    if (!r.ok) ok = false;
+    let supabase = "nao_aplicavel";
+    if (cfg && s.valor.kind === "corp") {
+      const rs = await restaurarSupabase(cfg, s.valor).catch(() => null);
+      if (rs) { await sairGlobalBestEffort(rs.tokens.accessToken); supabase = "encerrada"; } else supabase = "refresh_inutilizavel";
+    }
+    await auditar({ request_id: randomUUID(), actor_kind: s.valor.kind, actor_identity_id: s.valor.identity_id, actor_session_id: s.valor.id,
+      action: motivo, authz_decision: "allow", outcome: r.ok ? "succeeded" : "failed", failure_code: supabase });
+  }
+  return { ok };
 }
 
 // ── 6. break-glass (design §6) ──────────────────────────────────────────────

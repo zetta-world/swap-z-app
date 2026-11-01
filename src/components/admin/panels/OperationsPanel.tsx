@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 import { useAutoRefresh } from "../useAutoRefresh";
+import type { RefreshScope } from "../AdminRealtimeProvider";
 import AvisoDeFonte from "../AvisoDeFonte";
 import { exibirMetrica, mensagemDeFalha, type OperationalMetric } from "@/lib/admin/metrica";
 
@@ -22,6 +23,9 @@ type Ops = {
   openExposure: number | null; openExposureMetrica: OperationalMetric<number>;
   fetchedAt: string;
 };
+
+/** Nenhum ping do tempo real fala de posições: só o intervalo (revisão adversarial). */
+const SEM_PING: RefreshScope[] = [];
 
 function runColor(s: string): string {
   if (s === "fired" || s === "settled")  return "var(--adm-green)";
@@ -47,7 +51,7 @@ export default function OperationsPanel() {
       setData(json); setError(null);
     } catch (e) { setData(null); setError(String(e)); }
   }, []);
-  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 30_000 });
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 30_000, scopes: SEM_PING });
   const loading = !data && !error;
   const exp = data ? exibirMetrica(data.openExposureMetrica, (v) => `$${Math.round(v).toLocaleString()}`) : null;
 

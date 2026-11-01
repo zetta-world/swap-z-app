@@ -69,7 +69,7 @@ type Gravacao = { key: string; enabled: boolean; antes: string | null };
  *     adversarial). Mesmo compare-and-set, sobre o valor bruto.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const { wallet: actor } = await autorizarAdmin("security.killswitch.set");
+  const { wallet: actor, fonte } = await autorizarAdmin("security.killswitch.set");
   const db = getSupabaseAdmin();
   if (!db) return NextResponse.json({ error: "db_unavailable" }, { status: 503 });
 
@@ -105,6 +105,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // Reenvio de um clique que JÁ executou responde `repetido` ANTES do compare-and-set:
   // depois da 1ª gravação o `esperado` não casa mais, e o reenvio legítimo virava
   // 409 "outro admin mudou".
+  /**
+   * Break-glass (só carteira, sem MFA) TRAVA o incidente, nunca o destrava (revisão adversarial):
+   * desligar kill switch ou gate reabre dinheiro/IA e fica para uma sessão corporativa com step-up.
+   */
+  if (fonte === "breakglass" && enabled !== true) {
+    logSecurity("admin_breakglass_desligar_recusado", { key, ator: actor.slice(0, 20) }, "high");
+    return NextResponse.json({ error: "breakglass_so_liga", key,
+      porque: "NADA foi alterado: em modo de emergência só é possível LIGAR interruptores" }, { status: 403 });
+  }
   /** D-AUD-1: ligar (kill switch ou gate `pause_*`) é PROTETOR; desligar é permissivo. */
   const protetor = enabled === true;
   if (idem) {

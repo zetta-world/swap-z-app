@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import TerminalPanel from "../TerminalPanel";
 import { useAutoRefresh } from "../useAutoRefresh";
+import type { RefreshScope } from "../AdminRealtimeProvider";
 import AvisoDeFonte from "../AvisoDeFonte";
 import { corDoPnl } from "@/lib/admin/cor-resultado";
 import { exibirMetrica, mensagemDeFalha, type OperationalMetric } from "@/lib/admin/metrica";
@@ -19,6 +20,12 @@ type Ledger = {
   recentMetrica: OperationalMetric<null>;
   fetchedAt: string;
 };
+
+/**
+ * Nenhum ping do tempo real fala de operações/posições: sem escopo, TODO ping (audit, tier…) disparava
+ * uma leitura paginada completa (revisão adversarial). Só o intervalo, como antes.
+ */
+const SEM_PING: RefreshScope[] = [];
 
 const usd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
 
@@ -39,7 +46,7 @@ export default function OperationsLedgerPanel() {
       setData(json); setError(null);
     } catch (e) { setData(null); setError(String(e)); }
   }, []);
-  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 60_000 });
+  const { secondsAgo, refreshing, forceRefresh } = useAutoRefresh({ onRefresh: load, intervalMs: 60_000, scopes: SEM_PING });
   const loading = !data && !error;
 
   const ag = data?.agregado.value ?? null;

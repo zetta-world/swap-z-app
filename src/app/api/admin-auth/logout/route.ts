@@ -11,7 +11,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const c = configOu404();
   if (!c.ok) return c.resposta;
   if (!mesmaOrigem(req, c.cfg)) return recusaCsrf();
-  const r = await logout(req.cookies.get(COOKIE_ADMIN)?.value);
+  const r = await logout(req.cookies.get(COOKIE_ADMIN)?.value, req.cookies.get(COOKIE_PRE)?.value, c.cfg);
   const res = NextResponse.json({ ok: r.ok }, { status: r.ok ? 200 : 503, headers: SEM_CACHE });
   res.cookies.set({ ...apagar(COOKIE_ADMIN), sameSite: "strict" });
   res.cookies.set(apagar(COOKIE_PRE));

@@ -615,3 +615,16 @@ values ('<ID_B>', 'superadmin', '<ID_A>', '<ID_C_OU_A_COM_OUTRO_APROVADOR>');
 insert into admin_private.admin_audit (request_id, actor_kind, action, authz_decision, outcome)
 values (gen_random_uuid()::text, 'system', 'roles.grant.bootstrap', 'allow', 'succeeded');
 ```
+
+**Revisão adversarial (rodada 3, 31/10–01/11) — mudanças sobre o desenho:**
+- conta do Supabase com **mais de uma identidade** (auto-link por e-mail) ou de provedor diferente do pedido no
+  `start` é **recusada** no callback; a identidade usada é a única do provedor pedido;
+- `expected_issuer`/`expected_tenant` gravados no convite exigem a claim **presente e igual** (claim ausente reprova);
+- cada palpite de TOTP **reserva** um incremento do contador ANTES de ser testado (compare-and-set em laço): no máximo 5
+  códigos testados por janela de bloqueio, mesmo com pedidos simultâneos;
+- break-glass **só liga** kill switch/gate (§6 dizia `security.killswitch.write` nas duas direções); desligar exige
+  sessão corporativa com step-up;
+- break-glass reconfere `ADMIN_AUTH_MODE=corp` e `ADMIN_WALLETS` a cada requisição;
+- logout revoga a sessão do Admin **e** a pré-MFA, e encerra a sessão do Supabase (best-effort, auditado); revogar
+  identidade aplica `ban_duration` no Supabase e libera o vínculo para um re-convite;
+- em `dual`, configuração R1 inválida ou identidade corporativa **sem papel** caem no legado (nunca tranca o dono).
