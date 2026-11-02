@@ -133,6 +133,6 @@ de app single-tenant — a confirmar no portal). Detalhe e preços com fonte: `d
 | migration 0088 + teste SQL | 🟢 `51cc7be` — 29/29b/29c PASS em PG 17.6.1.127 local |
 | código (fundador, authz, rotas, página) | 🟢 `3247623`, `5a73c3b`, `036efda` |
 | testes | 🟢 suíte completa 360/5522 PASS em `036efda`; `tsc`/`eslint` 0 erros |
-| `next build` | 🔴 NÃO VALIDADO (vigia de memória; ver `docs/ADMIN-SOLO-FOUNDER-MODE.md` §13) |
+| `next build` | 🟢 validado no Preview da Vercel (`a04fc83`, PR #453); local interrompido por memória |
 | docs (`ADMIN-SOLO-FOUNDER-MODE.md`, ledger, CURRENT-STATE) | 🟢 |
 | merge / deploy / migration hospedada / env Vercel | ⛔ fora desta missão — aguardando autorização |

@@ -202,7 +202,7 @@ Nenhuma delas é `NEXT_PUBLIC_*` (teste `solo-authz.test.ts` › "nada administr
 | `fundador.test.ts` + `solo-authz.test.ts` | 40 testes PASS; mutação de 2 guardas centrais detectada (cada uma derruba 1 teste) |
 | suíte completa (`vitest run`) em `036efda61b34bd05521d5456539cc7d9598adcaa` | **360 arquivos / 5522 testes PASS** (1ª rodada: 1 FAIL na trava de lista de migrations — 0088 não registrada; corrigido no commit `036efda`, sem retry) |
 | `tsc --noEmit` · `eslint .` | 0 erros (eslint: 126 avisos pré-existentes, **nenhum** nos arquivos desta fase) |
-| `next build` | **NÃO VALIDADO**: interrompido pelo vigia de memória (disponível caiu a 314 MB < 350 MB) na etapa "Creating an optimized production build" — a máquina (3,7 GiB) roda as stacks do laboratório e o bot de produção; parar as stacks exige autorização do dono. Pendente antes de qualquer release |
+| `next build` | local: interrompido pelo vigia de memória (314 MB disponíveis; pausar as stacks do laboratório foi negado pelo filtro de permissões). **Validado na Vercel**: deploy de **Preview** do SHA `a04fc83d4a805c78e571860671919dfb93516de8` (PR #453) → `success` "Deployment has completed"; CI do PR (2 jobs `checks`) PASS. Produção não tocada |
 | SIWE/SIWS dos usuários | `git diff 1123b38..HEAD -- src/app/api/auth src/lib/auth src/middleware.ts` vazio; suítes `src/app/api/auth` e `src/lib/auth` PASS |
 
 ## 14. Riscos residuais
