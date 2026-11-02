@@ -1592,3 +1592,22 @@ equipe), com MFA, auditoria e controles proporcionais, preservando `multi_admin`
   → 37 arquivos / 502 testes PASS.
 - Regra das 3 identidades localizada: CHECKs de `admin_role_assignments` em `0083_admin_private_identidade_rbac.sql:68-78`.
 - Plano: `docs/PLANO-ADMIN-SOLO-FOUNDER-20261102.md`.
+
+## ADMIN-SOLO-FOUNDER-20261102 — implementação e validação local (02/11/2026, fechamento desta rodada)
+
+Commits (branch local, sem push): `6510835` plano · `51cc7be` 0088 + SQL 29/29b/29c · `3247623` governança no
+`authz` · `5a73c3b` bootstrap/recuperação/transição + rota + tela + gerador · `036efda` trava da lista de
+migrations (0088 registrada) · e o commit de docs desta entrada.
+
+| prova | resultado (evidência fora do repo: `/home/zetta/.claude/jobs/bf97bae1/tmp/sf-sql/`, `sf-vitest-full-2.log`, `sf-eslint.log`, `sf-build.log`) |
+|---|---|
+| SQL, `supabase/postgres:17.6.1.127` descartável `--network none`, cadeia 0001→0088 | aplica limpa; 26/27/28/29 PASS; 29b concorrência `P1=ok · P2=ja_feito · founder_bootstrap=1`; 29c rollback → 27 PASS; rollback recusado após bootstrap; 0088 reaplicada → 29 PASS. Contêiner removido |
+| `vitest run` (completo) em `036efda61b34bd05521d5456539cc7d9598adcaa` | 360 arquivos / 5522 testes PASS. 1ª rodada completa: 1 FAIL (`conexoes-0063.test.ts`, 0088 fora da lista) — corrigido em `036efda`, não reclassificado |
+| testes novos | `fundador.test.ts` + `solo-authz.test.ts`: 40 PASS; mutação (remover checagem de e-mail do fundador; remover "só o fundador governa") → 1 FAIL cada |
+| `tsc --noEmit` / `eslint .` | 0 erros / 0 erros (126 avisos pré-existentes, nenhum nos arquivos desta fase) |
+| `next build` | **NOT_VERIFIED** — vigia de memória matou o build com 314 MB disponíveis (máquina de 3,7 GiB com as stacks do laboratório e o bot de produção). Exige autorização para pausar stacks ou outra máquina |
+| SIWE/SIWS | `git diff 1123b38..HEAD -- src/app/api/auth src/lib/auth src/middleware.ts` vazio |
+
+Estado: `SOLO FOUNDER MODE — IMPLEMENTED / VALIDATED (local, build NOT_VERIFIED) / AWAITING PRODUCTION AUTHORIZATION`.
+Nada em produção, nada no Supabase hospedado, nenhuma env, nenhuma conta, nenhum push. Não é `CERTIFIED`: falta
+`next build` e a recertificação no SHA exato antes de qualquer `RELEASE_CANDIDATE`.

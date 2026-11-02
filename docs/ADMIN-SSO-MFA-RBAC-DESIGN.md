@@ -628,3 +628,12 @@ values (gen_random_uuid()::text, 'system', 'roles.grant.bootstrap', 'allow', 'su
 - logout revoga a sessão do Admin **e** a pré-MFA, e encerra a sessão do Supabase (best-effort, auditado); revogar
   identidade aplica `ban_duration` no Supabase e libera o vínculo para um re-convite;
 - em `dual`, configuração R1 inválida ou identidade corporativa **sem papel** caem no legado (nunca tranca o dono).
+
+---
+
+## 14. SOLO FOUNDER MODE (02/11/2026) — acréscimo, nada acima foi alterado
+
+O bootstrap de §13 (dois superadmins pelo SQL do dono, que com o CHECK da 0083 exige uma TERCEIRA identidade) é
+inviável para um fundador sem equipe. A migration **0088** acrescenta a governança `solo_founder` (bootstrap único de
+UMA identidade, com MFA recente e autorização operacional de uso único) e mantém todas as regras desta página para a
+governança `multi_admin`. Desenho, operações bloqueadas, recuperação e transição: `docs/ADMIN-SOLO-FOUNDER-MODE.md`.
