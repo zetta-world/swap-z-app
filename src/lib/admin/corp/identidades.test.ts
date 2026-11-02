@@ -30,6 +30,11 @@ vi.mock("@/lib/admin/corp/repo", () => ({
   }),
 }));
 
+// SOLO FOUNDER (0088): depois da 0088 a governança existe e começa em `multi_admin` — o mundo destes testes.
+vi.mock("@/lib/admin/corp/governanca-repo", () => ({
+  repoGovernanca: () => ({ ler: async () => ({ ok: true, valor: { modo: "multi_admin", fundador: null } }) }),
+}));
+
 import { GET, POST } from "@/app/admin/api/identidades/route";
 
 const EU = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { autorizarAdmin } from "@/lib/admin/authz";
 import { avisoDeAuditoria, comandoAuditado, PORQUE_AUDITORIA_INDISPONIVEL } from "@/lib/admin/auditoria-duravel";
 import { repoCorp } from "@/lib/admin/corp/repo";
+import { repoGovernanca } from "@/lib/admin/corp/governanca-repo";
 import { novoCodigoDeAtivacao } from "@/lib/admin/corp/fluxo";
 import { PAPEIS, type Papel } from "@/lib/admin/rbac";
 import { lerConfigCorp } from "@/lib/admin/corp/config";
@@ -119,6 +120,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const papel = PAPEIS.find((p) => p === corpo.papel);
     if (!uuid(corpo.id) || !papel) return recusa("invalid_body", "id e papel válidos obrigatórios");
     if (corpo.id === eu) return recusa("nao_a_si", "ninguém concede papel a si", 409);
+    // SOLO FOUNDER: conceder papel cria um 2º administrador — exige segunda pessoa, BLOQUEADO
+    // (docs/ADMIN-SOLO-FOUNDER-MODE.md §5). Governança ilegível também bloqueia (na dúvida, fecha).
+    const gov = await repoGovernanca().ler();
+    if (!gov.ok || gov.valor.modo === "solo_founder") {
+      return recusa("solo_founder", "conceder papel exige governança multi_admin (transição documentada); bloqueado em solo_founder", 409);
+    }
     if (PAPEIS_DUPLOS.has(papel)) return recusa("dupla_autorizacao", `${papel} exige aprovação de uma segunda pessoa — use o runbook SQL do dono (design §9.5) até o fluxo de aprovação existir`, 409);
     const r = await comandoAuditado({
       acao: "roles.grant", ator, alvo: corpo.id, dados: { papel },
