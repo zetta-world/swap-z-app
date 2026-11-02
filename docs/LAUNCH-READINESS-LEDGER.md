@@ -1576,3 +1576,19 @@ linhas). Produção: `/`, `/api/tier`, `/settings`, `/founders-pass`, cotação,
 **Pendente (depende do dono):** IdP Google/Entra + contas reais com TOTP (3 identidades para o 1º superadmin, pelo CHECK
 da 0083); variáveis R1 na Vercel (`ADMIN_AUTH_MODE=dual`, `ADMIN_SESSION_ENC_KEY`, `ADMIN_ORIGIN`) só depois do IdP; expor
 `admin_private` em "Exposed schemas" do Data API nessa hora.
+
+## ADMIN-SOLO-FOUNDER-20261102 — modo de governança de fundador único (02/11/2026, abertura)
+
+Missão do dono (chat, 02/11): adaptar o Admin CC 2.0 para **uma** identidade administrativa legítima (fundador sem
+equipe), com MFA, auditoria e controles proporcionais, preservando `multi_admin`. Autoriza código, testes e docs;
+**não** autoriza merge, deploy, migration hospedada, env na Vercel, contas reais nem despesa.
+
+- `PHASE_BASE_SHA=1123b3851004e298cbdf5cb35b01cbc7e345b213` (`origin/main` = merge do PR #452, só docs sobre `770f60c`);
+  tree `4d5ae269ff1067e4eaeaa935f7bcfab0a592fe3f`. Prova: `6d1295b` ancestral de `origin/main` (OK-RELEASE-ANCESTOR);
+  o código posterior a `6d1295b` está explicado nas entradas L-054…ADMIN-CC2 deste ledger.
+- Branch `feat/admin-solo-founder-mode` (local, sem upstream), worktree
+  `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/admin-solo-founder-mode-20261102`.
+- Baseline de testes no PHASE_BASE (antes de qualquer código): `vitest run src/lib/admin src/app/api/auth src/lib/auth`
+  → 37 arquivos / 502 testes PASS.
+- Regra das 3 identidades localizada: CHECKs de `admin_role_assignments` em `0083_admin_private_identidade_rbac.sql:68-78`.
+- Plano: `docs/PLANO-ADMIN-SOLO-FOUNDER-20261102.md`.
