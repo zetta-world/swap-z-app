@@ -81,6 +81,10 @@ vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("NEXT_NOT_
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: (n: string) => (n === "__Host-zswap_admin" && b.cookie ? { value: b.cookie } : undefined) }) }));
 vi.mock("@/lib/rate-limit", () => ({ rateLimitDurable: async () => ({ ok: true, retryAfter: 0 }), getClientId: () => "ip" }));
 vi.mock("@/lib/admin/require", () => ({ requireAdmin: async () => { throw new Error("NEXT_NOT_FOUND"); } }));
+// SOLO FOUNDER (0088): depois da 0088 a governança existe e começa em `multi_admin` — o mundo destes testes.
+vi.mock("@/lib/admin/corp/governanca-repo", () => ({
+  repoGovernanca: () => ({ ler: async () => ({ ok: true, valor: { modo: "multi_admin", fundador: null } }) }),
+}));
 
 import { definirFabricaAuth } from "./auth-cliente";
 import { definirRepoCorp } from "./repo";

@@ -162,6 +162,11 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
+// SOLO FOUNDER (0088): depois da 0088 a governança existe e começa em `multi_admin` — o mundo destes testes.
+vi.mock("@/lib/admin/corp/governanca-repo", () => ({
+  repoGovernanca: () => ({ ler: async () => ({ ok: true, valor: { modo: "multi_admin", fundador: null } }) }),
+}));
+
 const { autorizarAdmin, autorizarPaginaAdmin, lerModoAuth, fontesLegadasPermitidas, _esquecerObservacoes } = await import("./authz");
 
 beforeEach(() => {

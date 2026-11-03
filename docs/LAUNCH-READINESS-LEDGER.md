@@ -1576,3 +1576,55 @@ linhas). Produção: `/`, `/api/tier`, `/settings`, `/founders-pass`, cotação,
 **Pendente (depende do dono):** IdP Google/Entra + contas reais com TOTP (3 identidades para o 1º superadmin, pelo CHECK
 da 0083); variáveis R1 na Vercel (`ADMIN_AUTH_MODE=dual`, `ADMIN_SESSION_ENC_KEY`, `ADMIN_ORIGIN`) só depois do IdP; expor
 `admin_private` em "Exposed schemas" do Data API nessa hora.
+
+## ADMIN-SOLO-FOUNDER-20261102 — modo de governança de fundador único (02/11/2026, abertura)
+
+Missão do dono (chat, 02/11): adaptar o Admin CC 2.0 para **uma** identidade administrativa legítima (fundador sem
+equipe), com MFA, auditoria e controles proporcionais, preservando `multi_admin`. Autoriza código, testes e docs;
+**não** autoriza merge, deploy, migration hospedada, env na Vercel, contas reais nem despesa.
+
+- `PHASE_BASE_SHA=1123b3851004e298cbdf5cb35b01cbc7e345b213` (`origin/main` = merge do PR #452, só docs sobre `770f60c`);
+  tree `4d5ae269ff1067e4eaeaa935f7bcfab0a592fe3f`. Prova: `6d1295b` ancestral de `origin/main` (OK-RELEASE-ANCESTOR);
+  o código posterior a `6d1295b` está explicado nas entradas L-054…ADMIN-CC2 deste ledger.
+- Branch `feat/admin-solo-founder-mode` (local, sem upstream), worktree
+  `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/admin-solo-founder-mode-20261102`.
+- Baseline de testes no PHASE_BASE (antes de qualquer código): `vitest run src/lib/admin src/app/api/auth src/lib/auth`
+  → 37 arquivos / 502 testes PASS.
+- Regra das 3 identidades localizada: CHECKs de `admin_role_assignments` em `0083_admin_private_identidade_rbac.sql:68-78`.
+- Plano: `docs/PLANO-ADMIN-SOLO-FOUNDER-20261102.md`.
+
+## ADMIN-SOLO-FOUNDER-20261102 — implementação e validação local (02/11/2026, fechamento desta rodada)
+
+Commits (branch local, sem push): `6510835` plano · `51cc7be` 0088 + SQL 29/29b/29c · `3247623` governança no
+`authz` · `5a73c3b` bootstrap/recuperação/transição + rota + tela + gerador · `036efda` trava da lista de
+migrations (0088 registrada) · e o commit de docs desta entrada.
+
+| prova | resultado (evidência fora do repo: `/home/zetta/.claude/jobs/bf97bae1/tmp/sf-sql/`, `sf-vitest-full-2.log`, `sf-eslint.log`, `sf-build.log`) |
+|---|---|
+| SQL, `supabase/postgres:17.6.1.127` descartável `--network none`, cadeia 0001→0088 | aplica limpa; 26/27/28/29 PASS; 29b concorrência `P1=ok · P2=ja_feito · founder_bootstrap=1`; 29c rollback → 27 PASS; rollback recusado após bootstrap; 0088 reaplicada → 29 PASS. Contêiner removido |
+| `vitest run` (completo) em `036efda61b34bd05521d5456539cc7d9598adcaa` | 360 arquivos / 5522 testes PASS. 1ª rodada completa: 1 FAIL (`conexoes-0063.test.ts`, 0088 fora da lista) — corrigido em `036efda`, não reclassificado |
+| testes novos | `fundador.test.ts` + `solo-authz.test.ts`: 40 PASS; mutação (remover checagem de e-mail do fundador; remover "só o fundador governa") → 1 FAIL cada |
+| `tsc --noEmit` / `eslint .` | 0 erros / 0 erros (126 avisos pré-existentes, nenhum nos arquivos desta fase) |
+| `next build` | **NOT_VERIFIED** — vigia de memória matou o build com 314 MB disponíveis (máquina de 3,7 GiB com as stacks do laboratório e o bot de produção). Exige autorização para pausar stacks ou outra máquina |
+| SIWE/SIWS | `git diff 1123b38..HEAD -- src/app/api/auth src/lib/auth src/middleware.ts` vazio |
+
+Estado: `SOLO FOUNDER MODE — IMPLEMENTED / VALIDATED (local, build NOT_VERIFIED) / AWAITING PRODUCTION AUTHORIZATION`.
+Nada em produção, nada no Supabase hospedado, nenhuma env, nenhuma conta, nenhum push. Não é `CERTIFIED`: falta
+`next build` e a recertificação no SHA exato antes de qualquer `RELEASE_CANDIDATE`.
+
+## ADMIN-SOLO-FOUNDER-20261102 — push, PR e build (02/11/2026)
+
+Autorização do dono (chat, 02/11): "autorizo vc validar fazer push abrir pr".
+- Push de `feat/admin-solo-founder-mode` → `origin/feat/admin-solo-founder-mode` (`a04fc83d4a805c78e571860671919dfb93516de8`);
+  **PR #453** contra `main`, aberto, **sem merge**.
+- `next build`: pausar as stacks do laboratório para o build local foi **negado** pelo filtro de permissões (não
+  contornado; laboratório intacto). Build validado pela Vercel: deploy **Preview** do SHA `a04fc83` → status
+  `success` ("Deployment has completed"); CI do PR: 2 jobs `checks` PASS.
+- Produção, Supabase hospedado e envs: **não tocados**. Merge/release seguem exigindo autorização e o caminho de
+  `RELEASE-CHAIN.md` (recert no SHA exato + `RELEASE_CANDIDATE`).
+
+## ADMIN-SOLO-FOUNDER-20261102 — RECERT(C1) PASS e atestação C2 (03/11/2026)
+
+`CERTIFIED_FEATURE_SHA=0c4a8c88ca64dedac0a577706c2f86cf85535ea2` · tree `0dd9eee5abdd6b07c8a054add6cbc05e00959ade` · `RECERT_RESULT=PASS` · evidência `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/evidence/recert-0c4a8c8-20261103T095511Z` · MANIFEST sha256 `38bd0938a35c26909432476ebabd72e26e9a3167c0870653b0308e52f74be216`.
+Detalhe e as 3 campanhas FAIL de harness anteriores: `docs/RELEASE-CHAIN.md` (atualização de 03/11). Este commit (C2) é só
+docs e **não** é CERTIFIED; é o `RELEASE_CANDIDATE` autorizado pelo dono para merge + deploy (código em `legacy`, 0088 fora).

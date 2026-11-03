@@ -240,6 +240,9 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
     /* E 0084–0087 (Admin CC 2.0, R4/M5, 31/10): fechamento TOTAL das 34 tabelas ainda abertas, uma
      * migration por grupo (G1 identidade · G2 automação · G3 eventos/IA · G4 laboratório), só
      * `revoke all … from public, anon, authenticated` — service_role intacto; teste SQL 28. */
+    /* E 0088 (SOLO FOUNDER MODE, 02/11): ADITIVA em `admin_private`, fora do domínio financeiro —
+     * governança de linha única, autorizações de uso único, `grant_kind` nas atribuições (regras da
+     * 0083 mantidas para `standard`) e 3 RPCs fechadas; não edita a 0083. Testes SQL 29/29b/29c. */
     const novas = readdirSync("supabase/migrations")
       .filter((f) => f.endsWith(".sql") && f.slice(0, 4) > "0062")
       .sort();
@@ -269,6 +272,7 @@ describe("0063 é a ÚNICA migration nova — 0059–0062 intactas", () => {
       "0085_acl_m5_g2_automacao.sql",
       "0086_acl_m5_g3_eventos_ia.sql",
       "0087_acl_m5_g4_laboratorio.sql",
+      "0088_admin_solo_founder.sql",
     ]);
   });
 });

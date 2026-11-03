@@ -259,3 +259,11 @@
 - Na revisão 4 (02/10, atestação C2), o único documento antigo tocado foi o
   bloco "Status operacional" de `PLANO-EARLY-ACCESS.md`: entrou o de 02/10 e o
   de 01/10 ficou logo abaixo, marcado como histórico.
+
+## Acréscimo 02/11/2026 — SOLO FOUNDER MODE (branch `feat/admin-solo-founder-mode`)
+
+| documento | classe | instrução atual? |
+|---|---|---|
+| `docs/ADMIN-SOLO-FOUNDER-MODE.md` | CURRENT_DEVELOPMENT (desenho + validação local; não em produção) | sim, para o modo `solo_founder`; não autoriza merge, deploy, migration nem env |
+| `docs/PLANO-ADMIN-SOLO-FOUNDER-20261102.md` | CURRENT_DEVELOPMENT (plano da fase) | sim, como plano; o estado vem do ledger |
+| `docs/ADMIN-SSO-MFA-RBAC-DESIGN.md` | SUPPORTING_REFERENCE (desenho R1, preservado) | sim para `multi_admin`; o bootstrap de 3 identidades (§13) é substituído no `solo_founder` pelo doc acima |

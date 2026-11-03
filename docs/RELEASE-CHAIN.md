@@ -491,3 +491,21 @@ flag, revisão adversarial rodada 3 (13 achados; 12 corrigidos, 1 aceito). Autor
 hospedado: passo separado, uma por vez, com backup lógico validado antes.
 Rollback de código: deploy de produção anterior (`10ebd12`). Rollback de banco: grants do cabeçalho de cada migration;
 0083 → `drop schema admin_private cascade` (vazio até R1).
+
+## Atualização — Admin CC 2.0 SOLO FOUNDER MODE, C1 `0c4a8c8` (03/11/2026)
+
+RELEASE_CANDIDATE = THIS_RELEASE_CANDIDATE_COMMIT (C2, docs-only, filho de `0c4a8c88ca64dedac0a577706c2f86cf85535ea2`).
+CERTIFIED_FEATURE_SHA = `0c4a8c88ca64dedac0a577706c2f86cf85535ea2` (tree `0dd9eee5abdd6b07c8a054add6cbc05e00959ade`), descende de `1123b3851004e298cbdf5cb35b01cbc7e345b213` (= `main`).
+RECERT(C1) = **PASS** — evidência `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/evidence/recert-0c4a8c8-20261103T095511Z`, `MANIFEST.sha256` sha256 `38bd0938a35c26909432476ebabd72e26e9a3167c0870653b0308e52f74be216`:
+npm ci · type-check · lint 0 erros · vitest 360 arquivos / 5522 testes ×2 · solana 242 · build = deploy **Preview** da Vercel
+do SHA exato (`success`; o build local é interrompido pelo vigia de memória da máquina do laboratório) · audit-gate OK ·
+0 segredo no delta `1123b38..C1` · SQL cadeia 0001→0088 como `postgres` em supabase/postgres 17.6.1.127: 25/25 +
+concorrência 16b/20b/23b/24b/29b + **A58 `_stable` 20/20**. `13_dca_a58_concorrencia.sh` (variante instável, preexistente,
+`COST-ENGINEERING-ROUND-REPORT.md:341`) rodou como informativa e repetiu o FAIL de temporização conhecido.
+Campanhas anteriores no MESMO C1, **FAIL de harness**, preservadas e não reaproveitadas:
+`recert-0c4a8c8-20261103T092534Z` (faltou `DATABASE_URL` ao script 13), `…093531Z` (harness rodou a variante instável
+como gate), `…094450Z` (faltou `T13_CONFIRM_DISPOSABLE`/`T13_STABLE_EVIDENCE_DIR` à `_stable`). Nenhuma foi falha do produto;
+o harness foi ensaiado isoladamente antes da campanha PASS.
+Autorização: dono, 03/11/2026 ("autorizo fazer merge e deploy para produção"). Deploy com `ADMIN_AUTH_MODE` **ausente**
+(= legacy): nada muda no comportamento do Admin. Migration **0088 NÃO** faz parte deste deploy (passo separado, com backup
+validado e autorização própria). Rollback de código: deploy de produção anterior `dpl_6aT7pvUWYDiEcgS18Jvo6yEeMmD4` (`770f60c`).

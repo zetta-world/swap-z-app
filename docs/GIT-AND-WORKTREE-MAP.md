@@ -153,3 +153,9 @@ git show origin/platform-closure:docs/LEDGER-MESTRE-RELEASE.md   # §Z, §ZB
 Fonte: `reports/postreboot-20261001T1225Z/POST-REBOOT-CLOSURE.md` e o check das
 14:40 em `state/unattended-boot-20261001T1557Z/evidence/`. **Nenhuma stack tem
 a 0068** (Early Access): ela só foi provada em Postgres descartável.
+
+## Acréscimo 02/11/2026 — SOLO FOUNDER MODE
+
+| worktree | branch | base | observação |
+|---|---|---|---|
+| `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/worktrees/admin-solo-founder-mode-20261102` | `feat/admin-solo-founder-mode` (local, **sem upstream**, sem push) | `1123b3851004e298cbdf5cb35b01cbc7e345b213` (`origin/main`) | código `036efda`; ver ledger "ADMIN-SOLO-FOUNDER-20261102" |

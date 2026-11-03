@@ -12,6 +12,14 @@
 
 ---
 
+## Atualização SOLO FOUNDER MODE (02/11/2026, só na branch — NÃO em produção)
+
+Branch local `feat/admin-solo-founder-mode` (base `1123b38`, HEAD de código `036efda`): governança `solo_founder`
+para o Admin CC 2.0 — UMA identidade (fundador) com MFA, autorização de uso único gerada offline, migration nova
+**0088** (não aplicada no hospedado), rotas `/api/admin-auth/fundador`. Validado localmente: SQL 29/29b/29c PASS,
+suíte 360/5522 PASS, `tsc`/`eslint` 0 erros; **`next build` NÃO validado** (memória da máquina). Produção continua
+`770f60c` em `legacy`. Detalhe: `docs/ADMIN-SOLO-FOUNDER-MODE.md`; ledger "ADMIN-SOLO-FOUNDER-20261102".
+
 ## Atualização ADMIN COMMAND CENTER 2.0 (01/11/2026, em produção)
 
 Produção = `main` `770f60c` (`dpl_6aT7pvUWYDiEcgS18Jvo6yEeMmD4`), código `CERTIFIED_FEATURE_SHA=bb8d838`, em

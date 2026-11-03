@@ -4,6 +4,31 @@ import { logSecurityAguardado } from "@/lib/admin/auditoria-duravel";
 import { ACOES, type AcaoId } from "@/lib/admin/acoes";
 import { PERMISSOES_BREAKGLASS, PERMISSOES_SO_CORPORATIVAS, algumPapelTem, type Permissao } from "@/lib/admin/rbac";
 import { COOKIE_ADMIN } from "@/lib/admin/sessao-corporativa";
+import { CONTENCAO_SOLO, classeDeRisco } from "@/lib/admin/risco";
+import type { Governanca } from "@/lib/admin/corp/governanca-repo";
+
+/** Governança (SOLO FOUNDER, 0088): lida só fora de `legacy`. `ok:false` = ilegível → restringe. */
+type LeituraGovernanca = { ok: true; valor: Governanca } | { ok: false };
+
+async function lerGovernanca(): Promise<LeituraGovernanca> {
+  try {
+    const { repoGovernanca } = await import("@/lib/admin/corp/governanca-repo");
+    const r = await repoGovernanca().ler();
+    return r.ok ? { ok: true, valor: r.valor } : { ok: false };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/**
+ * SOLO FOUNDER: toda ação de alto risco admitida vira um evento de segurança AGUARDADO (com teto) —
+ * o sinal fora do painel que substitui o "olho da segunda pessoa". Não muda a decisão.
+ */
+async function sinalAltoRisco(acao: string, ator: string): Promise<void> {
+  try {
+    await logSecurityAguardado("admin_solo_alto_risco", { acao, ator: ator.slice(0, 18) }, "med");
+  } catch { /* sinal: a decisão já foi tomada e a trilha durável do comando segue valendo */ }
+}
 
 /**
  * PONTO ÚNICO DE DECISÃO DO ADMIN (R2, Admin CC 2.0) — `autorizarAdmin(ação)`.
@@ -27,6 +52,12 @@ import { COOKIE_ADMIN } from "@/lib/admin/sessao-corporativa";
  *     só manda ligar `corp` depois de duas contas reais com MFA testadas em `dual`;
  *   · qualquer outro valor → Admin fechado (404) + alerta alto: erro de operador
  *     visível, sem abrir nada.
+ *
+ * GOVERNANÇA (SOLO FOUNDER MODE, 0088 — `docs/ADMIN-SOLO-FOUNDER-MODE.md`), lida só fora de
+ * `legacy`: em `solo_founder` só a identidade do fundador decide como corporativa; ação
+ * `segregado` (exige segunda pessoa) é bloqueada; ação `alto` exige step-up e gera evento de
+ * segurança; a carteira legada só vale se for a do dono (`env`) e sem alto risco, salvo contenção.
+ * Governança ILEGÍVEL restringe como `solo_founder` (na dúvida, fecha).
  *
  * Negação = `notFound()` (404, nunca 403), registrada e AGUARDADA com teto,
  * como em `requireAdmin`. Para o principal corporativo, recusa por papel ou por
@@ -142,7 +173,7 @@ async function cookieCorporativo(): Promise<string | null> {
  * utilizável (o chamador decide o que fazer: `dual` cai no legado, `corp` nega).
  */
 async function decidirCorporativo(
-  acao: string, permissoes: readonly Permissao[], exigeStepUp: boolean, modo: ModoAuth,
+  acao: string, permissoes: readonly Permissao[], exigeStepUp: boolean, modo: ModoAuth, gov: LeituraGovernanca,
 ): Promise<{ wallet: string; fonte: FonteAdmissao; modo: ModoAuth } | null> {
   const token = await cookieCorporativo();
   if (!token) return null;
@@ -184,6 +215,17 @@ async function decidirCorporativo(
     } catch { /* a negação vale com ou sem a linha; o evento abaixo é aguardado */ }
     return negar(kind, { acao, ator: quem.slice(0, 18), motivo }, "med");
   };
+  // SOLO FOUNDER: governança ilegível não decide por omissão — em `corp` nega, em `dual` cai no legado
+  // (que, com governança ilegível, também fica restrito: ver `decidir`).
+  if (p.kind === "corp" && !gov.ok) {
+    if (modo === "corp") return negarCorp("admin_governanca_ilegivel", "governanca_ilegivel");
+    return null;
+  }
+  // SOLO FOUNDER: só a identidade do fundador governa. Outra identidade, mesmo com papel gravado
+  // por SQL, é negada — "um único administrador" vale no banco E aqui.
+  if (p.kind === "corp" && gov.ok && gov.valor.modo === "solo_founder" && p.identityId !== gov.valor.fundador) {
+    return negarCorp("admin_solo_nao_fundador", "solo_nao_fundador");
+  }
   // ADM-003: papel sem a permissão → nega (404) com a trilha `denied` — nada do handler roda.
   if (!permitido) return negarCorp("admin_rbac_negado", "papel_sem_permissao");
   if (exigeStepUp && !p.stepUpOk) return negarCorp("admin_step_up_exigido", "step_up_expirado");
@@ -199,10 +241,26 @@ async function decidir(
   }
 
   // R1: em `dual`/`corp` a sessão corporativa, quando existe, decide (RBAC real + step-up).
-  // Em `legacy` (padrão) o cookie corporativo NEM É LIDO: a decisão é byte a byte a de antes.
+  // Em `legacy` (padrão) o cookie corporativo NEM É LIDO — nem a governança: a decisão é byte a
+  // byte a de antes.
+  let gov: LeituraGovernanca = { ok: false };
+  const classe = classeDeRisco(acao);
   if (modo.modo !== "legacy") {
-    const corp = await decidirCorporativo(acao, permissoes, exigeStepUp, modo.modo);
-    if (corp) return corp;
+    gov = await lerGovernanca();
+    const soloOuIlegivel = !gov.ok || gov.valor.modo === "solo_founder";
+    // SOLO FOUNDER: ação que exige segunda pessoa fica BLOQUEADA — e também quando não sei o modo.
+    if (classe === "segregado" && soloOuIlegivel) {
+      return negar(gov.ok ? "admin_solo_segregado" : "admin_governanca_ilegivel", {
+        acao, porque: "exige segunda pessoa; bloqueada em solo_founder (docs/ADMIN-SOLO-FOUNDER-MODE.md §5)",
+      }, "high");
+    }
+    const solo = gov.ok && gov.valor.modo === "solo_founder";
+    // SOLO FOUNDER: alto risco exige step-up (MFA recente) mesmo se a linha da matriz pedir só o login.
+    const corp = await decidirCorporativo(acao, permissoes, exigeStepUp || (solo && classe === "alto"), modo.modo, gov);
+    if (corp) {
+      if (solo && classe === "alto") await sinalAltoRisco(acao, corp.wallet);
+      return corp;
+    }
   }
 
   if (modo.modo === "corp") {
@@ -226,6 +284,17 @@ async function decidir(
       && permissoes.every((p) => PERMISSOES_SO_CORPORATIVAS.has(p));
     if (soCorporativa && r.fonte !== "env") {
       return negar("admin_permissao_so_corporativa", { fonte: r.fonte, acao }, "med");
+    }
+    // SOLO FOUNDER (ou modo desconhecido): a carteira legada só vale se for a do DONO (`env`), e
+    // ação de alto risco exige a sessão corporativa com MFA — exceto conter incidente (kill switch).
+    if (!gov.ok || gov.valor.modo === "solo_founder") {
+      if (r.fonte !== "env") {
+        return negar("admin_solo_fonte_legada", { fonte: r.fonte, acao, porque: "solo_founder: só a carteira de ADMIN_WALLETS" }, "high");
+      }
+      if (classe === "alto" && !CONTENCAO_SOLO.has(acao as AcaoId)) {
+        return negar("admin_solo_alto_exige_mfa", { acao, porque: "alto risco exige sessão corporativa com step-up" }, "med");
+      }
+      if (classe === "alto") await sinalAltoRisco(acao, r.wallet);
     }
   }
 
