@@ -1,7 +1,7 @@
 # Admin Command Center 2.0 — SOLO FOUNDER MODE
 
-Status: 🟡 **IMPLEMENTADO E VALIDADO LOCALMENTE — AGUARDANDO AUTORIZAÇÃO DE PRODUÇÃO.** Nada disto está em produção:
-nenhuma migration aplicada no banco hospedado, nenhuma variável na Vercel, nenhuma conta criada.
+Status: 🟡 **CÓDIGO EM PRODUÇÃO E DESLIGADO (`ADMIN_AUTH_MODE` ausente), desde 03/11/2026.** Migration 0088 **não** aplicada no banco
+hospedado; nenhuma variável na Vercel; nenhuma conta criada.
 Branch `feat/admin-solo-founder-mode` (a partir de `1123b3851004e298cbdf5cb35b01cbc7e345b213`). Plano:
 `docs/PLANO-ADMIN-SOLO-FOUNDER-20261102.md`. Desenho de origem (preservado): `docs/ADMIN-SSO-MFA-RBAC-DESIGN.md`.
 
@@ -177,7 +177,7 @@ Nenhuma delas é `NEXT_PUBLIC_*` (teste `solo-authz.test.ts` › "nada administr
 > local, sem upstream, e nunca foi enviada (`git ls-remote` vazio). O push em si exige autorização do dono.
 
 
-1. ⛔ Merge da branch e deploy de um SHA marcado `RELEASE_CANDIDATE` (com `ADMIN_AUTH_MODE` ausente, nada muda).
+1. ✅ Feito em 03/11: merge e deploy (PR #453, `a77af83`).
 2. ⛔ Aplicar a **0088** no banco hospedado (backup + restauração validada antes, como na rodada 0079–0087).
 3. ⛔ IdP: criar o app (Entra single-tenant **ou** Google Internal) e configurar o provedor no Supabase (design R1 §9).
 4. ⛔ Supabase: "Allow new users to sign up" OFF; TOTP ligado; Redirect URL exata; expor `admin_private` no Data API.

@@ -509,3 +509,9 @@ o harness foi ensaiado isoladamente antes da campanha PASS.
 Autorização: dono, 03/11/2026 ("autorizo fazer merge e deploy para produção"). Deploy com `ADMIN_AUTH_MODE` **ausente**
 (= legacy): nada muda no comportamento do Admin. Migration **0088 NÃO** faz parte deste deploy (passo separado, com backup
 validado e autorização própria). Rollback de código: deploy de produção anterior `dpl_6aT7pvUWYDiEcgS18Jvo6yEeMmD4` (`770f60c`).
+
+## Errata — ids de deploy e merges só de docs (03/11/2026)
+
+Rollback do release `a77af83`: `dpl_DG2zBQKq1uec2oLYg8Gamw1wpuST` (`1123b38`, código `770f60c`). Merges só de docs `1123b38` (#452) e
+`9f4d62b` (#454) foram publicados pela Vercel sem marca `RELEASE_CANDIDATE`; produto idêntico. Detalhe: ledger
+"ADMIN-ESTADO-CORRECOES-20261103".
