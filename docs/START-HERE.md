@@ -7,6 +7,8 @@
 > Planos antigos são histórico, mesmo quando dizem "status 🟢" ou "vivo".
 > O estado atual é definido AQUI e em `docs/CURRENT-STATE.md`.
 
+**Revisão 15 (03/11/2026, ledger ADMIN-ESTADO-CORRECOES-20261103): estado reconciliado depois do Admin CC 2.0 (01/11) e do SOLO FOUNDER MODE (03/11). O texto de seções abaixo não atualizadas por esta revisão vale como foi medido na data dele; em conflito, vale `docs/CURRENT-STATE.md`.**
+
 **Revisão 14 (14/10/2026, ledger L-053): reconciliação de governança DEPOIS do release de produção de 13–14/10.** O código do release é `6d1295bf43f4967b7e15498f1496c132fc09fa7a`; `main` foi avançada por fast-forward para ele e a produção passou a servi-lo; migrations 0059–0076 aplicadas no banco hospedado; R-01 e R-02 fechados. Este arquivo foi atualizado só depois do release: o registro de seleção do candidato **não** existia nos documentos antes do deploy (lacuna registrada em L-053). Revisão 13 (L-049) e anteriores: §11.
 
 ---
@@ -26,8 +28,8 @@ plane — `CLAUDE.md`, `AGENTS.md`, `docs/**` — o movem legitimamente).
 | | |
 |---|---|
 | PRODUCT_BASE_SHA | `9f2ddcbe45f9f93c9a33c331e31e32c45d410019` · tree `6cd43386ab1f1a1d3181e61d1fec36c251a27b8b` (Early Access Fase 1; referência histórica de identidade) |
-| RELEASE CODE SHA (em produção desde 14/10) | `6d1295bf43f4967b7e15498f1496c132fc09fa7a` · tree `22a3a409e6f43d2b5bb8f7e727ef4c8bba0e364a` |
-| `main` (GitHub) | `THIS_CONTROL_PLANE_COMMIT` da L-053: commit **só de docs** cujo pai é `6d1295b`; nenhum arquivo fora de `docs/**` e `AGENTS.md` difere de `6d1295b` |
+| RELEASE CODE SHA (em produção desde 03/11) | `0c4a8c88ca64dedac0a577706c2f86cf85535ea2` (`main` = `a77af83` + merge só de docs `9f4d62b`). Deployment servido medido em 03/11: `dpl_951Ujx6KsFADFrKQZAPktSmfWWk3` |
+| `main` (GitHub) | HEAD muda com commits só de docs. ⚠️ A Vercel publica em produção **todo push em `main`**, inclusive só de docs (OPEN `AUTO-DEPLOY-MAIN`, §6) |
 | EXPECTED_BRANCH | `main` (`origin/main`). Branches e worktrees locais antigos são históricos; inventário de 13/10 em `zswap-local/release/production-20261013/PRE-RELEASE-RECONCILIATION.md` |
 | WORKING TREE | **limpo** |
 
@@ -39,9 +41,9 @@ plane — `CLAUDE.md`, `AGENTS.md`, `docs/**` — o movem legitimamente).
 | campo | valor |
 |---|---|
 | LAST_CERTIFIED_RUNTIME | `0d21874b4147bb8a0b232aa0abc2302471a720e5`: CERTIFIED_EXACT_SHA (lab local, 01/10) — ancestral do código em produção |
-| CERTIFIED_FEATURE_SHA | `53cd85a2a86cc2f34d4234965ef3cf519ce7adc1` (Early Access Fase 2, L-027) — ancestral do código em produção |
-| RELEASE EXECUTADO | `6d1295bf43f4967b7e15498f1496c132fc09fa7a` — selecionado e implantado na rodada de 13–14/10 sob a missão do dono "PRODUCTION RELEASE / TOTAL RECONCILIATION / VERCEL DEPLOY" (13/10). **Não** recebeu a classificação `CERTIFIED_EXACT_SHA`: os gates foram medidos com desvios documentados (L-053; `RELEASE-CHAIN.md` nó 27) |
-| RELEASE_CANDIDATE | **nenhum candidato novo em andamento**; o candidato do release de 13–14/10 (`6d1295b`) já foi executado. A marcação `RELEASE_CANDIDATE` **não** foi registrada nos documentos antes do deploy (lacuna, L-053) |
+| CERTIFIED_FEATURE_SHA | `0c4a8c88ca64dedac0a577706c2f86cf85535ea2` (SOLO FOUNDER MODE; recert `recert-0c4a8c8-20261103T095511Z`, depois de 3 campanhas FAIL de harness no mesmo SHA; exceção à §5.2 ratificada pelo dono, ver ledger) |
+| RELEASE EXECUTADO | `a77af83` em 03/11 (PR #453, C2 `600cfb6`), autorizado pelo dono. Releases anteriores: `RELEASE-CHAIN.md` |
+| RELEASE_CANDIDATE | **nenhum candidato novo em andamento**; `600cfb6` já foi executado |
 
 ## 4. Qual worktree usar?
 
@@ -54,9 +56,9 @@ Mapa: `docs/GIT-AND-WORKTREE-MAP.md` (revisão com refs atualizadas em L-053).
 
 | campo | valor |
 |---|---|
-| CURRENT_WORK | **POST-RELEASE: release de 13–14/10 concluído; reconciliação de governança registrada em L-053.** Nenhuma fase de produto aberta |
-| PRODUCTION | app servindo o código `6d1295b` (deployment original do release `dpl_A5PDW653HtRyH4HN6CUdhGC7LLrC`; o deployment servido depois do commit da L-053 está registrado na evidência externa da L-053) · banco com 73 linhas de histórico, head `20261014002550` |
-| MIGRATIONS | 0059–0076 **aplicadas** no banco hospedado em 14/10 (uma transação por arquivo, com a linha de histórico) |
+| CURRENT_WORK | **POST-RELEASE.** SOLO FOUNDER MODE em produção e DESLIGADO (`ADMIN_AUTH_MODE` ausente = legacy). Pendências em `docs/CURRENT-STATE.md` |
+| PRODUCTION | código `0c4a8c8`, `dpl_951Ujx6KsFADFrKQZAPktSmfWWk3` |
+| MIGRATIONS | hospedado até **0087** (lista de migrations lida em 03/11). **0088 NÃO aplicada** |
 | R-01 VERCEL | **CLOSED** (conta ativa; deploys de preview e produção concluídos; produção responde 200) |
 | R-02 `CEX_RECOVERY_HMAC_KEY` | **CLOSED** — presente por nome (tipo `sensitive`, production + preview) desde 13/10 23:50 UTC; valor nunca exibido. O caminho autenticado que a usa **não** foi exercitado em produção |
 | AP-LOCK hosted | **PASS** por sonda comportamental (padrão exato da trava do cron gerou SQL válido no PostgREST hospedado; função real não exercitada: 0 sessões) |
@@ -69,7 +71,8 @@ global sem pendências ≠ autorização para dinheiro real.
 
 ## 6. O que está aberto?
 
-- **ACL-DEFAULT-GRANTS (OPEN):** 35/53 tabelas mantêm privilégios de tabela padrão para `anon`/`authenticated`;
+- **ACL-DEFAULT-GRANTS: CLOSED** (0079–0087 em 01/11; ledger "ADMIN-CC2 — rollout em produção").
+- **AUTO-DEPLOY-MAIN (OPEN):** todo push em `main` vai para produção, o que conflita com a política do §7 para commits sem `RELEASE_CANDIDATE`. Decisão do dono.
   um PATCH anônimo testado alterou 0 linhas. Isso **não** prova contenção completa de todos os privilégios e
   caminhos. Revisão própria de privilégios/exposição, com eventual REVOKE, em rodada separada.
 - **CE-01 (monitorar):** margem da trava de complexidade no runner do CI (motor 5,4–7,1× vs quadrático 14,8×, limite 10×).
@@ -119,7 +122,7 @@ Evidência externa (fora do repo): `zswap-local/release/production-20261013/` (r
 ## 9. Qual é o próximo passo exato?
 
 Nada é automático. Não há release candidate novo nem fase aberta. Próximos trabalhos possíveis, cada um
-**só com autorização explícita do dono**: revisão de ACL (ACL-DEFAULT-GRANTS), abertura do early access
+**só com autorização explícita do dono**: ligar o SOLO FOUNDER MODE (`CURRENT-STATE.md`), abertura do early access
 (GATE-OPEN), auditoria independente pendente das entregas Founders, e qualquer novo release (que volta a
 exigir o caminho completo do `RELEASE-CHAIN.md` §3, incluindo a marcação `RELEASE_CANDIDATE` **antes** do deploy).
 Modos de dinheiro real seguem NO-GO.
@@ -128,7 +131,7 @@ Modos de dinheiro real seguem NO-GO.
 
 ```bash
 git fetch origin --tags --prune
-RELEASE_CODE=6d1295bf43f4967b7e15498f1496c132fc09fa7a
+RELEASE_CODE=0c4a8c88ca64dedac0a577706c2f86cf85535ea2
 git rev-parse origin/main origin/main^{tree}           # HEAD documental atual (L-053 ou posterior)
 git merge-base --is-ancestor "$RELEASE_CODE" origin/main && echo OK-RELEASE-ANCESTOR
 git diff --stat "$RELEASE_CODE" origin/main -- . ':!docs/**' ':!CLAUDE.md' ':!AGENTS.md'   # vazio enquanto nenhum código novo entrar

@@ -4,7 +4,7 @@
 > `docs/LAUNCH-READINESS-LEDGER.md`. Ao mudar de estado, **substitua** as seções
 > atuais e **acrescente** uma entrada no ledger.
 >
-> **Medido em:** 14/10/2026 (revisão 16, ledger L-053: **reconciliação de governança depois do release de
+> **Atualizado em 03/11/2026** nas seções "Atualização" do topo (ledger ADMIN-ESTADO-CORRECOES-20261103). Corpo: **medido em** 14/10/2026 (revisão 16, ledger L-053: **reconciliação de governança depois do release de
 > produção de 13–14/10**). Estado medido nesta revisão por leitura (GitHub, CI, Vercel, banco hospedado em
 > transação `read only`); evidência fora do repo em `zswap-local/evidence/post-release-governance-*`. A revisão 15
 > (08/10, L-052) e anteriores estão em **HISTÓRICO**, inalteradas.
@@ -14,12 +14,15 @@
 
 ## Atualização SOLO FOUNDER MODE (03/11/2026, em produção — código; governança NÃO ativada)
 
-Produção = `main` `a77af83` (merge do PR #453; deployment Production `7515886452`, Vercel `success`), código
-`CERTIFIED_FEATURE_SHA=0c4a8c8` (recert PASS), com `ADMIN_AUTH_MODE` **ausente** (= legacy): o Admin decide como antes; o
-modo `solo_founder` está no código e **desligado**. Migration **0088 NÃO aplicada** no hospedado. Smoke: `/`, `/settings`,
-`/founders-pass`, `/api/tier`, nonce SIWE → 200; `/admin`, `/admin/api/*`, `/admin-acesso*`, `/api/admin-auth/*` → 404.
-Pendente (dono): 0088 com backup validado, IdP, variáveis — `docs/ADMIN-SOLO-FOUNDER-MODE.md` §12. Rollback de código:
-deployment Production `7471993912` (`1123b38`, código `770f60c`).
+Código em produção `0c4a8c88ca64dedac0a577706c2f86cf85535ea2` (`main` `a77af83`, PR #453). Deployment servido: `dpl_951Ujx6KsFADFrKQZAPktSmfWWk3`, do merge só de
+docs `9f4d62b`; o do `a77af83` é `dpl_ouXFsN4EbKKSACLNR1ya9yteCVyC`. `ADMIN_AUTH_MODE` **ausente** (= legacy): o modo
+`solo_founder` está no código e **desligado**. Migration **0088 NÃO aplicada** no hospedado (lista lida em 03/11: até 0087).
+Rollback de código: `dpl_DG2zBQKq1uec2oLYg8Gamw1wpuST` (`1123b38`, código `770f60c`).
+
+**Pendências, em ordem:** (1) ligar o modo: backup validado + 0088 + IdP + variáveis (`docs/ADMIN-SOLO-FOUNDER-MODE.md` §12);
+(2) e-mail do dono a review@phantom.com (planejado para depois da compra do domínio, 15/11; dono, não provado aqui);
+(3) agendar `/api/operations/reconciliar` no cron-job.org; (4) revisar as exceções R-04 e R-05 do `npm audit` (não corrigidas);
+(5) `AUTO-DEPLOY-MAIN`: todo push em `main` vai para produção, inclusive só de docs, sem `RELEASE_CANDIDATE` — decisão do dono.
 
 ## Atualização ADMIN COMMAND CENTER 2.0 (01/11/2026, em produção)
 
@@ -29,45 +32,19 @@ Banco hospedado: **0079–0087 aplicadas e conferidas**, uma por vez, após back
 tabelas antes abertas negam a chave pública (42501). ACL-DEFAULT-GRANTS: **fechado**. Pendente: IdP + contas reais para
 ligar o R1. Ledger "ADMIN-CC2 — rollout em produção".
 
-## Atualização C1c — blockhash do servidor (25/10/2026, tarde)
+## Atualização Solana/Phantom (25/10/2026) — substitui as seções C1c, PHANTOM-LIGHTHOUSE-V2, L-064 e L-063
 
-Produção em `0430644` (código `31920d7`, Next 16.4.3). 1º swap real: o servidor ACEITOU a transação da Phantom e o nó
-recusou com `BlockhashNotFound` — o blockhash do `/build` da Jupiter vem de cache com ~35 s de vida (medido). Correção
-certificada: `CERTIFIED_FEATURE_SHA=cb8b9ac` (blockhash novo do RPC do servidor; cotação renovada com > 20 s), recert
-PASS e CI verde. **Pendente: autorização do dono para este SHA + deploy; e-mail do dono a review@phantom.com (a Phantom
-marca o domínio como suspeito).**
-
-## Atualização PHANTOM-LIGHTHOUSE-V2 — swap Solana com a Phantom (25/10/2026)
-
-Produção segue em `cc79fc7` (#449): o swap assinado na Phantom é recusado antes do RPC
-(`lighthouse_instrucao_nao_permitida`, 21/10) porque a instrução Lighthouse REAL da Phantom (log level 4, KnownOwner)
-caía no parser restrito. Correção certificada em `claude/swap-z-recovery-deploy-b7y2cw`:
-`CERTIFIED_FEATURE_SHA=31920d7` (decodificador completo do Lighthouse, extensão restrita da cotação, diagnóstico por
-regra, "uma cotação, um swap", Next.js 16.4.3 — fecha 2 alertas CRÍTICOS de RCE que estão em produção — e exceção R-04
-do `npm audit` aprovada pelo dono). Recert PASS e CI verde no SHA exato. **Pendente: autorização do dono para
-`RELEASE_CANDIDATE` + deploy, e o primeiro swap real assinado.** Riscos declarados: troca de blockhash pela Phantom
-continua recusada (aparece como `:blockhash`); trava por cotação não atômica com a 0077.
-
-## Atualização L-064 — W3 transmissão Solana (21/10/2026)
-
-Produção segue em `986ae75`: swap Solana falha no ENVIO (403 do RPC público) e **`NEXT_PUBLIC_SOLANA_JITO` está "on"** —
-swaps com exposição ≥ $25 tentam o Jito pelo navegador. Correção em `fix/w3-transmissao-solana@f83e12a` (sobre a W1): envio
-só pelo servidor com vínculo cotação↔taxa, tarifa do PAGADOR, status estrito, identidade de origem. Trava durável (W3-C) e
-reconciliação do livro (W3-D) só desenhadas. Pendentes: autorização para aplicar W3-C/W3-D, rodada de dependências
-(audit-gate), teste com fundos.
-
-## Atualização L-063 — W1 carteiras/saldos (20/10/2026)
-
-Produção segue em `986ae75` (saldos Solana quebrados no navegador: RPC público dá 403 a navegador). Correção em
-`fix/w1-carteiras-saldos@70ba76a`, preview conferido; release bloqueado pelo audit-gate (alertas novos de terceiros) e
-pelo QA Android pendente. W3 (envio de swap Solana pelo mesmo RPC) é o próximo risco.
+W1, W3, W3-C, W3-D, W4, Lighthouse V2 (`31920d7`, 1º deploy de produção 25/10 10:42 UTC) e blockhash do servidor (`cb8b9ac`,
+`10ebd12`, `dpl_7KTQpQSh3BWYzrVJsb22TH5n7zdR`, 25/10 16:56 UTC) **estão em produção**. **1º swap Solana real com a Phantom:
+aceito e transmitido em 25/10 17:02:57 UTC**, sem aviso vermelho (logs da Vercel; assinatura `5pZHbNzTC5MW…`). Desfecho on-chain
+conforme o dono ("deu certo"); não conferido no explorer. Registro: ledger "ADMIN-ESTADO-CORRECOES-20261103".
 
 ## Atualização L-062B — Jupiter Swap V2 `/build` (16/10/2026)
 
 Em produção desde 16/10 (`main` `fd4172f`, código `d86c963`, `dpl_HcXiT1J7SwzXYNS87oRgq33UQeRc` promovido): Jupiter
 na Swap V2 Router `/build`, transação v0 montada no servidor e medida (≤ 64 contas, ≤ 1232 bytes; rota longa →
 refeita com `maxAccounts=40`), taxa confirmada na instrução, autenticada. Uma primeira subida (`a675ddb`) foi revertida
-no mesmo dia (65 contas). Pendente: primeiro swap real assinado.
+no mesmo dia (65 contas). Primeiro swap real: ver "Solana/Phantom" acima.
 
 ## Atualização L-062A — chave da Jupiter (16/10/2026)
 
