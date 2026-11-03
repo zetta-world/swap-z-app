@@ -1628,3 +1628,15 @@ Autorização do dono (chat, 02/11): "autorizo vc validar fazer push abrir pr".
 `CERTIFIED_FEATURE_SHA=0c4a8c88ca64dedac0a577706c2f86cf85535ea2` · tree `0dd9eee5abdd6b07c8a054add6cbc05e00959ade` · `RECERT_RESULT=PASS` · evidência `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/evidence/recert-0c4a8c8-20261103T095511Z` · MANIFEST sha256 `38bd0938a35c26909432476ebabd72e26e9a3167c0870653b0308e52f74be216`.
 Detalhe e as 3 campanhas FAIL de harness anteriores: `docs/RELEASE-CHAIN.md` (atualização de 03/11). Este commit (C2) é só
 docs e **não** é CERTIFIED; é o `RELEASE_CANDIDATE` autorizado pelo dono para merge + deploy (código em `legacy`, 0088 fora).
+
+## ADMIN-SOLO-FOUNDER — merge e deploy de produção (03/11/2026)
+
+Autorização do dono (chat, 03/11): "autorizo fazer merge e deploy para produção".
+- PR #453 mergeado em `main` = `a77af83710dda8947ce9a4e6666ee114d83ce463` (merge do C2 `600cfb6110f2be869e3c22ac62639c540b710cbc`,
+  sobre `CERTIFIED_FEATURE_SHA=0c4a8c88ca64dedac0a577706c2f86cf85535ea2`; CI e Preview verdes no C2).
+- Vercel: deployment **Production** id `7515886452` do SHA `a77af83` → `success` ("Deployment has completed").
+- Smoke em `swap-z-app.vercel.app`: `/`, `/settings`, `/founders-pass`, `/api/tier`, `GET /api/auth/nonce` → 200;
+  `/admin`, `/admin/api/killswitch`, `/admin/api/identidades`, `/admin-acesso`, `/admin-acesso/fundador`,
+  `/api/admin-auth/start`, `POST /api/admin-auth/fundador` → 404 (`ADMIN_AUTH_MODE` ausente = legacy).
+- **Não feito** (fora desta autorização): migration 0088 no hospedado, IdP, variáveis na Vercel, bootstrap.
+- Rollback de código: deployment Production anterior `7471993912` (`1123b38`; código `770f60c`).

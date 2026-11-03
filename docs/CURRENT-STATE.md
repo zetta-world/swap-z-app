@@ -12,13 +12,14 @@
 
 ---
 
-## Atualização SOLO FOUNDER MODE (02/11/2026, só na branch — NÃO em produção)
+## Atualização SOLO FOUNDER MODE (03/11/2026, em produção — código; governança NÃO ativada)
 
-Branch local `feat/admin-solo-founder-mode` (base `1123b38`, HEAD de código `036efda`): governança `solo_founder`
-para o Admin CC 2.0 — UMA identidade (fundador) com MFA, autorização de uso único gerada offline, migration nova
-**0088** (não aplicada no hospedado), rotas `/api/admin-auth/fundador`. Validado localmente: SQL 29/29b/29c PASS,
-suíte 360/5522 PASS, `tsc`/`eslint` 0 erros; **`next build` NÃO validado** (memória da máquina). Produção continua
-`770f60c` em `legacy`. Detalhe: `docs/ADMIN-SOLO-FOUNDER-MODE.md`; ledger "ADMIN-SOLO-FOUNDER-20261102".
+Produção = `main` `a77af83` (merge do PR #453; deployment Production `7515886452`, Vercel `success`), código
+`CERTIFIED_FEATURE_SHA=0c4a8c8` (recert PASS), com `ADMIN_AUTH_MODE` **ausente** (= legacy): o Admin decide como antes; o
+modo `solo_founder` está no código e **desligado**. Migration **0088 NÃO aplicada** no hospedado. Smoke: `/`, `/settings`,
+`/founders-pass`, `/api/tier`, nonce SIWE → 200; `/admin`, `/admin/api/*`, `/admin-acesso*`, `/api/admin-auth/*` → 404.
+Pendente (dono): 0088 com backup validado, IdP, variáveis — `docs/ADMIN-SOLO-FOUNDER-MODE.md` §12. Rollback de código:
+deployment Production `7471993912` (`1123b38`, código `770f60c`).
 
 ## Atualização ADMIN COMMAND CENTER 2.0 (01/11/2026, em produção)
 
