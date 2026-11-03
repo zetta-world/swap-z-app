@@ -1622,3 +1622,9 @@ Autorização do dono (chat, 02/11): "autorizo vc validar fazer push abrir pr".
   `success` ("Deployment has completed"); CI do PR: 2 jobs `checks` PASS.
 - Produção, Supabase hospedado e envs: **não tocados**. Merge/release seguem exigindo autorização e o caminho de
   `RELEASE-CHAIN.md` (recert no SHA exato + `RELEASE_CANDIDATE`).
+
+## ADMIN-SOLO-FOUNDER-20261102 — RECERT(C1) PASS e atestação C2 (03/11/2026)
+
+`CERTIFIED_FEATURE_SHA=0c4a8c88ca64dedac0a577706c2f86cf85535ea2` · tree `0dd9eee5abdd6b07c8a054add6cbc05e00959ade` · `RECERT_RESULT=PASS` · evidência `/home/zetta/Documentos/ZETTA_WORLD/zswap-local/evidence/recert-0c4a8c8-20261103T095511Z` · MANIFEST sha256 `38bd0938a35c26909432476ebabd72e26e9a3167c0870653b0308e52f74be216`.
+Detalhe e as 3 campanhas FAIL de harness anteriores: `docs/RELEASE-CHAIN.md` (atualização de 03/11). Este commit (C2) é só
+docs e **não** é CERTIFIED; é o `RELEASE_CANDIDATE` autorizado pelo dono para merge + deploy (código em `legacy`, 0088 fora).
