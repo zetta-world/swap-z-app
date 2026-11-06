@@ -158,17 +158,17 @@ function row(over: Partial<ZionSuggestionRow>): ZionSuggestionRow {
     ...over,
   };
 }
-const k = (t: number, high: number, low: number, close: number) => ({ t, high, low, close });
+const k = (t: number, high: number, low: number, close: number) => ({ t, durationMs: H, high, low, close });
 
 describe("resolveOne — first-touch replay", () => {
   it("marks hit_target when the target is touched first", () => {
-    const v = resolveOne(row({}), [k(T0 + H, 104, 99, 102)], undefined, T0 + 2 * H);
+    const v = resolveOne(row({}), [k(T0, 104, 99, 102)], undefined, T0 + 2 * H);
     expect(v?.status).toBe("hit_target");
     expect(v?.outcomePct).toBeCloseTo(3);
   });
 
   it("assumes STOP first when one candle straddles both levels (pessimistic)", () => {
-    const v = resolveOne(row({}), [k(T0 + H, 104, 97, 102)], undefined, T0 + 2 * H);
+    const v = resolveOne(row({}), [k(T0, 104, 97, 102)], undefined, T0 + 2 * H);
     expect(v?.status).toBe("hit_stop");
     expect(v?.outcomePct).toBeCloseTo(-2);
   });
@@ -180,7 +180,7 @@ describe("resolveOne — first-touch replay", () => {
   });
 
   it("returns EXPIRED (not win/loss) when the horizon elapses with no touch", () => {
-    const v = resolveOne(row({}), [k(T0 + H, 102, 99, 101.5)], undefined, T0 + 73 * H);
+    const v = resolveOne(row({}), Array.from({ length: 72 }, (_, i) => k(T0 + i * H, 102, 99, 101.5)), undefined, T0 + 73 * H);
     expect(v?.status).toBe("expired");
     expect(v?.outcomePct).toBeCloseTo(1.5); // drift credited to expectancy, not to win-rate
   });
@@ -188,19 +188,19 @@ describe("resolveOne — first-touch replay", () => {
   it("sell side inverts the outcome sign", () => {
     const v = resolveOne(
       row({ side: "sell", target_price: 97, stop_price: 102 }),
-      [k(T0 + H, 98, 96.5, 97.5)], undefined, T0 + 2 * H,
+      [k(T0, 98, 96.5, 97.5)], undefined, T0 + 2 * H,
     );
     expect(v?.status).toBe("hit_target");
     expect(v?.outcomePct).toBeCloseTo(3); // price fell 3% and we were short
   });
 
-  it("falls back to a spot check when no candles are available", () => {
+  it("does not invent first-touch order or expiry from a spot quote", () => {
     const hit = resolveOne(row({}), [], 103.5, T0 + 2 * H);
-    expect(hit?.status).toBe("hit_target");
+    expect(hit).toBeNull();
     const inflight = resolveOne(row({}), [], 101, T0 + 2 * H);
     expect(inflight).toBeNull();
     const expired = resolveOne(row({}), [], 101, T0 + 73 * H);
-    expect(expired?.status).toBe("expired");
+    expect(expired).toBeNull();
   });
 });
 

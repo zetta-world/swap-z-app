@@ -76,34 +76,15 @@ describe("a carência protege quem só teve uma queda de provedor", () => {
   });
 });
 
-describe("⚠️ o caminho COM preço não mudou de comportamento", () => {
-  it("alvo tocado continua alvo", () => {
-    const v = resolveOne(base, [], 0.022, CRIADA + 3_600_000);
-    expect(v?.status).toBe("hit_target");
-    expect(v?.outcomePct).toBeGreaterThan(0);
+describe("cotação isolada não prova a trajetória nem o vencimento", () => {
+  it.each([0.022, 0.016, 0.019])("não inventa toque a partir do spot %s", (spot) => {
+    expect(resolveOne(base, [], spot, CRIADA + 3_600_000)).toBeNull();
+    expect(resolveOne(base, [], spot, HORIZONTE + 60_000)).toBeNull();
   });
-
-  it("stop tocado continua stop, e tem precedência sobre o horizonte", () => {
-    const v = resolveOne(base, [], 0.016, HORIZONTE + 3_600_000);
-    expect(v?.status).toBe("hit_stop");
-    expect(v?.outcomePct).toBeLessThan(0);
-  });
-
-  it("horizonte vencido COM preço no meio continua `expired` — com número", () => {
-    const v = resolveOne(base, [], 0.019, HORIZONTE + 60_000);
-    expect(v?.status).toBe("expired");
-    expect(typeof v?.outcomePct).toBe("number");
-    expect(v?.price).toBe(0.019);
-  });
-
-  it("em voo, com preço no meio da faixa, segue nulo", () => {
-    expect(resolveOne(base, [], 0.019, CRIADA + 3_600_000)).toBeNull();
-  });
-
-  it("uma venda tem os lados invertidos", () => {
+  it("short também precisa de caminho observado", () => {
     const venda = { ...base, side: "sell", target_price: 0.016, stop_price: 0.020 } as ZionSuggestionRow;
-    expect(resolveOne(venda, [], 0.0155, CRIADA + 60_000)?.status).toBe("hit_target");
-    expect(resolveOne(venda, [], 0.0205, CRIADA + 60_000)?.status).toBe("hit_stop");
+    expect(resolveOne(venda, [], 0.0155, CRIADA + 60_000)).toBeNull();
+    expect(resolveOne(venda, [], 0.0205, CRIADA + 60_000)).toBeNull();
   });
 });
 
@@ -129,15 +110,15 @@ describe("⚠️ preço de hoje não precifica horizonte que fechou há semanas"
     expect(v?.status).toBe(STATUS_SEM_PRECO);
   });
 
-  it("dentro da carência o preço corrente ainda vale", () => {
+  it("dentro da carência espera o histórico em vez de usar spot tardio", () => {
     const v = resolveOne(base, [], 0.022, HORIZONTE + 3_600_000);
-    expect(v?.status).toBe("hit_target");
+    expect(v).toBeNull();
   });
 });
 
 describe("com velas, o replay manda — e ele não passa pela carência", () => {
   const velas = (closes: number[]) =>
-    closes.map((c, i) => ({ t: CRIADA + i * 3_600_000, high: c, low: c, close: c }));
+    closes.map((c, i) => ({ t: CRIADA + i * 3_600_000, durationMs: 3_600_000, high: c, low: c, close: c }));
 
   it("toque no alvo dentro da janela resolve na hora", () => {
     const v = resolveOne(base, velas([0.0185, 0.0215]), undefined, CRIADA + 2 * 3_600_000);
@@ -145,7 +126,7 @@ describe("com velas, o replay manda — e ele não passa pela carência", () => 
   });
 
   it("horizonte vencido sem toque vira `expired` COM número", () => {
-    const v = resolveOne(base, velas([0.0185, 0.0190]), undefined, HORIZONTE + 60_000);
+    const v = resolveOne(base, velas(Array.from({ length: 12 }, () => 0.0190)), undefined, HORIZONTE + 60_000);
     expect(v?.status).toBe("expired");
     expect(typeof v?.outcomePct).toBe("number");
   });

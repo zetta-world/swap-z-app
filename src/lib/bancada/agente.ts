@@ -45,6 +45,7 @@ export const BARRAS_DE_AQUECIMENTO = 200;
 
 /** ⚠️ O agente CAMINHA em 1h, como a mesa ao vivo — não no intervalo da tela. */
 export const INTERVALO_DO_AGENTE = "1h";
+const HORA_MS = 3_600_000;
 
 export interface VelasDoAgente {
   h1: ReadonlyArray<VelaComTempo>;
@@ -133,8 +134,9 @@ export function decidirAberturaDoAgente(
  * instância; o resto depende das velas do símbolo, que são as mesmas para todas
  * as instâncias no mesmo tique. `prepararAgente` faz os passos do símbolo na
  * MESMA ordem, e `decidirAberturaDoAgente` intercala os da instância nos mesmos
- * lugares — a decisão de cada uma é idêntica à de antes (prova:
- * `agente.equivalencia.test.ts`, contra a cópia congelada da base).
+ * lugares — a decisão compartilhada é idêntica à da chamada independente
+ * (`agente.equivalencia.test.ts`). A referência congelada usa o horário de
+ * abertura dos prazos maiores; ela não é oráculo para sua disponibilidade.
  */
 export type PreparoDoAgente =
   | { pronto: false; decisao: DecisaoDoAgente }
@@ -169,13 +171,19 @@ function analisarSimbolo(
    * de por falta de setup — e uma instância quieta e uma cega têm exatamente a
    * mesma aparência na tela do investidor.
    */
-  const d1 = ateOInstante(velas.d1, ultima.t);
-  const w1 = velas.w1 ? ateOInstante(velas.w1, ultima.t) : agregar(d1, 7);
+  // `t` é abertura: o OHLC só existe depois da duração inteira. O limite é
+  // o fechamento da última 1h observada, mesmo se o tick chegar mais tarde.
+  // ultimaT/velaMs continuam identificando a abertura para a deduplicação.
+  const instanteDaDecisao = ultima.t + HORA_MS;
+  const h4 = velas.h4.filter((v) => v.t + 4 * HORA_MS <= instanteDaDecisao);
+  const d1 = velas.d1.filter((v) => v.t + 24 * HORA_MS <= instanteDaDecisao);
+  const w1 = (velas.w1 ?? agregar(d1, 7))
+    .filter((v) => v.t + 7 * 24 * HORA_MS <= instanteDaDecisao);
 
   const ind = computeIndicators(
     simbolo,
     paraCandle(h1),
-    paraCandle(ateOInstante(velas.h4, ultima.t)),
+    paraCandle(h4),
     paraCandle(d1),
     paraCandle(w1),
   );

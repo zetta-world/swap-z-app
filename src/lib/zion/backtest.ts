@@ -1,3 +1,4 @@
+import { observeCandlePath, candleDurationMs, type ObservedCandle } from "@/lib/paper/cobertura";
 /**
  * Shadow Flywheel (Z5/Z6) — log every ZION suggestion and measure how it
  * played out, so "ZION works" becomes a number instead of an opinion.
@@ -15,7 +16,6 @@ import { roleProvider, configuredProviders, type ProviderConfig } from "@/lib/ai
 import { isTripped, recordResult } from "@/lib/ai/circuit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { selectAllRows } from "@/lib/supabase/paginate";
-import { getCexSpotPrices } from "@/lib/api/cex-spot";
 import { getOHLCV } from "@/lib/api/geckoterminal";
 import { parsePrice, normalizeSymbol } from "@/lib/zion/card-mapping";
 import { parseZionStream, type ActionCard } from "@/lib/zion/parse";
@@ -630,7 +630,7 @@ export async function logSuggestions(cards: ActionCard[], indicators: SymbolIndi
 export interface ResolveResult { checked: number; resolved: number; }
 
 const BINANCE_DATA = "https://data-api.binance.vision";
-interface Kline { t: number; high: number; low: number; close: number; }
+type Kline = ObservedCandle;
 
 // 5-minute candles (not 1h) for higher intra-bar fidelity in resolution — a
 // target hit at :05 and a stop at :45 of the same hour are now distinguished
@@ -639,11 +639,10 @@ interface Kline { t: number; high: number; low: number; close: number; }
 const RESOLVE_INTERVAL = process.env.BACKTEST_RESOLVE_INTERVAL ?? "5m";
 
 /** Candle interval for a replay span. 1000 candles must COVER the span or
- *  touches beyond candle #1000 become invisible (the window is non-empty, so
- *  the spot fallback never fires). 5m×1000 ≈ 83h fits the 72h scanner
+ *  touches beyond candle #1000 become invisible. 5m×1000 ≈ 83h fits the 72h scanner
  *  horizon; the Oráculo's 240h theses need 15m (≈250h); anything longer
  *  degrades to 1h. Coarser candles keep the stop-first pessimism — we only
- *  lose intra-candle ordering fidelity, never a touch. */
+ *  lose intra-candle ordering fidelity. Coverage is checked separately. */
 function intervalForSpan(spanMs: number): string {
   const h = spanMs / 3_600_000;
   if (h <= 80) return RESOLVE_INTERVAL;
@@ -652,15 +651,18 @@ function intervalForSpan(spanMs: number): string {
 }
 
 /** Candles for [startMs, endMs] from Binance's non-geoblocked mirror.
- *  Empty array on any failure — the caller falls back to a spot check. */
+ *  Empty array on failure — missing history remains unobserved. */
 async function fetchKlines(symbol: string, startMs: number, endMs: number, interval = RESOLVE_INTERVAL): Promise<Kline[]> {
   try {
+    const durationMs = candleDurationMs(interval);
+    if (durationMs == null) return [];
+    const fromMs = Math.floor(startMs / durationMs) * durationMs;
     const url = `${BINANCE_DATA}/api/v3/klines?symbol=${symbol}USDT&interval=${interval}`
-      + `&startTime=${Math.floor(startMs)}&endTime=${Math.ceil(endMs)}&limit=1000`;
+      + `&startTime=${fromMs}&endTime=${Math.ceil(endMs)}&limit=1000`;
     const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) return [];
     const rows = await res.json() as Array<[number, string, string, string, string, ...unknown[]]>;
-    return rows.map((r) => ({ t: r[0], high: parseFloat(r[2]), low: parseFloat(r[3]), close: parseFloat(r[4]) }));
+    return rows.map((r) => ({ t: r[0], durationMs, high: parseFloat(r[2]), low: parseFloat(r[3]), close: parseFloat(r[4]) }));
   } catch { return []; }
 }
 
@@ -693,90 +695,22 @@ export const CARENCIA_SEM_PRECO_MS = Number(
  *  zero ali entraria na expectância como se fosse resultado. */
 interface Verdict { status: string; outcomePct: number | null; price: number | null; }
 
-/**
- * Decide one suggestion's fate. PATH-AWARE: replays the hourly candles from
- * the suggestion's creation to min(now, horizon) and returns the FIRST level
- * touched in time — not just where price sits now. When a single candle
- * straddles BOTH target and stop we assume the STOP hit first (the honest,
- * pessimistic convention — never over-credit a win we can't prove). Falls back
- * to a single current-spot check when candles aren't available.
- */
+/** Replay a continuous path of closed candles with explicit provider duration.
+ * Stop-first for simultaneous touches. Partial boundary touches and missing
+ * expiry prices are unknown; a current quote cannot reconstruct that history. */
 export function resolveOne(r: ZionSuggestionRow, klines: Kline[], spot: number | undefined, nowMs: number): Verdict | null {
-  const dir = r.side === "buy" ? 1 : -1;
+  // A live quote cannot prove which bracket was touched first during an outage.
+  void spot;
   const createdMs = Date.parse(r.created_at);
   const horizonMs = createdMs + r.horizon_hours * 3_600_000;
-  const tp = r.target_price, sp = r.stop_price;
-  const pct = (p: number) => ((p - r.ref_price) / r.ref_price) * 100 * dir;
-
-  // Only candles that OPENED at/after creation (ignore the partial creation
-  // candle so pre-entry price action can't trigger a phantom touch).
-  const window = klines.filter((k) => k.t >= createdMs && k.t <= Math.min(nowMs, horizonMs));
-  if (window.length > 0) {
-    for (const k of window) {
-      const hitStop   = sp != null && (dir > 0 ? k.low  <= sp : k.high >= sp);
-      const hitTarget = tp != null && (dir > 0 ? k.high >= tp : k.low  <= tp);
-      if (hitStop   && sp != null) return { status: "hit_stop",   outcomePct: pct(sp), price: sp };
-      if (hitTarget && tp != null) return { status: "hit_target", outcomePct: pct(tp), price: tp };
-    }
-    // Horizon elapsed, NO level touched → "expired" (a real outcome_pct at the
-    // close, but NOT a target/stop hit). Kept separate from wins/losses so the
-    // win-rate isn't inflated by trades that merely drifted (Kimi's point).
-    if (nowMs >= horizonMs) {
-      const close = window[window.length - 1].close;
-      return { status: "expired", outcomePct: pct(close), price: close };
-    }
-    return null; // in-flight: no level touched yet, horizon not elapsed
+  const path = observeCandlePath({ side: r.side, openedMs: createdMs, horizonMs,
+    target: r.target_price, stop: r.stop_price }, klines, nowMs);
+  if (path.status === "resolved" && Number.isFinite(r.ref_price) && r.ref_price > 0) {
+    return { status: path.reason === "target" ? "hit_target" : path.reason === "stop" ? "hit_stop" : "expired",
+      outcomePct: (path.price / r.ref_price - 1) * 100 * (r.side === "buy" ? 1 : -1), price: path.price };
   }
-
-  /**
-   * Fallback — sem velas: uma única checagem contra o preço corrente.
-   *
-   * ⚠️⚠️ A ORDEM DESTAS GUARDAS ERA O DEFEITO (achado em 29/08).
-   *
-   * A versão anterior começava com `if (spot == null) return null;` — ANTES de
-   * olhar o horizonte. Uma linha sem vela E sem preço voltava `null` em toda
-   * passada, para sempre, mesmo com o prazo vencido havia semanas.
-   *
-   * Não era hipótese: quatro `launch_shot` on-chain (VEK, XSGD, USDC, HEGIC)
-   * ficaram `open` por 200 a 608 HORAS com horizonte de 12h. Elas não têm par na
-   * Binance e o pool parou de devolver vela no GeckoTerminal, então os dois
-   * caminhos de preço secavam e a função saía pela primeira linha. O estado que
-   * deveria ser terminal ficava vivo, e ninguém via porque nada olhava.
-   *
-   * ⚠️ E O CONSERTO NÃO É INVENTAR UM PREÇO. Sem cotação não dá para dizer se
-   * bateu alvo, stop ou nada — só dá para dizer que o prazo acabou e que nunca
-   * soubemos. É isso que `unresolvable` significa, com `outcome_pct` NULO.
-   */
-  const horizonteVencido = nowMs >= horizonMs;
-  const passouDaCarencia = nowMs >= horizonMs + CARENCIA_SEM_PRECO_MS;
-
-  /**
-   * ⚠️⚠️ UM PREÇO DE HOJE NÃO PRECIFICA UM HORIZONTE QUE FECHOU HÁ SEMANAS.
-   *
-   * Este é o segundo defeito, e ele só ficaria visível DEPOIS de consertar o
-   * primeiro. As linhas presas são on-chain, e o GeckoTerminal devolve as 300
-   * velas mais RECENTES: para uma sugestão de 608h com horizonte de 12h, todas
-   * caem fora da janela do replay, `window` fica vazia — e o chamador passa o
-   * último close do pool como `spot`.
-   *
-   * Sem esta guarda, desbloquear as presas as resolveria com o preço de HOJE:
-   * um `hit_target` que nunca aconteceu no prazo, ou um `expired` cujo
-   * `outcome_pct` mede 600 horas de mercado que a sugestão nunca viu. Eu teria
-   * trocado quatro linhas travadas por quatro números inventados, que é o
-   * desfecho pior — travado ao menos se vê.
-   *
-   * Dentro da carência o preço corrente ainda descreve o mesmo mercado e vale
-   * como aproximação; passada ela, a única verdade é que não sabemos.
-   */
-  if (!passouDaCarencia && spot != null && spot > 0) {
-    if (tp != null && (dir > 0 ? spot >= tp : spot <= tp)) return { status: "hit_target", outcomePct: pct(tp), price: tp };
-    if (sp != null && (dir > 0 ? spot <= sp : spot >= sp)) return { status: "hit_stop",   outcomePct: pct(sp), price: sp };
-    if (horizonteVencido) return { status: "expired", outcomePct: pct(spot), price: spot };
-    return null;
-  }
-
-  // Passada a carência sem NENHUMA vela que cubra a janela, não há como medir.
-  if (passouDaCarencia) return { status: STATUS_SEM_PRECO, outcomePct: null, price: null };
+  if (nowMs >= horizonMs + CARENCIA_SEM_PRECO_MS)
+    return { status: STATUS_SEM_PRECO, outcomePct: null, price: null };
   return null;
 }
 
@@ -797,19 +731,15 @@ async function fetchPoolKlines(chain: string, pool: string, spanMs: number): Pro
       // GeckoTerminal devolve `time` em SEGUNDOS; o replay do resolver trabalha
       // em milissegundos. Sem a conversão, toda vela cairia em 1970 e a janela
       // do replay ficaria vazia — a linha nunca resolveria.
-      .map((c) => ({ t: c.time * 1000, high: c.high, low: c.low, close: c.close }))
+      .map((c) => ({ t: c.time * 1000, durationMs: candleDurationMs(tf) ?? undefined, high: c.high, low: c.low, close: c.close }))
       .filter((c) => Number.isFinite(c.high) && Number.isFinite(c.low) && c.high > 0)
       .sort((a, b) => a.t - b.t);
   } catch { return []; }
 }
 
-/**
- * Resolve open suggestions by REPLAYING the price path (hourly candles) since
- * each was logged — first target/stop touch wins; horizon elapsed → directional
- * win/loss/neutral. One klines fetch per symbol (parallel), reused across that
- * symbol's rows; spot prices are a fallback. outcome_pct is the directional
- * return vs ref_price (positive = ZION right).
- */
+/** Resolve suggestions from observed paths, sharing provider reads per market.
+ * outcome_pct is directional gross return, not a cost-adjusted trading result.
+ * Missing coverage ends as unresolvable after grace, with null economic values. */
 export async function resolveOpenSuggestions(limit = 200): Promise<ResolveResult> {
   const db = getSupabaseAdmin();
   if (!db) return { checked: 0, resolved: 0 };
@@ -846,7 +776,6 @@ export async function resolveOpenSuggestions(limit = 200): Promise<ResolveResult
       klinesByPool.set(key, await fetchPoolKlines(chain, pool, nowMs - earliest));
     }),
   ]);
-  const spot = symbols.length ? await getCexSpotPrices(symbols).catch(() => new Map()) : new Map();
 
   let resolved = 0, semPreco = 0;
   for (const r of open) {
@@ -854,12 +783,10 @@ export async function resolveOpenSuggestions(limit = 200): Promise<ResolveResult
     const candles = onChain
       ? klinesByPool.get(`${r.chain}|${r.pool_address}`) ?? []
       : klinesBySymbol.get(r.symbol) ?? [];
-    // Sem spot fallback on-chain: o último close do pool já É o preço corrente,
-    // e inventar um spot de CEX para um token que não está lá seria mentira.
-    const verdict = resolveOne(r, candles, onChain ? candles[candles.length - 1]?.close : spot.get(r.symbol)?.priceUsd, nowMs);
+    const verdict = resolveOne(r, candles, undefined, nowMs);
     if (!verdict) continue;
     try {
-      await db.from("zion_suggestions").update({
+      const { error } = await db.from("zion_suggestions").update({
         status:         verdict.status,
         // ⚠️ NULO CONTINUA NULO. `Math.round(null * 100)/100` é 0, e um zero aqui
         // entraria na expectância como se a linha tivesse andado de lado.
@@ -867,6 +794,7 @@ export async function resolveOpenSuggestions(limit = 200): Promise<ResolveResult
         resolved_price: verdict.price,
         resolved_at:    new Date().toISOString(),
       }).eq("id", r.id);
+      if (error) continue;
       resolved++;
       if (verdict.status === STATUS_SEM_PRECO) semPreco++;
     } catch { /* skip */ }
@@ -883,7 +811,7 @@ export async function resolveOpenSuggestions(limit = 200): Promise<ResolveResult
     await recordEvent("zion_sugestao_sem_preco", { meta: {
       linhas: semPreco,
       carencia_horas: CARENCIA_SEM_PRECO_MS / 3_600_000,
-      why: "horizonte vencido e NENHUM preco disponivel (nem vela de CEX, nem "
+      why: "horizonte vencido sem caminho e preco final comprovados (CEX ou "
         + "vela de pool) por toda a carencia. Fica terminal com outcome_pct NULO "
         + "e fora das estatisticas: nunca soubemos o desfecho",
     } });

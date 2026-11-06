@@ -4,12 +4,15 @@
  *
  * Para cada símbolo e instante, UM preparo (`prepararAgente`) é reusado por
  * vários estados de instância — exatamente o que o tique faz — e cada decisão é
- * comparada por igualdade exata com a cópia congelada da base
- * (`__referencia__/agente-legado.ts`).
+ * comparada por igualdade exata com uma chamada independente do agente.
+ *
+ * A cópia congelada (`__referencia__/agente-legado.ts`) incluía OHLC de 4h,
+ * dia e semana pelo horário de ABERTURA, antes de ficarem disponíveis. Exigir
+ * igualdade com ela preservaria lookahead. A referência permanece intacta;
+ * `agente-temporal.test.ts` verifica o contrato de fechamento separadamente.
  */
 import { describe, it, expect } from "vitest";
 import { decidirAberturaDoAgente, prepararAgente, type EstadoDaInstancia } from "@/lib/bancada/agente";
-import { decidirAberturaDoAgenteLegado } from "@/lib/bancada/__referencia__/agente-legado";
 import { agregar } from "@/lib/bancada/mesa-real";
 import type { VelaComTempo } from "@/lib/mercado/velas";
 
@@ -41,7 +44,7 @@ function exatamenteIgual(a: unknown, b: unknown, c = "$"): string | null {
   return Object.is(a, b) ? null : `${c}: ${String(a)} ≠ ${String(b)}`;
 }
 
-describe("prepararAgente compartilhado ≡ decisão individual da base", () => {
+describe("prepararAgente compartilhado ≡ decisão individual", () => {
   it("40 símbolos × vários instantes × 7 estados de instância", { timeout: 60_000 }, () => {
     const fim = 1_790_000_000_000 - (1_790_000_000_000 % H);
     let abriu = 0, recusou = 0, comparadas = 0;
@@ -68,8 +71,8 @@ describe("prepararAgente compartilhado ≡ decisão individual da base", () => {
           ];
           for (const e of estados) {
             const novo = decidirAberturaDoAgente(e, `S${s}`, v, agora, preparo);
-            const velho = decidirAberturaDoAgenteLegado(e, `S${s}`, v, agora);
-            const d = exatamenteIgual(novo, velho);
+            const individual = decidirAberturaDoAgente(e, `S${s}`, v, agora);
+            const d = exatamenteIgual(novo, individual);
             if (d) throw new Error(`S${s} agora=${agora} estado=${JSON.stringify(e)}: ${d}`);
             comparadas++;
             if (novo.abre) abriu++; else recusou++;

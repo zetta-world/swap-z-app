@@ -1,3 +1,4 @@
+import { MEDICAO_PAPER } from "./medicao";
 /**
  * Paper-trading engine — the autonomous Gate.io simulation agent.
  *
@@ -24,7 +25,7 @@ import { CUSTO_IDA_E_VOLTA_PCT } from "@/lib/zion/custo";
  * de importar de `saida.ts` diretamente.
  */
 export { computeExit, computeExitPath, type ExitVerdict } from "@/lib/paper/saida";
-import { computeExitPath, type Candle } from "@/lib/paper/saida";
+import { computeObservedExit, type Candle } from "@/lib/paper/saida";
 
 // Round-trip execution cost (fees + slippage, both legs) — mirrors the flywheel
 // so paper P&L is net, not gross. Default 0.2%.
@@ -151,12 +152,12 @@ export function canEnter(side: string, fill: number, target: number | null, stop
 export async function gateioKlines(symbol: string, fromMs: number, toMs: number): Promise<Candle[]> {
   try {
     const url = `https://api.gateio.ws/api/v4/spot/candlesticks?currency_pair=${symbol.toUpperCase()}_USDT&interval=5m`
-      + `&from=${Math.floor(fromMs / 1000)}&to=${Math.ceil(toMs / 1000)}`;
+      + `&from=${Math.floor(fromMs / 300_000) * 300}&to=${Math.ceil(toMs / 1000)}`;
     const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) return [];
     const rows = await res.json() as string[][];
     return rows
-      .map((r) => ({ t: Number(r[0]) * 1000, close: parseFloat(r[2]), high: parseFloat(r[3]), low: parseFloat(r[4]) }))
+      .map((r) => ({ t: Number(r[0]) * 1000, durationMs: 300_000, close: parseFloat(r[2]), high: parseFloat(r[3]), low: parseFloat(r[4]) }))
       .filter((c) => Number.isFinite(c.high) && Number.isFinite(c.low) && c.high > 0);
   } catch { return []; }
 }
@@ -262,7 +263,7 @@ export async function poolKlines(chain: string, pool: string, fromMs: number, to
     try {
       const rows = await getOHLCV(chain, pool, passo, 300, "base");
       const velas = rows
-        .map((c) => ({ t: c.time * 1000, close: c.close, high: c.high, low: c.low }))
+        .map((c) => ({ t: c.time * 1000, durationMs: ({ "5m": 300_000, "1h": 3_600_000, "4h": 14_400_000, "1d": 86_400_000 })[passo], close: c.close, high: c.high, low: c.low }))
         .filter((c) => Number.isFinite(c.high) && c.high > 0)
         .sort((a, b) => a.t - b.t);
       if (velas.length > 0) return velas;
@@ -412,8 +413,10 @@ export async function openPaperPositions(): Promise<number> {
   // Current champion (cull engine, alavanca 3) — best-effort, null when unset.
   let champion: string | null = null;
   try {
+    if (MEDICAO_PAPER.promocaoAutomatica) {
     const { data: champ } = await db.from("admin_kv").select("value").eq("key", "tournament_champion").maybeSingle();
     champion = champ?.value || null;
+    }
   } catch { /* no champion on a KV hiccup */ }
 
   // Preço de entrada: CEX pelo ticker do Gate.io, DEX pelo último close do
@@ -789,7 +792,7 @@ export async function resolvePaperPositions(): Promise<number> {
   const nowMs = Date.now();
 
   // Path-aware (F3): one Gate.io candle fetch per symbol, from that symbol's
-  // oldest open position to now, reused across its positions. Spot is fallback.
+  // oldest open position to now, reused across its positions. Missing paths remain unknown.
   const candlesBySymbol = new Map<string, Candle[]>();
   const candlesByPool = new Map<string, Candle[]>();
   await Promise.all([
@@ -804,15 +807,17 @@ export async function resolvePaperPositions(): Promise<number> {
         candlesByPool.set(key, await poolKlines(chain, pool, earliest, nowMs));
       }),
   ]);
-  const prices = symbols.length ? await gateioSpot(symbols) : new Map<string, number>();
-
   const delta = new Map<string, { cash: number; pnl: number; wins: number; losses: number }>();
   let closed = 0;
+  const pendingReasons: Record<string, number> = {};
 
   for (const p of openFull) {
     const onChain = p.chain && p.pool_address;
     const candles = onChain ? candlesByPool.get(`${p.chain}|${p.pool_address}`) ?? [] : candlesBySymbol.get(p.symbol) ?? [];
-    const v = computeExitPath(p, candles, onChain ? candles[candles.length - 1]?.close : prices.get(p.symbol.toUpperCase()), nowMs);
+    const { verdict: v, observation } = computeObservedExit(p, candles, nowMs);
+    if (!v && nowMs >= Date.parse(p.opened_at) + p.horizon_hours * 3_600_000) {
+      pendingReasons[observation.reason] = (pendingReasons[observation.reason] ?? 0) + 1;
+    }
     if (!v) continue;
     /**
      * ⚠⚠ ISTO ERA UM `try/catch`, E ELE NÃO PEGAVA NADA.
@@ -853,6 +858,11 @@ export async function resolvePaperPositions(): Promise<number> {
     delta.set(p.account_id, d);
     closed++;
   }
+
+  if (Object.keys(pendingReasons).length) await recordEvent("paper_cobertura_pendente", { meta: {
+    reasons: pendingReasons, measurementVersion: MEDICAO_PAPER.versao,
+    why: "Sem caminho e preço de vencimento comprovados: não registrar P&L nem devolver capital fictício.",
+  } });
 
   for (const [accId, d] of delta) {
     const { data: acc } = await db.from("paper_accounts").select("cash_usd, realized_pnl_usd, wins, losses").eq("id", accId).maybeSingle();

@@ -1,3 +1,5 @@
+import { MEDICAO_PAPER } from "@/lib/paper/medicao";
+import { limitacaoDaMedicao } from "./validade-medicao";
 /**
  * O CICLO DO INVESTIGADOR — de escrito-e-parado para rodando.
  *
@@ -103,6 +105,12 @@ export async function investigar(db: SupabaseClient, agoraMs = Date.now()): Prom
   const investigaveis = AGENTES.filter((a) => !ehRegua(a));
 
   for (const ag of investigaveis) {
+    const limitacao = limitacaoDaMedicao(ag.id);
+    if (limitacao) { agentes.push({ agente: ag.id, pulou: limitacao }); continue; }
+    if (!MEDICAO_PAPER.promocaoAutomatica) {
+      agentes.push({ agente: ag.id, pulou: "Calibração da medição: genomas congelados até avaliação da coorte prospectiva." });
+      continue;
+    }
     try {
       agentes.push(await umAgente(db, ag, agoraMs));
     } catch (e) {
@@ -110,7 +118,7 @@ export async function investigar(db: SupabaseClient, agoraMs = Date.now()): Prom
     }
   }
 
-  const placar = placarDosModelos(await mutacoesJulgadas(db));
+  const placar = MEDICAO_PAPER.promocaoAutomatica ? placarDosModelos(await mutacoesJulgadas(db)) : [];
   await recordEvent("celeiro_investigador", { meta: { agentes, placar } });
   return { agentes, placar };
 }

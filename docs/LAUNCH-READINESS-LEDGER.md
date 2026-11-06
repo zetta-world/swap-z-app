@@ -1669,3 +1669,59 @@ dono na mesma resposta, tem o mesmo efeito.
 **0088 NÃO aplicada:** autorizada na mesma resposta, mas o pré-requisito falhou: o dump lógico de produção foi negado pelo filtro de
 permissões do agente e não foi contornado. Medido antes (só leitura, 03/11): hospedado até 0087; `admin_private` com 0 identidades,
 0 atribuições, 0 sessões e 0 linhas de trilha; 3 CHECKs da 0083 presentes.
+
+
+## PAPER-RETOMADA-20261104 — CURRENT_DEVELOPMENT
+
+PHASE_BASE_SHA=85cd4a6afb9e90869f89cd1c084ae1e03c0f2f49; tree 902af8c6decda0788dc0edfb3e209537469c6e1b. Worktree limpa na criação; branch `codex/paper-resume-20261104`. Plano: `PLANO-PAPER-RETOMADA-20261104.md`. Pedido do dono: retomar testes e ajustes; intervenção local de medição/segurança, sem ordem real. Agendamento hospedado e backlog ainda pendentes, RELEASE_CANDIDATE=NONE.
+
+### Atualização da rodada local — 04/11, após as 20h30
+
+O dono retomou os jobs; cinco agendamentos executados com sucesso às 20h30 (captura fornecida), backtest chegou além do enfileiramento. Consulta somente leitura de 23h44 UTC: Celeiro 8 encerramentos de posições anteriores à retomada + 9 aberturas novas; Paper 0 aberturas novas; Autopilot 0 sessões e CEX 0 intents. A origem dos fechamentos antigos permanece separada da coorte nova.
+
+Revisão independente do patch encontrou a exclusão indevida de `neutral` legado no cull; corrigida com regressão. Protótipo de bloqueio global por heartbeat retirado por não ter recuperação/bootstrapping seguro; preservado na evidência externa. Rotas de cron não mudaram. Mantidos ajustes de denominador econômico, spot tardio de Paper e juro retroativo após gap. Funding histórico e cobertura temporal continuam abertos.
+
+Testes intermediários 32/32 e 519/519; após retirada do protótipo 505/505 em 35 arquivos; revalidação final após revisão registrada no relatório externo. Typecheck completo OOM com heap 768 e 1536 MB, não aprovado; tentativas preservadas. Sem C1, recertificação, push, merge, deploy, migration ou escrita no banco hospedado. Relatório: `zswap-local/reports/paper-resume-20261104/RELATORIO.md`; evidências: `zswap-local/evidence/paper-resume-20261104`. RELEASE_CANDIDATE=NONE.
+
+
+### Continuação PAPER-RETOMADA — 05/11, local e não certificada
+
+Corrigidas disponibilidade de OHLC de prazos maiores, entrada/saída temporal do replay e deadline enviado pelo tique. Regressões antes/depois: 7 casos temporais e 4 casos de prazo. Funding legado contido na rota local (exames preservados); planejador puro histórico por posição/período testado, sem writer/migration. Crédito BTC +1,80 USDT/150 períodos confirmado por leitura e separado da nova coorte, sem editar extrato.
+
+Validação final dos domínios: 1.698 testes distintos/101 arquivos, lint e tipos por escopo aprovados; prova de prompts 5/5 executada separadamente por restrição de subprocesso Git no sandbox. Typecheck completo protegido registrado separadamente na evidência; build/recertificação pendentes. Revisão estática independente sem regressão introduzida encontrada, limitações explicitadas no relatório. Sem C1, push, merge, deploy, alteração de credenciais ou escrita hospedada. RELEASE_CANDIDATE=NONE.
+
+Typecheck completo do código-fonte também aprovado na tentativa protegida (102,76 s; heap 2.048 MB; pico RSS 1.710.620 KiB; guarda não acionada). Usa tipos ambientes oficiais Next, sem os tipos de rotas gerados por build. Falhas anteriores preservadas. Ainda não é certificação de SHA.
+
+Build local: FAIL de ambiente, não aprovado. Tentativa 1: dependências por symlink fora da raiz Turbopack; ambiente corrigido por cópia local de lock idêntico. Tentativa 2: Google Fonts inacessível no sandbox. Tentativa 3 autorizada: IPC PostCSS ao abrir porta negado (`Operation not permitted`). Logs preservados, sem mudança de runtime/fontes/configuração e sem guarda de recursos acionada.
+
+Snapshots read-only finais de 05/11 23h27–23h30 UTC: Paper oito fechadas −6,31752 USD; Celeiro 25 fechadas −18,58912 USDT em fluxos vinculados, oito abertas. Alavancado positivo +18,60309 USDT/6 fechamentos ainda não certifica vantagem. Sem novas posições bancada desde corte, sessões/intents zero. Produção ainda executa código anterior; não atribuir resultados às correções locais.
+
+### Continuação PAPER-RETOMADA — 06/11, build resolvido e diagnóstico econômico
+
+Mesma base `85cd4a6afb9e90869f89cd1c084ae1e03c0f2f49`, sem novo produto editado nesta continuação. Preflight permitido comprovou bind localhost/fontes públicas. Primeiro build permitido desta rodada terminou 143 sem status do monitor (compilação/TS/39 páginas completas, causa do sinal não medida); preservado incompleto. Execução instrumentada CI=1 com captura final passou, build padrão Turbopack, exit 0, 70,61 s. Configuração/lockfile intactos.
+
+Validação global: 5.589/5.589 testes, 367 arquivos, zero skip; ESLint completo zero erros/126 avisos; TypeScript com tipos reais gerados pelo build PASS. Sem `npm ci` de recertificação, C1 ou certificação de SHA; RELEASE_CANDIDATE=NONE. Nenhuma guarda de recursos acionada nas execuções concluídas.
+
+Dataset local extraído SOMENTE de mercado_vela do backup 01/11, hash da fonte conferido, sem outras tabelas/restauração. Protocolo congelado antes dos resultados, BTC 03/08–14/09, 1.008 barras avaliadas, custos 0,50/0,60/0,80%. Motor corrigido 7 fechadas e nenhuma aberta,  +US$ 51,59/+44,59/+30,59, com nocional fixo US$1.000 por operação. Referência legada 5 fechadas −38,84 no custo 0,50; comprar/manter +208,60, exposição diferente. Referência temporal lenta confirmou operações corrigidas. Diagnóstico histórico, não holdout, não lucro de produção, nenhuma promoção ou ajuste pós-resultado. Concentração semanal, mediana negativa e pequena amostra documentadas.
+
+Achados de modelagem Convergência/Pool Novo registrados em AUDIT §5.12. Relatório `zswap-local/reports/paper-next-step-20261106/RELATORIO.md`; evidência `zswap-local/evidence/paper-next-step-20261106`. Nenhuma leitura/escrita hospedada nesta continuação, credencial, serviço, push, merge ou deploy. Históricos anteriores preservados.
+
+## PAPER-OBSERVED-V2 — preparação C1 (06/11/2026)
+
+Base 85cd4a6afb9e90869f89cd1c084ae1e03c0f2f49, branch codex/paper-resume-20261104.
+Escopo: campanha local autorizada de medição, contenção dos três modelos incompletos e congelamento
+de promoções/mutações automáticas até coorte prospectiva. 949 testes alvo PASS, evidências
+em zswap-local/evidence/paper-closure-20261106. C1 será checkpoint local, não RELEASE_CANDIDATE
+antes da recert completa. Protocolo PROTOCOLO-PAPER-OBSERVED-V2.md; nenhuma coorte iniciada.
+Revisão independente indisponível (limite de uso), revisão própria apenas.
+Pendências: prazo não alinhado requer preço observável/reconciliação; modelos contidos ainda
+não implementados integralmente; release/rollback/exceções de auditoria precisam revalidação.
+Sem migrations, mudanças em produção, push, merge ou deploy.
+
+Checkpoint C1 desta campanha: COMMITTED_FEATURE_CHECKPOINT quando este conteúdo for commitado;
+identidade exata em `zswap-local/evidence/paper-closure-20261106/checkpoint.json`.
+RELEASE_CANDIDATE=NONE; RECERT_RESULT=NOT_STARTED. Duas tentativas finais de tipos globais
+interrompidas por reserva de memória; tipos por escopo PASS. Instalação limpa/build/recert
+no SHA exato pendentes. Não publicar este checkpoint nem tratar prechecks como certificação.
+
+Suíte global no ambiente com subprocessos permitidos: **5.617/5.617 testes em 370 arquivos**, zero falhas/pendências, 259,83 s, um worker, guardas preservadas. A rodada restrita FAIL continua preservada. Resultado pré-commit, não recertificação de SHA.

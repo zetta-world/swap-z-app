@@ -79,6 +79,8 @@ type Resumo = {
 type Dados = {
   controle: string; semNenhumLancamento: boolean; totalDeLancamentos: number;
   resumo: Resumo; faixas: Faixa[];
+  medicao?: { fase: string; promocaoAutomatica: boolean };
+  naoComparaveis?: Array<{ agente: string; nome: string; motivo: string; posicoesPendentes: number; lancamentosHistoricos: number }>;
 };
 
 const MODALIDADE: Record<string, string> = {
@@ -373,6 +375,18 @@ export default function CeleiroPanel() {
       source="CELEIRO_FLUXOS"
     >
       {erro && <div style={RUIM}>{erro}</div>}
+      {d?.medicao?.fase === "calibracao" && (
+        <p className="adm-nota">Medição em calibração. O histórico abaixo não comprova a nova versão. Promoções e mutações automáticas aguardam a avaliação da nova coorte.</p>
+      )}
+      {!!d?.naoComparaveis?.length && (
+        <div className="adm-nota" style={{ marginBottom: 12 }}>
+          <b>Modelos fora da comparação de lucro</b>
+          <p>Entradas e julgamentos suspensos até completar a medição. O histórico permanece preservado e não entra no total abaixo.</p>
+          {d.naoComparaveis.map(a => (
+            <p key={a.agente}><b>{a.nome}:</b> {a.motivo} {a.posicoesPendentes} posições pendentes de reconciliação; {a.lancamentosHistoricos} lançamentos históricos.</p>
+          ))}
+        </div>
+      )}
 
       {/* ── O RESUMO ────────────────────────────────────────────────────────
           ⚠️ O TOTAL SOMA CADA AGENTE UMA VEZ. As faixas repetem o piso como
@@ -389,7 +403,7 @@ export default function CeleiroPanel() {
           </div>
 
           <div>
-            <div style={{ ...APAGADO, fontSize: 10, letterSpacing: ".06em" }}>TOTAL ACUMULADO</div>
+            <div style={{ ...APAGADO, fontSize: 10, letterSpacing: ".06em" }}>TOTAL DOS MODELOS EM MEDIÇÃO</div>
             <div style={{ fontSize: 22, fontVariantNumeric: "tabular-nums",
                           color: d.resumo.usdtTotal >= 0 ? "var(--adm-cyan)" : "var(--adm-red)" }}>
               {usd(d.resumo.usdtTotal)}

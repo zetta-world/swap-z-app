@@ -10,7 +10,7 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import {
-  rodarMesa, agregar, ateOInstante, paraCandle,
+  rodarMesa, agregar, paraCandle,
   MAX_BARRAS_AVALIADAS, type VelasDaMesa,
 } from "@/lib/bancada/mesa-real";
 import type { Candle } from "@/lib/api/market-indicators";
@@ -130,14 +130,14 @@ describe("equivalência da preparação otimizada", () => {
 
       chamadas.forEach((recebida, chamada) => {
         const i = 200 + chamada;
-        const t = entrada.h1[i].t;
+        const t = entrada.h1[i].t + H;
         const referencia: [Candle[], Candle[], Candle[], Candle[]] = [
-          // Referência independente: é exatamente a construção de 691bfdc,
-          // sem reutilizar cursor, constante ou janela da implementação nova.
+          // Referência por filtro, sem reutilizar os cursores otimizados.
+          // O OHLC final só fica disponível ao fechar cada prazo.
           paraCandle(entrada.h1.slice(0, i + 1)),
-          paraCandle(ateOInstante(entrada.h4, t)),
-          paraCandle(ateOInstante(entrada.d1, t)),
-          paraCandle(ateOInstante(entrada.w1, t)),
+          paraCandle(entrada.h4.filter((v) => v.t + 4 * H <= t)),
+          paraCandle(entrada.d1.filter((v) => v.t + 24 * H <= t)),
+          paraCandle(entrada.w1.filter((v) => v.t + 168 * H <= t)),
         ];
         expect(recebida.n).toEqual(referencia.map((r) => r.length));
         expect(recebida.retrato).toEqual(mod.computeIndicators("BTC", ...referencia));
@@ -236,7 +236,7 @@ describe("⚠️ a semanal é AGREGADA das diárias, não substituída por elas"
       { t: H, high: 130, low: 95, close: 120, volume: 2 },
       { t: 2 * H, high: 115, low: 80, close: 105, volume: 3 },
     ];
-    const [semana] = agregar(d, 3);
+    const [semana] = agregar(d, 3, H);
     expect(semana.t).toBe(0);
     expect(semana.high).toBe(130);          // a maior das três
     expect(semana.low).toBe(80);            // a menor das três
@@ -248,7 +248,7 @@ describe("⚠️ a semanal é AGREGADA das diárias, não substituída por elas"
     // Uma semana que ainda não fechou não é uma vela semanal — é a mesma
     // armadilha da vela corrente, que não entra na `mercado_vela`.
     const d = Array.from({ length: 10 }, (_, i) => ({ t: i * H, high: 1, low: 1, close: 1, volume: 1 }));
-    expect(agregar(d, 7)).toHaveLength(1);
+    expect(agregar(d, 7, H)).toHaveLength(1);
   });
 
   it("fator 1 não mexe na série", () => {

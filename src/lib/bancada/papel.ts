@@ -29,7 +29,7 @@ import type { Dono } from "@/lib/bancada/dono";
 import { ultimaVelaFechada, type VelaComTempo } from "@/lib/mercado/velas";
 import { sinais } from "@/lib/bancada/motor";
 import { taxaDaBancadaPct, type EstrategiaDoCliente } from "@/lib/bancada/vocabulario";
-import { computeExitPath } from "@/lib/paper/saida";
+import { computeExitPath, computeObservedExit } from "@/lib/paper/saida";
 
 /** Uma mesa viva: a estratégia do cliente mais onde ela olha. */
 export interface Mesa {
@@ -190,6 +190,8 @@ export interface PosicaoParaFechar {
   lado: "long" | "short";
   /** ⚠️ Ida E volta, em %. A praça do DONO, nunca uma taxa única da casa. */
   custoIdaEVoltaPct: number;
+  /** Duração explícita obrigatória no tique vivo; ausente só em simuladores legados. */
+  candleDurationMs?: number;
 }
 
 /**
@@ -211,21 +213,16 @@ export function decidirFechamentoDaPosicao(
   velas: ReadonlyArray<VelaComTempo>,
   agoraMs: number,
 ): Fechamento | null {
-  const v = computeExitPath(
-    {
-      side: p.lado === "long" ? "buy" : "sell",
-      entry_price: p.entrada,
-      cost_usd: p.tamanhoUsd,
-      target_price: p.alvo,
-      stop_price: p.stop,
-      opened_at: new Date(p.abertaEmMs).toISOString(),
-      horizon_hours: p.horasLimite,
-    },
-    velas.map((x) => ({ t: x.t, high: x.high, low: x.low, close: x.close })),
-    undefined,
-    agoraMs,
-    p.custoIdaEVoltaPct,
-  );
+  const position = {
+    side: p.lado === "long" ? "buy" : "sell", entry_price: p.entrada,
+    cost_usd: p.tamanhoUsd, target_price: p.alvo, stop_price: p.stop,
+    opened_at: new Date(p.abertaEmMs).toISOString(), horizon_hours: p.horasLimite,
+  };
+  const candles = velas.map(x => ({ t: x.t, high: x.high, low: x.low, close: x.close,
+    durationMs: p.candleDurationMs }));
+  const v = p.candleDurationMs == null
+    ? computeExitPath(position, candles, undefined, agoraMs, p.custoIdaEVoltaPct)
+    : computeObservedExit(position, candles, agoraMs, p.custoIdaEVoltaPct).verdict;
   if (!v) return null;
 
   /**

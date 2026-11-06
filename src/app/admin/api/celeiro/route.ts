@@ -1,3 +1,5 @@
+import { MEDICAO_PAPER } from "@/lib/paper/medicao";
+import { estadoDaMedicao, medicaoComparavel } from "@/lib/celeiro/validade-medicao";
 import { NextResponse } from "next/server";
 import { autorizarAdmin } from "@/lib/admin/authz";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -273,7 +275,7 @@ export async function GET() {
     const doGrupo = agentesDaFaixa(faixa).map((a) => a.id);
     // O piso entra em toda faixa, mesmo não pertencendo a ela.
     const comControle = doGrupo.includes(controle.id) ? doGrupo : [...doGrupo, controle.id];
-    const ranking = ranquear(fluxos, comControle, controle.id);
+    const ranking = ranquear(fluxos, comControle.filter(medicaoComparavel), controle.id);
 
     /**
      * ⚠️ O DESTAQUE É POR FAIXA, e só existe se houver com quem comparar. Um
@@ -324,7 +326,7 @@ export async function GET() {
           /** ⚠️ A taxa que ESTE agente paga — a régua deixa de ser da arena. */
           taxaPernaPct: taxaPorPerna(a.modalidade, a.execucao),
           ...retratoDe(r.agente, a.bancaInicialUsd, somaDe(r.agente)),
-          destaque: r.agente === destaque,
+          destaque: MEDICAO_PAPER.promocaoAutomatica && r.agente === destaque,
         };
       }),
     };
@@ -337,7 +339,8 @@ export async function GET() {
    */
   const instantes = fluxos.map((f) => f.ocorreuEmMs).filter(Number.isFinite);
   const resumo = {
-    usdtTotal: usdtProduzido(fluxos),
+    usdtTotal: usdtProduzido(fluxos.filter(f => medicaoComparavel(f.agente))),
+    modelosExcluidos: AGENTES.filter(a => !medicaoComparavel(a.id)).length,
     lancamentos: fluxos.length,
     agentesComDado: new Set(fluxos.map((f) => f.agente)).size,
     deMs: instantes.length ? Math.min(...instantes) : null,
@@ -363,6 +366,12 @@ export async function GET() {
     semNenhumLancamento: fluxos.length === 0,
     totalDeLancamentos: fluxos.length,
     resumo,
+    medicao: MEDICAO_PAPER,
     faixas,
+    naoComparaveis: AGENTES.filter(a => !medicaoComparavel(a.id)).map(a => ({
+      agente: a.id, nome: a.nome, ...estadoDaMedicao(a.id),
+      lancamentosHistoricos: fluxosDe(a.id).length,
+      posicoesPendentes: posicoes.filter(p => p.agente === a.id && p.fechada_em === null).length,
+    })),
   });
 }

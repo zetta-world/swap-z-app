@@ -22,11 +22,12 @@
  */
 
 import { CUSTO_IDA_E_VOLTA_PCT } from "@/lib/zion/custo";
+import { observeCandlePath, type ObservedCandle } from "./cobertura";
 
 /** O mesmo custo de sempre — ida e volta. Ver `zion/custo.ts`. */
 const COST_PCT = CUSTO_IDA_E_VOLTA_PCT;
 
-export interface Candle { t: number; high: number; low: number; close: number; }
+export type Candle = ObservedCandle;
 
 export interface ExitVerdict { exit: number; reason: "target" | "stop" | "expired"; netPct: number; pnlUsd: number; win: boolean; }
 
@@ -68,8 +69,8 @@ export function computeExit(
 /** Path-aware exit (F3): replay Gate.io candles since the position opened; the
  *  FIRST target/stop touched in time wins (stop-first when one candle straddles
  *  both — the honest pessimistic convention). Horizon elapsed with no touch →
- *  expired at the last close. Falls back to the coarse spot check when no
- *  candles are available. Much fairer than a single end-of-tick spot read. */
+ *  expired at the last close. With no candles, spot is usable only while the
+ *  position's horizon is still open. Today's spot cannot price an old expiry. */
 export function computeExitPath(
   pos: { side: string; entry_price: number; cost_usd: number; target_price: number | null; stop_price: number | null; opened_at: string; horizon_hours: number },
   candles: Candle[], curSpot: number | undefined, nowMs: number,
@@ -95,8 +96,28 @@ export function computeExitPath(
     if (nowMs >= horizonMs) return mk(window[window.length - 1].close, "expired");
     return null;
   }
+  if (nowMs > horizonMs) return null;
   return curSpot == null ? null : computeExit(pos, curSpot, nowMs, custoIdaEVoltaPct);
 }
 
-// ── Gate.io live spot (public, no key) ────────────────────────────────────
-
+/** Server-side replay: source candles carry their actual duration. The legacy
+ * point-timestamp function above stays available for normalized simulators. */
+export function computeObservedExit(
+  pos: Parameters<typeof computeExit>[0], candles: readonly Candle[], nowMs: number,
+  costPct = COST_PCT,
+): { verdict: ExitVerdict | null; observation: ReturnType<typeof observeCandlePath> } {
+  const observation = observeCandlePath({
+    side: pos.side, openedMs: Date.parse(pos.opened_at),
+    horizonMs: Date.parse(pos.opened_at) + pos.horizon_hours * 3_600_000,
+    target: pos.target_price, stop: pos.stop_price,
+  }, candles, nowMs);
+  if (observation.status !== "resolved" || !(pos.entry_price > 0)
+      || !Number.isFinite(pos.entry_price) || !Number.isFinite(pos.cost_usd)
+      || !Number.isFinite(costPct) || costPct < 0) return { verdict: null, observation };
+  const netPct = (observation.price / pos.entry_price - 1) * (pos.side === "buy" ? 1 : -1) * 100 - costPct;
+  return { observation, verdict: {
+    exit: observation.price, reason: observation.reason, netPct,
+    pnlUsd: pos.cost_usd * netPct / 100,
+    win: observation.reason === "target" || (observation.reason === "expired" && netPct > 0),
+  } };
+}

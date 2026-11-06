@@ -267,3 +267,16 @@
 | `docs/ADMIN-SOLO-FOUNDER-MODE.md` | CURRENT_DEVELOPMENT (desenho + validação local; não em produção) | sim, para o modo `solo_founder`; não autoriza merge, deploy, migration nem env |
 | `docs/PLANO-ADMIN-SOLO-FOUNDER-20261102.md` | CURRENT_DEVELOPMENT (plano da fase) | sim, como plano; o estado vem do ledger |
 | `docs/ADMIN-SSO-MFA-RBAC-DESIGN.md` | SUPPORTING_REFERENCE (desenho R1, preservado) | sim para `multi_admin`; o bootstrap de 3 identidades (§13) é substituído no `solo_founder` pelo doc acima |
+
+
+## Acréscimo 04/11/2026 — retomada dos testes
+
+`docs/PLANO-PAPER-RETOMADA-20261104.md`: ACTIVE_PLAN, somente para esta rodada local de medição e retomada em simulação. Não declara lucro, certificação nem autoriza release automaticamente.
+
+Continuação de 05/11 do mesmo plano: correções temporais, contenção de funding e prazo do tique; evidência final externa e limites de release no relatório da rodada. O status continua ACTIVE_PLAN/CURRENT_DEVELOPMENT, sem certificação econômica ou promoção.
+
+**Continuação de 06/11/2026:** o plano `PLANO-PAPER-RETOMADA-20261104.md` permanece ACTIVE_PLAN da mesma campanha. Relatório atual externo `zswap-local/reports/paper-next-step-20261106/RELATORIO.md`, evidência `zswap-local/evidence/paper-next-step-20261106`; os anteriores são snapshots históricos preservados. Build/validação global PASS não são certificação de SHA nem evidência de lucratividade prospectiva.
+
+## PAPER-OBSERVED-V2 — 06/11/2026
+
+`PROTOCOLO-PAPER-OBSERVED-V2.md`: CURRENT_DEVELOPMENT, protocolo prospectivo preparado; coorte não iniciada. Estado e certificação continuam em CURRENT-STATE e ledger. Não é autorização de deploy.

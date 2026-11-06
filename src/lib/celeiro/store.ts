@@ -1,3 +1,4 @@
+import { limitacaoDaMedicao, medicaoComparavel } from "./validade-medicao";
 /**
  * O CELEIRO NO BANCO — a camada que escreve o extrato e guarda o genoma.
  *
@@ -407,6 +408,7 @@ export async function abrirPosicao(
    */
   braco: Braco | null = null,
 ): Promise<string | null> {
+  if (!medicaoComparavel(a.agente)) return null;
   const { data, error } = await db.from("celeiro_posicoes").insert({
     agente: a.agente, simbolo: a.simbolo, lado: a.lado, usd: a.usd,
     preco_entrada: a.precoEntrada, alvo: a.alvo, stop: a.stop,
@@ -440,6 +442,8 @@ export async function fecharPosicao(
   p: PosicaoAberta,
   f: Fechamento,
 ): Promise<{ fechou: boolean; porque: string }> {
+  const limitacao = limitacaoDaMedicao(p.agente);
+  if (limitacao) return { fechou: false, porque: limitacao };
   const c = conferir(p, f);
   if (!c.bate) return { fechou: false, porque: c.porque };
 
@@ -492,6 +496,7 @@ export async function varrerAbertas(
   agoraMs: number,
 ): Promise<Array<{ simbolo: string; fechou: boolean; porque: string }>> {
   const out: Array<{ simbolo: string; fechou: boolean; porque: string }> = [];
+  if (!medicaoComparavel(agente)) return out;
   for (const p of await posicoesAbertas(db, agente)) {
     const preco = precoDe(p.simbolo);
     if (preco === null) {
@@ -573,6 +578,8 @@ export async function aplicarMutacao(
   db: SupabaseClient, mutacaoId: string, agente: string,
   paramsNovos: Record<string, unknown>, modelo: string, hipotese: string,
 ): Promise<MutacaoAplicada> {
+  const limitacao = limitacaoDaMedicao(agente);
+  if (limitacao) return { ok: false, motivo: "impossivel", porque: limitacao };
   /**
    * ⚠️⚠️ O PORTÃO ANTES DA ESCRITA (05/09), e ele custou dois dias de A/B vazio.
    *
@@ -720,11 +727,11 @@ export async function mutacoesJulgadas(db: SupabaseClient, limite = 500): Promis
 }>> {
   // leitura-limitada: o placar olha o histórico recente, não a vida inteira.
   const { data } = await db.from("celeiro_mutacoes")
-    .select("modelo, veredito, usdt_controle, usdt_mutacao")
+    .select("agente, modelo, veredito, usdt_controle, usdt_mutacao")
     .not("veredito", "is", null)
     .order("avaliada_em", { ascending: false }).limit(limite);
 
-  return (data ?? []).map((r) => ({
+  return (data ?? []).filter(r => medicaoComparavel(r.agente)).map((r) => ({
     modelo: r.modelo,
     veredito: r.veredito as "pagou" | "nao_pagou" | "inconclusiva",
     diferenca: (Number(r.usdt_mutacao) || 0) - (Number(r.usdt_controle) || 0),

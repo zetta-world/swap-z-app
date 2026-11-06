@@ -336,12 +336,12 @@ async function passagem(
     const abertaEmMs = Date.parse(p.abertaEm) || 0;
     // ⚠️ O agente CAMINHA em 1h; a estratégia própria, no intervalo dela.
     const intervaloDaLeitura = mesa.mesa ? INTERVALO_DO_AGENTE : mesa.intervalo;
-    // ⚠️ A janela começa na ABERTURA da posição: velas anteriores a ela não
-    // podem fechá-la, e trazê-las só gastaria leitura.
-    // ⚠️ Mesma correção da janela: o recuo segue o intervalo da leitura.
+    // Inclui a vela parcial de entrada para verificar ausência de toque.
+    // Se houve toque nessa vela, a ordem antes/depois da entrada é desconhecida.
+    const duracaoMs = duracaoDoIntervaloMs(intervaloDaLeitura) ?? 3_600_000;
     const desde = abertaEmMs > 0
-      ? abertaEmMs
-      : agoraMs - VELAS_POR_MESA * (duracaoDoIntervaloMs(intervaloDaLeitura) ?? 3_600_000);
+      ? Math.floor(abertaEmMs / duracaoMs) * duracaoMs
+      : agoraMs - VELAS_POR_MESA * duracaoMs;
     const chave = `${p.simbolo}|${intervaloDaLeitura}`;
     const g = grupos.get(chave) ?? { simbolo: p.simbolo, intervalo: intervaloDaLeitura, desdeMin: desde, itens: [] };
     g.desdeMin = Math.min(g.desdeMin, desde);
@@ -370,8 +370,13 @@ async function passagem(
         horasLimite: horas,
         lado: p.lado,
         custoIdaEVoltaPct: custoDaLinha(mesa.praca, mesa.papel),
+        candleDurationMs: duracaoDoIntervaloMs(g.intervalo) ?? Number.NaN,
       }, velas, agoraMs);
-      if (!f) continue;
+      if (!f) {
+        if (agoraMs >= abertaEmMs + horas * 3_600_000)
+          resumo.problemas.push(`fechamento: ${p.id} vencida sem cobertura comprovada — pendente de reconciliação`);
+        continue;
+      }
 
       const r = await fecharPosicao(p.dono, db, p.id, f.status, f.saida, f.resultadoPct);
       // ⚠️ TIRA O SÍMBOLO, não a mesa inteira: as outras posições dela seguem no ar.
@@ -709,8 +714,10 @@ async function decidirDaPropria(
     alvoPct: mesa.params.alvoPct, stopPct: mesa.params.stopPct,
     horasLimite: mesa.params.horasLimite,
     // ⚠️ Cada coluna com o seu significado (0040): `expiraEm` é quando a
-    // posição vence, `velaEm` é de qual vela veio o sinal.
-    expiraEm: new Date(d.velaMs + mesa.params.horasLimite * 3_600_000).toISOString(),
+    // posição vence, `velaEm` é de qual vela veio o sinal. O prazo solicitado
+    // começa neste tique, não na abertura de uma vela anterior à decisão.
+    // O fechamento efetivo continua usando aberta_em + horas_limite do banco.
+    expiraEm: new Date(agoraMs + mesa.params.horasLimite * 3_600_000).toISOString(),
     velaEm: d.velaMs,
     playbook: null,
   } };
@@ -798,7 +805,9 @@ async function decidirDoAgente(
     tamanhoUsd: TAMANHO_DE_PAPEL_USD,
     alvoPct: d.alvoPct, stopPct: d.stopPct,
     horasLimite: d.horasLimite,
-    expiraEm: new Date(d.velaMs + d.horasLimite * 3_600_000).toISOString(),
+    // Mesma origem da estratégia própria: instante do pedido de abertura.
+    // velaMs mantém apenas a identidade da oportunidade, sem encurtar o prazo.
+    expiraEm: new Date(agoraMs + d.horasLimite * 3_600_000).toISOString(),
     velaEm: d.velaMs,
     // ⚠️ QUAL REGRA ABRIU. Sem isto o extrato do investidor é um número sem
     // como conferir — e a posição viva, ao contrário do backtest, aconteceu

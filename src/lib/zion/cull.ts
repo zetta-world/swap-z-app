@@ -1,3 +1,4 @@
+import { MEDICAO_PAPER } from "@/lib/paper/medicao";
 /**
  * Tournament cull — alavanca 3 of docs/PLANO-LUCRATIVIDADE.md.
  *
@@ -69,6 +70,28 @@ export const EM_PROVA = ["mistral_scan"] as const;
 
 export interface SourceStat { source: string; decided: number; resolved: number; expectancyNet: number | null }
 
+/** Missing prices are not zero-return trades and must not pay a synthetic fee. */
+export function aggregateCullStats(
+  rows: ReadonlyArray<{ source: string | null; status: string; outcome_pct: number | null }>,
+): SourceStat[] {
+  const priced = new Set(["hit_target", "hit_stop", "win", "loss", "expired", "neutral"]);
+  const decided = new Set(["hit_target", "hit_stop", "win", "loss"]);
+  const agg = new Map<string, { decided: number; resolved: number; sum: number }>();
+  for (const r of rows) {
+    if (!r.source || !priced.has(r.status)
+      || r.outcome_pct === null || !Number.isFinite(r.outcome_pct)) continue;
+    const a = agg.get(r.source) ?? { decided: 0, resolved: 0, sum: 0 };
+    a.resolved++;
+    a.sum += r.outcome_pct;
+    if (decided.has(r.status)) a.decided++;
+    agg.set(r.source, a);
+  }
+  return [...agg.entries()].map(([source, a]) => ({
+    source, decided: a.decided, resolved: a.resolved,
+    expectancyNet: a.sum / a.resolved - COST_PCT,
+  }));
+}
+
 /** Pure verdict: who gets culled, who is champion. Sub-sample agents are
  *  untouchable either way — a lucky/unlucky streak is not a verdict.
  *
@@ -116,6 +139,10 @@ export async function getCulledSources(): Promise<Set<string>> {
 export async function runTournamentCull(): Promise<{ culled: string[]; champion: string | null }> {
   const none = { culled: [] as string[], champion: null };
   if (!CULL_ON) return none;
+  if (!MEDICAO_PAPER.promocaoAutomatica) {
+    await recordEvent("tournament_medicao_em_calibracao", { meta: MEDICAO_PAPER });
+    return { culled: [], champion: null };
+  }
   const db = getSupabaseAdmin();
   if (!db) return none;
 
@@ -126,18 +153,7 @@ export async function runTournamentCull(): Promise<{ culled: string[]; champion:
       .order("created_at", { ascending: true }).range(from, to),
   );
 
-  const agg = new Map<string, { decided: number; resolved: number; sum: number }>();
-  for (const r of rows) {
-    if (!r.source || r.status === "open") continue;
-    const a = agg.get(r.source) ?? { decided: 0, resolved: 0, sum: 0 };
-    a.resolved++; a.sum += Number(r.outcome_pct) || 0;
-    if (r.status === "hit_target" || r.status === "win" || r.status === "hit_stop" || r.status === "loss") a.decided++;
-    agg.set(r.source, a);
-  }
-  const stats: SourceStat[] = [...agg.entries()].map(([source, a]) => ({
-    source, decided: a.decided, resolved: a.resolved,
-    expectancyNet: a.resolved > 0 ? a.sum / a.resolved - COST_PCT : null,
-  }));
+  const stats = aggregateCullStats(rows);
 
   const verdict = decideCull(stats);
   const already = await getCulledSources();

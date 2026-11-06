@@ -5,7 +5,9 @@
  *   1. `RetratoPorPrefixo.at(...)` ≡ `computeIndicators(prefixos)` congelado,
  *      em TODA barra da série — não uma amostra;
  *   2. `computeIndicators` refatorado (montagem compartilhada) ≡ o congelado;
- *   3. `rodarMesa` inteiro ≡ `rodarMesaLegado` — operações, playbooks, motivos.
+ *   3. `rodarMesa` inteiro ≡ referência temporal simples, após a correção de
+ *      disponibilidade do OHLC de 05/11. A referência legada fica preservada
+ *      como histórico e deixou de ser o oráculo temporal.
  *
  * Referências: `__referencia__/indicadores-legado.ts` e `mesa-real-legado.ts`,
  * cópias da base 0afa841.
@@ -14,7 +16,7 @@ import { describe, it, expect } from "vitest";
 import { computeIndicators, RetratoPorPrefixo, type Candle } from "@/lib/api/market-indicators";
 import { computeIndicatorsLegado } from "@/lib/bancada/__referencia__/indicadores-legado";
 import { rodarMesa, agregar } from "@/lib/bancada/mesa-real";
-import { rodarMesaLegado } from "@/lib/bancada/__referencia__/mesa-real-legado";
+import { rodarMesaReferenciaTemporal } from "@/lib/bancada/__referencia__/mesa-real-temporal";
 import type { VelaComTempo } from "@/lib/mercado/velas";
 
 function prng(semente: number) {
@@ -137,14 +139,14 @@ describe("computeIndicators refatorado ≡ o congelado", () => {
   });
 });
 
-describe("rodarMesa ≡ rodarMesaLegado — a rodada inteira", () => {
+describe("rodarMesa ≡ referência temporal independente — a rodada inteira", () => {
   it("2 sementes × 1.200 barras (1.000 avaliadas), dois custos", { timeout: 240_000 }, () => {
     let operacoes = 0;
     for (const s of [5, 31]) {
       const m = mundo(s, 1200);
       for (const custo of [0.1, 0.4]) {
         const novo = rodarMesa(m, "TST", custo);
-        const velho = rodarMesaLegado(m, "TST", custo);
+        const velho = rodarMesaReferenciaTemporal(m, "TST", custo);
         expect(exatamenteIgual(novo, velho)).toBeNull();
         operacoes += novo.operacoes.length;
       }

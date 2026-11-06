@@ -533,3 +533,50 @@ Contagem depois desta revisão: `KNOWN_MISSING_CORRECTIONS=1` (A33) · `UNKNOWN_
 
 **Auditoria externa (33 achados): todos fechados.** `KNOWN_MISSING_CORRECTIONS=0` · `UNKNOWN_FINDINGS=0` ·
 **AUDIT RECONCILIATION FINAL = PASS** (para os achados conhecidos; retests históricos por finding: §4.2).
+
+
+### 5.11 PAPER-RETOMADA — achados novos, rodada local de 04–05/11/2026
+
+Esta lista pertence à auditoria das mesas, posterior aos 33 achados externos acima. Não reclassifica a certificação histórica. Base local `85cd4a6`; sem commit candidato/publicação. Plano ativo: `PLANO-PAPER-RETOMADA-20261104.md`; evidência externa `zswap-local/evidence/paper-resume-20261104`.
+
+| ID | Achado | Estado nesta rodada | Evidência |
+|---|---|---|---|
+| PAPER-RET-01 | Cull tratava desfecho sem preço no denominador econômico | CORRIGIDO LOCAL; não publicado | `cull-medicao.test.ts`, incluindo neutral legado |
+| PAPER-RET-02 | Spot tardio precificava expiração sem candles | CORRIGIDO LOCAL para janela vazia; cobertura parcial genérica ABERTA | `paper/retomada.test.ts` |
+| PAPER-RET-03 | Taxa atual creditava aluguel após longa interrupção | CORRIGIDO LOCAL; não publicado | `aluguel.test.ts` |
+| PAPER-RET-04 | Uma taxa de funding aplicada a 150 períodos antigos | CONTIDO LOCAL; reconciliação e recibos atômicos ABERTOS | crédito +1,80 USDT confirmado por leitura; `funding-observacao` e replay puro |
+| PAPER-RET-05 | OHLC de prazos maiores usado antes do fechamento; relógio de saída incorreto | CORRIGIDO LOCAL na bancada/agente; demais limites temporais documentados | sete reproduções antes/depois, oráculo temporal e cooldown |
+| PAPER-RET-06 | Expiração enviada pelo tique começava na abertura da vela do sinal | CORRIGIDO LOCAL; deriva por latência do registro permanece | quatro reproduções em `tique-prazo.test.ts` |
+| PAPER-RET-07 | Fechamentos legados após pausa sem reconciliação de trajetória | ABERTO | coorte legada separada, extratos preservados |
+| PAPER-RET-08 | Falta de preços DEX e cobertura/intervalo da análise de funding | ABERTO | diagnóstico de fontes e limites no relatório |
+
+1.698 testes distintos, lint e tipos do código-fonte aprovados localmente. Build bloqueado por ambiente (IPC Turbopack/PostCSS), sem PASS de build ou certificação de SHA. Nenhum resultado financeiro certificado; coorte retomada ainda no código anterior.
+
+### 5.12 PAPER-RETOMADA — continuação de 06/11/2026
+
+As linhas históricas de §5.11 conservam a situação em 04–05/11. O build agora passou no ambiente permitido, padrão Turbopack (exit 0); suíte global 5.589/5.589, lint e tipos completos PASS. Ainda sem certificação de SHA/publicação. Ensaio BTC conhecido, sem promoção, validado por referência temporal independente do algoritmo rápido (seletor compartilhado).
+
+| ID | Achado / gate | Estado | Evidência |
+|---|---|---|---|
+| PAPER-RET-09 | Convergência abre uma posição spot a partir da base spot/perp; não modela carry com duas pernas | ABERTO; P&L não certifica convergência | `cron/route.ts` ramo convergencia_base e abertura; relatório 06/11 §5 |
+| PAPER-RET-10 | Pool Novo omite taxa explícita, usa default legado, slippage zero e sem gás | ABERTO; não certifica resultado DEX líquido | `cron/route.ts` abertura Pool Novo; `celeiro/posicao.ts` taxaDa |
+| PAPER-RET-11 | Ensaios passados/resultados pequenos confundidos com prova de vantagem | ABERTO para promoção econômica; protocolo congelado e controles no diagnóstico | BTC 7 fechamentos, mediana negativa/concentração semanal; `economic-results.json` |
+| PAPER-RET-BUILD | IPC/fontes impediam concluir build | RESOLVIDO LOCAL; sem mudança no produto/bundler; primeira tentativa143 preservada | `build-local-instrumented-status.json`, suíte global e typecheck com tipos gerados |
+
+Evidência: `zswap-local/evidence/paper-next-step-20261106`; relatório correspondente. Nenhuma mudança hospedada ou release. As limitações temporais gerais/funding dos achados 02,04,07,08 permanecem abertas.
+
+## PAPER-OBSERVED-V2 — contenção local, 06/11/2026
+
+Cobertura de velas: implementado/testado localmente, ainda sem recert exata/publicação.
+Funding/Convergência/Pool Novo: CONTIDOS, não corrigidos financeiramente; escrita/julgamento dos
+modelos incompletos suspensos e painel com motivos. Legado não reescrito.
+Promoções/mutações automáticas: suspensas na calibração; sem prova de lucratividade.
+Achado aberto: vencimentos não alinhados à vela ficam sem preço exato; Paper/bancada pendentes
+consomem capital simulado e exigem contrato observável/reconciliação, nunca P&L sintético.
+Limitação: revisão independente indisponível nesta etapa; nenhum PASS independente alegado.
+Evidência zswap-local/evidence/paper-closure-20261106; protocolo prospectivo no repo, ainda não iniciado.
+
+Achado adicional CELEIRO-TICK-PATH: `store.ts::varrerAbertas` entrega apenas o preço corrente a
+`posicao.ts::deveFechar`; modelos restantes ainda não reconstroem primeiro toque/ordem entre ticks.
+OPEN; correção de cobertura de Paper/torneio/bancada NÃO fecha este achado. Sem prova econômica
+integral desses modelos e sem aumento de risco.

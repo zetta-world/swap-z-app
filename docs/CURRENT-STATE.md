@@ -12,6 +12,49 @@
 
 ---
 
+## Rodada local PAPER-RETOMADA (04–06/11/2026, não publicada)
+
+Branch `codex/paper-resume-20261104`, base `85cd4a6afb9e90869f89cd1c084ae1e03c0f2f49`.
+Checkpoint C1 local para correção do instrumento de medição, não otimização de parâmetros.
+O SHA concreto é registrado na evidência externa `paper-closure-20261106/checkpoint.json`.
+RELEASE_CANDIDATE=NONE; certificação exata ainda pendente. Nenhuma publicação nesta campanha.
+
+Implementado: correção temporal bancada/agente, prazo do tique, aluguel sem retroatividade
+após interrupção, exclusão de resultados sem preço do cull e replay contínuo de velas fechadas
+em Paper/torneio/bancada. Funding implícito, Convergência com uma perna e Pool Novo com custos
+incompletos contidos nos writers e no cron, fora dos totais comparáveis do painel. Histórico
+preservado. Mutações/promovê-las automaticamente e campeão do torneio congelados na calibração;
+Paper não usa bônus de campeão antigo. Nenhum parâmetro ajustado para melhorar resultado observado.
+
+Validação alvo da continuação: **949/949 testes**, lint global PASS (zero erros/126 avisos). Tipos globais PASS apenas no snapshot inicial;
+as duas verificações finais foram interrompidas pela proteção de memória, não são PASS.
+Tipos dos 36 arquivos alterados e imports transitivos PASS (escopo, não global). Evidência
+em `zswap-local/evidence/paper-closure-20261106`. Resultados anteriores (5.589 testes/build/tipos/lint)
+em `paper-next-step-20261106` são do snapshot anterior e NÃO certificam este candidato.
+
+Suíte global no ambiente com subprocessos permitidos: **5.617/5.617 testes em 370 arquivos**, zero falhas/pendências, 259,83 s, um worker, guardas preservadas. A rodada restrita FAIL continua preservada. Resultado pré-commit, não recertificação de SHA.
+
+Revisão independente tentada mas indisponível por limite de uso; revisão do autor não é independente.
+
+Limites materiais: vencimento dentro de vela não tem preço exato demonstrável por OHLC; Paper/bancada
+podem manter capital simulado pendente de reconciliação. Torneio encerra ausência de prova como
+`unresolvable`/nulo após carência. Seleção somente dos resolvidos não prova rentabilidade.
+Contenção não implementa duas pernas, recibos atômicos de funding ou custo completo de Pool Novo.
+O Celeiro restante ainda decide saídas por preço do tick, sem replay de primeiro toque entre
+execuções (CELEIRO-TICK-PATH aberto). Nenhuma coluna nova de coorte: seleção prospectiva será externa, por abertura/versão e corte UTC
+documentado após drenagem dos workers antigos. A coorte ainda não começou.
+
+`PROTOCOLO-PAPER-OBSERVED-V2.md` define calibração, cobertura, custos, controles, exposição,
+patrimônio/drawdown e pendências. Sete trades do ensaio BTC conhecido (+US$51,59 simulado a custo
+0,50%, referência comprar/manter com exposição diferente) NÃO são holdout nem prova de lucro.
+Relatório histórico preservado em `zswap-local/reports/paper-next-step-20261106/RELATORIO.md`.
+
+Últimos snapshots hospedados desta campanha continuam os de 05/11 23h27–23h30 UTC, motor anterior:
+Paper oito fechadas −6,31752 USD; Celeiro 25 fechadas −18,58912 USDT, oito abertas. Produção não foi
+revalidada nesta continuação. Sem leitura/escrita hospedada, cron, serviços, ordens reais ou LLM pago.
+Próximos gates: instalação limpa/build/tipos/lint/suíte completa no SHA exato, atestação e revisão
+concreta do release/rollback e limitações antes de publicar. Plano: `PLANO-PAPER-RETOMADA-20261104.md`.
+
 ## Atualização SOLO FOUNDER MODE (03/11/2026, em produção — código; governança NÃO ativada)
 
 Código em produção `0c4a8c88ca64dedac0a577706c2f86cf85535ea2` (`main` `a77af83`, PR #453). Deployment servido: `dpl_951Ujx6KsFADFrKQZAPktSmfWWk3`, do merge só de

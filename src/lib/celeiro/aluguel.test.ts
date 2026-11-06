@@ -85,17 +85,22 @@ describe("o acúmulo entre ticks", () => {
    * do volante da arena antiga ficou 20 dias morto sem ninguém notar — assumir
    * que não se repete seria ignorar a cicatriz.
    */
-  it("cron parado credita só o teto, e diz que cortou", () => {
+  it("cron parado não credita uma taxa atual sobre horas não observadas", () => {
     const vinteDias = 20 * 24 * 3_600_000;
     const a = acumular(1000, 10, AGORA - vinteDias, AGORA);
 
     expect(a.cortadoPorTeto).toBe(true);
-    expect(a.msCobertos).toBe(TETO_POR_LANCAMENTO_MS);
-    expect(a.usdt).toBeCloseTo(juroDoPeriodo(1000, 10, TETO_POR_LANCAMENTO_MS), 9);
-    expect(a.porque).toContain("teto aplicado");
+    expect(a.msCobertos).toBe(0);
+    expect(a.usdt).toBe(0);
+    expect(a.porque).toContain("intervalo não observado");
 
     // E é MUITO menos que os 20 dias creditariam — o corte tem de importar.
     expect(a.usdt).toBeLessThan(juroDoPeriodo(1000, 10, vinteDias) / 50);
+  });
+
+  it("o limite exato mantém a convenção; um milissegundo além é período desconhecido", () => {
+    expect(acumular(1000, 10, AGORA - TETO_POR_LANCAMENTO_MS, AGORA).usdt).toBeGreaterThan(0);
+    expect(acumular(1000, 10, AGORA - TETO_POR_LANCAMENTO_MS - 1, AGORA).usdt).toBe(0);
   });
 
   it("dentro do teto credita a janela inteira e não marca corte", () => {

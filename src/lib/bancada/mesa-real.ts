@@ -33,6 +33,7 @@ import type { Operacao } from "@/lib/bancada/motor";
  * disso. Menos que isto não é "sinal fraco": é indicador que ainda não nasceu.
  */
 const BARRAS_DE_AQUECIMENTO = 200;
+const HORA_MS = 3_600_000;
 
 /**
  * ⚠️⚠️ O TETO DE BARRAS AVALIADAS, e ele é DECLARADO, não silencioso.
@@ -59,11 +60,13 @@ export const MAX_BARRAS_AVALIADAS = Number(process.env.BANCADA_MAX_BARRAS ?? 400
  * silenciosa que faria o `htf1w` do seletor ler outra coisa do que lê ao vivo,
  * e a mesa se comportaria diferente sem nada denunciar.
  */
-export function agregar(velas: ReadonlyArray<VelaComTempo>, porBloco: number): VelaComTempo[] {
+export function agregar(velas: ReadonlyArray<VelaComTempo>, porBloco: number, duracaoBaseMs = 24 * HORA_MS): VelaComTempo[] {
   if (porBloco < 2) return [...velas];
   const saida: VelaComTempo[] = [];
   for (let i = 0; i + porBloco <= velas.length; i += porBloco) {
     const bloco = velas.slice(i, i + porBloco);
+    // Sete linhas com dias ausentes não são uma semana observada.
+    if (bloco.some((b, j) => b.t !== bloco[0].t + j * duracaoBaseMs)) continue;
     saida.push({
       t: bloco[0].t,
       high: Math.max(...bloco.map((b) => b.high)),
@@ -136,11 +139,9 @@ function exigirOrdemCronologica(nome: keyof VelasDaMesa, velas: ReadonlyArray<Ve
 /**
  * Roda o seletor da casa barra a barra.
  *
- * ⚠️⚠️ SEM LOOKAHEAD, POR CONSTRUÇÃO. Em cada barra `i` os indicadores são
- * recalculados sobre as velas **até `i`, inclusive** — e nunca além. É por isso
- * que o custo é o que é: reaproveitar um cálculo feito com a série inteira
- * daria a cada decisão um pedaço do futuro, e transformaria qualquer regra em
- * ouro.
+ * Cada decisão acontece no FECHAMENTO de 1h. Os prazos maiores só entram
+ * depois de também fecharem: `t` identifica abertura, não disponibilidade do
+ * OHLC final. A saída percorre velas completas consecutivas após a entrada.
  *
  * ⚠️ UMA POSIÇÃO POR VEZ, como no motor do cliente: deixar o sinal reabrir com
  * posição aberta empilharia o mesmo movimento e o `n` contaria repetição como
@@ -175,13 +176,14 @@ export function rodarMesa(
    * maior custo de CPU da bancada. `RetratoPorPrefixo` calcula cada série uma
    * vez e devolve, para os comprimentos de prefixo de cada barra, EXATAMENTE o
    * mesmo retrato (prova: `indicadores-por-prefixo.equivalencia.test.ts`, barra
-   * a barra, contra a cópia congelada de `computeIndicators`). O lookahead
-   * continua impossível: a barra `i` lê prefixos que terminam nela.
+   * a barra, contra a cópia congelada de `computeIndicators`). A disponibilidade
+   * temporal é verificada abaixo, usando o fechamento de cada prazo.
    */
   const retrato = new RetratoPorPrefixo(
     simbolo, paraCandle(h1), paraCandle(velas.h4), paraCandle(velas.d1), paraCandle(velas.w1),
   );
-  const h1Saida = h1.map((x) => ({ t: x.t, high: x.high, low: x.low, close: x.close }));
+  // Para a saída, t passa a ser o instante em que o OHLC completo é conhecido.
+  const h1Saida = h1.map((x) => ({ t: x.t + HORA_MS, high: x.high, low: x.low, close: x.close }));
   let h4Ate = 0;
   let d1Ate = 0;
   let w1Ate = 0;
@@ -193,10 +195,10 @@ export function rodarMesa(
     barrasAvaliadas++;
     if (i < livreApartirDe) continue;
 
-    const t = h1[i].t;
-    while (h4Ate < velas.h4.length && velas.h4[h4Ate].t <= t) h4Ate++;
-    while (d1Ate < velas.d1.length && velas.d1[d1Ate].t <= t) d1Ate++;
-    while (w1Ate < velas.w1.length && velas.w1[w1Ate].t <= t) w1Ate++;
+    const t = h1[i].t + HORA_MS;
+    while (h4Ate < velas.h4.length && velas.h4[h4Ate].t + 4 * HORA_MS <= t) h4Ate++;
+    while (d1Ate < velas.d1.length && velas.d1[d1Ate].t + 24 * HORA_MS <= t) d1Ate++;
+    while (w1Ate < velas.w1.length && velas.w1[w1Ate].t + 168 * HORA_MS <= t) w1Ate++;
     const ind = retrato.at(i + 1, h4Ate, d1Ate, w1Ate);
 
     const tentativas = candidateAttempts(ind);
@@ -211,36 +213,23 @@ export function rodarMesa(
     }
 
     const plano = comPlano.plan;
-    const abertaEm = t + 1;
-    const expiraEm = abertaEm + plano.horizonHours * 3_600_000;
-    const ate = Math.min(h1[h1.length - 1].t, expiraEm);
-    /**
-     * ⚠️ A FATIA PARA A SAÍDA TERMINA EM `ate` (CE-02). Antes era o resto da
-     * série inteira, que `computeExitPath` filtrava de novo por `c.t <= ate` —
-     * O(N) por operação. Com a série em ordem (`exigirOrdemCronologica`, lá em
-     * cima), toda vela depois de `fimDaFatia` tem `t > ate` e o filtro a
-     * descartaria; cortá-la antes não muda a janela que ele enxerga. O filtro
-     * continua rodando sobre a fatia curta, então tempo repetido segue tratado
-     * igual.
-     */
-    let fimDaFatia = i + 1;
-    while (fimDaFatia < h1.length && h1[fimDaFatia].t <= ate) fimDaFatia++;
-
-    const v = computeExitPath(
-      {
-        side: "buy",           // ⚠️ estas mesas são long-only, por construção
-        entry_price: plano.entry,
-        cost_usd: 1,
-        target_price: plano.target,
-        stop_price: plano.stop,
-        opened_at: new Date(abertaEm).toISOString(),
-        horizon_hours: plano.horizonHours,
-      },
-      h1Saida.slice(i + 1, fimDaFatia),
-      undefined,
-      ate,
-      custoIdaEVoltaPct,
-    );
+    const abertaEm = t;
+    const expiraEm = abertaEm + plano.horizonHours * HORA_MS;
+    const posicao = {
+      side: "buy", entry_price: plano.entry, cost_usd: 1,
+      target_price: plano.target, stop_price: plano.stop,
+      opened_at: new Date(abertaEm).toISOString(), horizon_hours: plano.horizonHours,
+    };
+    let v: ReturnType<typeof computeExitPath> = null;
+    let indiceDaSaida = -1;
+    // Uma lacuna pode esconder um stop anterior ao alvo conhecido. Sem caminho
+    // consecutivo, não há desfecho mensurável; não saltamos para o spot tardio.
+    for (let j = i + 1; j < h1.length; j++) {
+      const vela = h1Saida[j];
+      if (h1[j].t !== h1[j - 1].t + HORA_MS || vela.t > expiraEm) break;
+      v = computeExitPath(posicao, [vela], undefined, vela.t, custoIdaEVoltaPct);
+      if (v) { indiceDaSaida = j; break; }
+    }
 
     if (!v) {
       // A posição chegou viva ao fim da janela: ela ocupa a mesa até lá.
@@ -252,7 +241,7 @@ export function rodarMesa(
     porPlaybook[plano.playbook] = (porPlaybook[plano.playbook] ?? 0) + 1;
     operacoes.push({
       abriuEm: t,
-      fechouEm: ate,
+      fechouEm: h1Saida[indiceDaSaida].t,
       entrada: plano.entry,
       saida: v.exit,
       desfecho: v.reason === "target" ? "alvo" : v.reason === "stop" ? "stop" : "expirada",
@@ -262,13 +251,10 @@ export function rodarMesa(
       simbolo,
     });
 
-    // A próxima entrada só nasce depois desta fechar.
-    // ⚠️ `fimDaFatia` É o primeiro índice com `t > ate` — o mesmo que o
-    // `findIndex` antigo achava varrendo a série desde o começo (todo índice
-    // ≤ i tem `t ≤ ate`, porque `ate ≥ t`). Nenhuma regra mudou: ver CE-02-F1
-    // no relatório sobre a barreira usar `ate` e não a vela do fechamento.
-    const iFechou = fimDaFatia < h1.length ? fimDaFatia : -1;
-    livreApartirDe = iFechou < 0 ? h1.length : Math.max(i + 1, iFechou);
+    // No fechamento que revelou a saída, outra decisão já pode ser avaliada.
+    // Nenhuma entrada intrabar é inferida; a exposição termina nesse fechamento.
+    livreApartirDe = indiceDaSaida;
+
   }
 
   return { operacoes, barrasAvaliadas, cortadaPeloTeto, aindaAbertas, porPlaybook, porQueNaoAbriu };

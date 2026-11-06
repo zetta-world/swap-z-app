@@ -515,3 +515,23 @@ validado e autorização própria). Rollback de código: deploy de produção an
 Rollback do release `a77af83`: `dpl_DG2zBQKq1uec2oLYg8Gamw1wpuST` (`1123b38`, código `770f60c`). Merges só de docs `1123b38` (#452) e
 `9f4d62b` (#454) foram publicados pela Vercel sem marca `RELEASE_CANDIDATE`; produto idêntico. Detalhe: ledger
 "ADMIN-ESTADO-CORRECOES-20261103".
+
+## PAPER-OBSERVED-V2 — preparação C1 (06/11/2026)
+
+Base 85cd4a6afb9e90869f89cd1c084ae1e03c0f2f49, branch codex/paper-resume-20261104.
+Escopo: campanha local autorizada de medição, contenção dos três modelos incompletos e congelamento
+de promoções/mutações automáticas até coorte prospectiva. 949 testes alvo PASS, evidências
+em zswap-local/evidence/paper-closure-20261106. C1 será checkpoint local, não RELEASE_CANDIDATE
+antes da recert completa. Protocolo PROTOCOLO-PAPER-OBSERVED-V2.md; nenhuma coorte iniciada.
+Revisão independente indisponível (limite de uso), revisão própria apenas.
+Pendências: prazo não alinhado requer preço observável/reconciliação; modelos contidos ainda
+não implementados integralmente; release/rollback/exceções de auditoria precisam revalidação.
+Sem migrations, mudanças em produção, push, merge ou deploy.
+
+Checkpoint C1 desta campanha: COMMITTED_FEATURE_CHECKPOINT quando este conteúdo for commitado;
+identidade exata em `zswap-local/evidence/paper-closure-20261106/checkpoint.json`.
+RELEASE_CANDIDATE=NONE; RECERT_RESULT=NOT_STARTED. Duas tentativas finais de tipos globais
+interrompidas por reserva de memória; tipos por escopo PASS. Instalação limpa/build/recert
+no SHA exato pendentes. Não publicar este checkpoint nem tratar prechecks como certificação.
+
+Suíte global no ambiente com subprocessos permitidos: **5.617/5.617 testes em 370 arquivos**, zero falhas/pendências, 259,83 s, um worker, guardas preservadas. A rodada restrita FAIL continua preservada. Resultado pré-commit, não recertificação de SHA.

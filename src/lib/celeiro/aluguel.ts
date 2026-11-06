@@ -74,7 +74,7 @@ export const TETO_POR_LANCAMENTO_MS = 6 * 3_600_000;
 export interface Acumulo {
   /** Quanto creditar agora. */
   usdt: number;
-  /** A janela efetivamente coberta, já com o teto aplicado. */
+  /** A janela observada; zero quando a interrupção ultrapassa o teto. */
   msCobertos: number;
   /** Preenchido quando o teto cortou — é sintoma, e vai para o `meta`. */
   cortadoPorTeto: boolean;
@@ -110,16 +110,19 @@ export function acumular(
     };
   }
   const cortadoPorTeto = bruto > TETO_POR_LANCAMENTO_MS;
-  const msCobertos = Math.min(bruto, TETO_POR_LANCAMENTO_MS);
+  if (cortadoPorTeto) {
+    return {
+      usdt: 0, msCobertos: 0, cortadoPorTeto: true,
+      porque: "intervalo não observado — marca o relógio sem creditar juro retroativo",
+    };
+  }
+  const msCobertos = bruto;
   const usdt = juroDoPeriodo(capitalUsdt, taxaAnualPct, msCobertos);
   const horas = (msCobertos / 3_600_000).toFixed(2);
 
   return {
     usdt, msCobertos, cortadoPorTeto,
-    porque: cortadoPorTeto
-      ? `${horas}h creditadas de ${(bruto / 3_600_000).toFixed(2)}h decorridas — `
-        + "teto aplicado: o cron ficou parado e ninguém observou a taxa no intervalo"
-      : `${horas}h a ${taxaAnualPct.toFixed(2)}%/ano sobre ${capitalUsdt.toFixed(2)} USDT`,
+    porque: `${horas}h a ${taxaAnualPct.toFixed(2)}%/ano sobre ${capitalUsdt.toFixed(2)} USDT`,
   };
 }
 

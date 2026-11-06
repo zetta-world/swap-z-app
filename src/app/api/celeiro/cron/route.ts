@@ -1,15 +1,13 @@
+import { estadoDaMedicao, medicaoComparavel } from "@/lib/celeiro/validade-medicao";
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { recordEvent } from "@/lib/admin/track";
 import { oControle, agentePor } from "@/lib/celeiro/agentes";
 import { acumular, lerTaxaDeEmprestimo } from "@/lib/celeiro/aluguel";
+import { observarColheitaDeFunding } from "@/lib/celeiro/funding-observacao";
 import {
-  lerSerieDeFunding, colher, portao, anualizar, PERIODOS_POR_DIA,
-  CUSTO_DO_CICLO_PCT,
-} from "@/lib/celeiro/funding-colheita";
-import {
-  registrarFluxo, ultimoLancamentoMs, genomaAtivo, lerRelogio, marcarRelogio,
+  registrarFluxo, genomaAtivo, lerRelogio, marcarRelogio,
   posicoesAbertas, abrirPosicao, varrerAbertas, agentesComAbertas, margemDa, saldoDoAgente,
 } from "@/lib/celeiro/store";
 import {
@@ -35,18 +33,10 @@ export const maxDuration = 60;
 /**
  * O DESPERTADOR DO CELEIRO.
  *
- * ⚠️ SÓ OS DOIS AGENTES DE RENDA ACORDAM AQUI, e é decisão e não atraso. O
- * Aluguel de Ocioso é o CONTROLE — sem ele medindo, nenhum outro número tem
- * régua. A Colheita de Funding é a única fonte que sobreviveu a uma medição
- * honesta. Os três de estrutura e evento entram quando estes dois provarem que
- * o extrato fecha; ligar cinco de uma vez faria um erro de contabilidade
- * aparecer em cinco lugares e não se saber de onde veio.
- *
- * ⚠️ TUDO EM PAPEL. Funding, base e profundidade são dados PÚBLICOS — dá para
- * medir de verdade sem arriscar um centavo. A arena antiga queimou dois meses
- * num sinal pior que uma moeda porque a régua estava errada; aqui a régua vem
- * primeiro. Quando o extrato provar USDT positivo em amostra que aguente,
- * liga-se credencial.
+ * TUDO EM PAPEL. O controle de aluguel, os agentes operados e o investigador
+ * continuam suas rotinas. A Colheita de Funding apenas observa oportunidades:
+ * entradas e créditos estão contidos até reconciliar as posições e implantar
+ * recibos atômicos por período. O extrato legado não comprova lucro novo.
  */
 
 function authorized(req: NextRequest): boolean {
@@ -126,81 +116,17 @@ export async function POST(req: NextRequest) {
     margemSobreControlePp: 2,
   });
 
-  const controleAnual = taxa?.taxaAnualPct ?? 0;
-  const margem = Number(genoma?.params.margemSobreControlePp ?? 2);
-  const janelaDias = Number(genoma?.params.janelaDias ?? 30);
-  const exames: Array<Record<string, unknown>> = [];
-
-  for (const simbolo of SIMBOLOS) {
-    const serie = await lerSerieDeFunding(simbolo, Number(genoma?.params.limiteDeSerie ?? 200));
-    if (serie === null) {
-      exames.push({ simbolo, entra: false, porque: "série não lida — não medido não é aprovado" });
-      continue;
-    }
-    const c = colher(serie);
-
-    /**
-     * ⚠️ O PORTÃO COMPARA COM O CONTROLE MAIS A MARGEM, nunca com zero. Funding
-     * positivo não basta: render menos que o Aluguel de Ocioso significa montar
-     * duas pernas e correr risco de liquidação para ganhar menos do que
-     * emprestar o USDT parado.
-     *
-     * ⚠️ E QUANDO A TAXA DO CONTROLE NÃO FOI LIDA, `controleAnual` é 0 — o que
-     * BAIXARIA a barra em vez de levantá-la. Por isso o exame é pulado: sem
-     * régua não há aprovação, só ausência de comparação.
-     */
-    if (taxa === null) {
-      exames.push({ simbolo, entra: false, porque: "sem a taxa do controle não há barra para comparar" });
-      continue;
-    }
-    const p = portao(c, controleAnual + margem, janelaDias);
-    exames.push({
-      simbolo, entra: p.entra, porque: p.porque,
-      anualPct: anualizar(c, janelaDias),
-      periodos: c.periodos, fatiaNegativa: c.fatiaNegativa,
-      equilibrioEmDias: c.equilibrioEmDias,
-    });
-
-    if (!p.entra) continue;
-
-    /**
-     * A posição de papel: entra uma vez e passa a colher. A entrada paga METADE
-     * do ciclo — as outras duas pernas serão pagas na saída, e cobrá-las agora
-     * faria o agente parecer pior do que é enquanto a posição vive.
-     */
-    const jaEntrou = await ultimoLancamentoMs(db, colheita.id, "taxa");
-    if (jaEntrou === null) {
-      await registrarFluxo(db, {
-        agente: colheita.id, causa: "taxa",
-        usdt: -(CAPITAL_PAPEL_USD * (CUSTO_DO_CICLO_PCT / 2) / 100),
-        simbolo, ref: `entrada:${simbolo}:${agora}`, genomaVersao: genoma?.versao ?? null,
-        meta: { pernas: 2, de: "spot compra + perp venda", porque: p.porque },
-      });
-      continue;   // sem funding ainda: a posição nasceu neste instante
-    }
-
-    const ultimoFunding = await ultimoLancamentoMs(db, colheita.id, "funding");
-    const desde = ultimoFunding ?? jaEntrou;
-    const periodosDecorridos = Math.floor((agora - desde) / (8 * 3_600_000));
-    if (periodosDecorridos < 1) continue;
-
-    /**
-     * ⚠️ USA A TAXA MAIS RECENTE PUBLICADA, não a média da janela. A média
-     * descreve o passado; quem paga o próximo período é a taxa vigente. Creditar
-     * a média inventaria um funding que ninguém recebeu.
-     */
-    const recente = serie[serie.length - 1]?.taxaPct ?? 0;
-    const usdt = CAPITAL_PAPEL_USD * (recente / 100) * periodosDecorridos;
-    if (usdt !== 0) {
-      await registrarFluxo(db, {
-        agente: colheita.id, causa: "funding", usdt,
-        simbolo, ref: `funding:${simbolo}:${agora}`, genomaVersao: genoma?.versao ?? null,
-        meta: { periodos: periodosDecorridos, taxaPct: recente, porDia: PERIODOS_POR_DIA },
-      });
-    }
-  }
-
-  relato.colheita = { genomaVersao: genoma?.versao ?? null, controleAnualPct: controleAnual, margem, exames };
+  // Observação sem escritor: lançamentos agregados antigos não comprovam uma
+  // posição por símbolo. A contabilização só volta com reconciliação explícita
+  // e recibos por período gravados atomicamente; o portão não liquida funding.
+  relato.colheita = await observarColheitaDeFunding({
+    simbolos: SIMBOLOS,
+    genomaVersao: genoma?.versao ?? null,
+    controleAnualPct: taxa?.taxaAnualPct ?? null,
+    margem: Number(genoma?.params.margemSobreControlePp ?? 2),
+    janelaDias: Number(genoma?.params.janelaDias ?? 30),
+    limiteDeSerie: Number(genoma?.params.limiteDeSerie ?? 200),
+  });
 
   // ── ③ OS AGENTES QUE OPERAM ────────────────────────────────────────────
   /**
@@ -245,7 +171,7 @@ export async function POST(req: NextRequest) {
   if (orfaos.length > 0) {
     const varridos: Record<string, unknown> = {};
     for (const orf of orfaos) varridos[orf] = await varrerAbertas(db, orf, precoDe, agora);
-    relato.orfaos = { agentes: orfaos, varridos };
+    relato.orfaos = { agentes: orfaos, varridos, medicao: Object.fromEntries(orfaos.map(id => [id, estadoDaMedicao(id)])) };
     /**
      * ⚠️ SEMPRE grava quando encontra órfão. Não é caminho feliz: agente fora
      * do registro com capital vivo é estado que ninguém escolheu, e some da
@@ -266,6 +192,11 @@ export async function POST(req: NextRequest) {
     "maker_de_faixa",
   ] as const) {
     const ag = agentePor(id)!;
+    if (!medicaoComparavel(id)) {
+      operados[id] = { ...estadoDaMedicao(id), entra: false, fechados: [],
+        abertas: (await posicoesAbertas(db, id)).length };
+      continue;
+    }
     /**
      * ⚠️⚠️ A SEMENTE VEM DE `sementes.ts`, E NÃO MORA MAIS AQUI (31/08).
      *
@@ -592,6 +523,10 @@ export async function POST(req: NextRequest) {
    * As três fontes já existiam (`getNewPoolsForChain`, `getPairDetail`,
    * `getTokenSecurity`); faltava a ponte, agora em `pool-fonte.ts`.
    */
+  if (!medicaoComparavel("pool_novo")) {
+    relato.poolNovo = { ...estadoDaMedicao("pool_novo"), entra: false,
+      abertas: (await posicoesAbertas(db, "pool_novo")).length, fechados: [], exames: [] };
+  } else {
   const poolAg = agentePor("pool_novo")!;
   const genPool = await genomaAtivo(db, poolAg.id, {
     tetoDiario: 3, tamanhoUsd: 50, horasLimite: 24, cadeia: "base",
@@ -698,6 +633,8 @@ export async function POST(req: NextRequest) {
     examinados: examesPool.length, julgados,
     naoLidos: examesPool.length - julgados,
   };
+
+  }
 
   // ── ⑤ O INVESTIGADOR ────────────────────────────────────────────────────
   /**
